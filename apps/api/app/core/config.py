@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     redis_host: str = "redis"
     redis_port: int = 6379
     redis_db: int = 0
+    cache_ttl_seconds: int = 300
+    cache_key_prefix: str = "price-portal"
 
     @property
     def redis_url(self) -> str:
@@ -105,6 +107,8 @@ class Settings(BaseSettings):
 
     # --- Security / CORS ---
     rate_limit_login: str = "5/15minutes"
+    csrf_cookie_name: str = "csrf_token"
+    csrf_header_name: str = "X-CSRF-Token"
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
 
     @property

@@ -1,0 +1,5 @@
+$kind: http-request
+name: GET Manager Ping
+method: GET
+url: '{{base_url}}/api/v1/manager/ping'
+order: 1000

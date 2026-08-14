@@ -1,0 +1,21 @@
+$kind: http-request
+name: POST Import Price List
+method: POST
+url: '{{base_url}}/api/v1/manager/prices/import'
+order: 1000
+body:
+  type: formdata
+  content:
+    - key: file
+      type: file
+      src: ''
+      description: 'CSV-файл прайс-листа'
+    - key: mode
+      type: text
+      value: UPSERT
+    - key: base_currency
+      type: text
+      value: BYN
+    - key: rate_to_byn
+      type: text
+      value: '1.0'

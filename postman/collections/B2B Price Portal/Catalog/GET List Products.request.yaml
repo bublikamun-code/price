@@ -1,0 +1,38 @@
+$kind: http-request
+name: GET List Products
+method: GET
+url: '{{base_url}}/api/v1/catalog/products'
+order: 1000
+queryParams:
+  - key: q
+    value: ''
+    description: 'Поиск по артикулу/наименованию'
+    disabled: true
+  - key: brand
+    value: ''
+    description: 'UUID бренда'
+    disabled: true
+  - key: series
+    value: ''
+    description: 'UUID серии'
+    disabled: true
+  - key: stock
+    value: ''
+    description: 'IN_STOCK или PREORDER'
+    disabled: true
+  - key: price_calc_mode
+    value: ''
+    description: 'fixed или nbrb_current'
+    disabled: true
+  - key: sort
+    value: ''
+    description: 'name/-name/price/-price/sku'
+    disabled: true
+  - key: page
+    value: '1'
+    description: 'Номер страницы'
+    disabled: true
+  - key: per_page
+    value: '50'
+    description: 'Элементов на странице'
+    disabled: true

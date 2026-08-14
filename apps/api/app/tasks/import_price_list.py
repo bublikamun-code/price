@@ -55,6 +55,7 @@ from app.repositories.catalog import (
     upsert_product,
 )
 from app.services import storage
+from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
 from app.workers import celery_app
 
 log = get_logger("app.tasks.import_price_list")
@@ -227,6 +228,7 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
 
     await _finalize(db, version, ok=rows_ok, err=len(errors),
                     total=rows_total, errors=errors)
+    await invalidate_tags(CATALOG_TAG, FILTERS_TAG)
     return rows_ok, len(errors), rows_total
 
 

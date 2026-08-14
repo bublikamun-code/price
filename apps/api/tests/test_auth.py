@@ -47,6 +47,10 @@ async def test_login_success(api_client, session_factory):
     # cookies установлены
     assert "access_token" in r.cookies
     assert "refresh_token" in r.cookies
+    assert "csrf_token" in r.cookies
+    csrf_header = next(h for h in r.headers.get_list("set-cookie") if h.startswith("csrf_token="))
+    assert "HttpOnly" not in csrf_header
+    assert "SameSite=lax" in csrf_header
 
 
 async def test_login_wrong_password(api_client, session_factory):
@@ -200,6 +204,53 @@ async def test_patch_me_unauthorized(api_client):
 
 
 # =========================================================
+# CSRF double-submit
+# =========================================================
+async def test_csrf_cookie_request_success_and_safe_get(api_client, session_factory):
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    assert (await api_client.get("/api/v1/auth/me")).status_code == 200
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "USD"})
+    assert r.status_code == 200, r.text
+
+
+async def test_csrf_missing_and_wrong_token_forbidden(api_client, session_factory):
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    original_request = api_client.request
+
+    async def raw_request(method, url, **kwargs):
+        return await original_request(method, url, **kwargs)
+
+    # Обходим автоподстановку CSRF из тестовой фикстуры.
+    api_client.request = raw_request
+    api_client.cookies.delete("csrf_token")
+    missing = await api_client.patch("/api/v1/auth/me", json={"display_currency": "USD"})
+    assert missing.status_code == 403
+
+    api_client.cookies.set("csrf_token", "cookie-token")
+    wrong = await api_client.patch(
+        "/api/v1/auth/me",
+        json={"display_currency": "USD"},
+        headers={"X-CSRF-Token": "wrong-token"},
+    )
+    assert wrong.status_code == 403
+
+
+async def test_bearer_only_mutation_does_not_require_csrf(api_client, session_factory):
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    login = await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    access = login.json()["access_token"]
+    api_client.cookies.clear()
+    r = await api_client.patch(
+        "/api/v1/auth/me",
+        json={"display_currency": "USD"},
+        headers={"Authorization": f"Bearer {access}"},
+    )
+    assert r.status_code == 200, r.text
+
+
+# =========================================================
 # REFRESH (rotation)
 # =========================================================
 async def test_refresh_rotation_and_old_invalid(api_client, session_factory):
@@ -245,9 +296,11 @@ async def test_logout_revokes_session(api_client, session_factory):
     assert r2.status_code == 204
     assert "refresh_token" not in r2.cookies
 
-    # refresh после logout не работает
+    # refresh после logout не работает (CSRF-cookie+header нужны, чтобы дойти
+    # до проверки сессии, а не получить 403 от CSRF-middleware)
     api_client.cookies.set("refresh_token", refresh)
-    r3 = await api_client.post("/api/v1/auth/refresh")
+    api_client.cookies.set("csrf_token", "test-csrf")
+    r3 = await api_client.post("/api/v1/auth/refresh", headers={"X-CSRF-Token": "test-csrf"})
     assert r3.status_code == 401
 
 

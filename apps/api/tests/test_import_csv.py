@@ -162,6 +162,21 @@ class TestImportTask:
         чтобы не звать Celery-брокер в тестах импорта."""
         monkeypatch.setattr(notif_task.dispatch_price_changed, "delay", lambda vid: None)
 
+    async def test_import_invalidates_catalog_and_filters(self, session_factory, monkeypatch):
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(session_factory, manager=mgr)
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+        _patch_storage(monkeypatch, b"sku;name;base_price\nC-1;Cached;10\n")
+        calls = []
+
+        async def _invalidate(*tags):
+            calls.append(tags)
+            return 0
+
+        monkeypatch.setattr(import_task, "invalidate_tags", _invalidate)
+        await import_task._run_import(version.id)
+        assert calls == [("catalog", "filters")]
+
     async def test_upsert_and_currency_conversion(self, session_factory, monkeypatch):
         mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
         version = await _make_version(session_factory, manager=mgr,

@@ -9,12 +9,16 @@ export default defineNuxtPlugin(() => {
     baseURL,
     credentials: 'include',
     onRequest({ options }) {
+      const headers = new Headers(options.headers as HeadersInit)
       const token = useCookie<string | null>('auth_token').value
-      if (token) {
-        const headers = new Headers(options.headers as HeadersInit)
-        headers.set('Authorization', `Bearer ${token}`)
-        options.headers = headers
+      if (token) headers.set('Authorization', `Bearer ${token}`)
+
+      const method = String(options.method ?? 'GET').toUpperCase()
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        const csrfToken = useCookie<string | null>('csrf_token').value
+        if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
       }
+      options.headers = headers
     },
   })
 

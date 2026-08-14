@@ -1,0 +1,22 @@
+$kind: http-request
+name: POST Create Order
+method: POST
+url: '{{base_url}}/api/v1/orders'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "items": [
+        {
+          "sku": "ARTICLE-001",
+          "quantity": 1,
+          "note": null
+        }
+      ],
+      "notes": "Комментарий к заявке",
+      "price_calc_mode": "fixed"
+    }

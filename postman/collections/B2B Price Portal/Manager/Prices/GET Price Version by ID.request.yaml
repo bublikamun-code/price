@@ -1,0 +1,8 @@
+$kind: http-request
+name: GET Price Version by ID
+method: GET
+url: '{{base_url}}/api/v1/manager/prices/versions/{{version_id}}'
+order: 3000
+pathVariables:
+  - key: version_id
+    value: ''

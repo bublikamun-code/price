@@ -1,0 +1,26 @@
+$kind: http-request
+name: GET List All Orders
+method: GET
+url: '{{base_url}}/api/v1/manager/orders'
+order: 1000
+queryParams:
+  - key: client
+    value: ''
+    description: 'UUID клиента'
+    disabled: true
+  - key: manager
+    value: ''
+    description: 'UUID менеджера'
+    disabled: true
+  - key: status
+    value: ''
+    description: 'Фильтр по статусу'
+    disabled: true
+  - key: page
+    value: '1'
+    description: 'Номер страницы'
+    disabled: true
+  - key: per_page
+    value: '20'
+    description: 'Элементов на странице'
+    disabled: true

@@ -1,0 +1,18 @@
+$kind: http-request
+name: GET List Orders
+method: GET
+url: '{{base_url}}/api/v1/orders'
+order: 1000
+queryParams:
+  - key: status
+    value: ''
+    description: 'Фильтр по статусу'
+    disabled: true
+  - key: page
+    value: '1'
+    description: 'Номер страницы'
+    disabled: true
+  - key: per_page
+    value: '20'
+    description: 'Элементов на странице'
+    disabled: true

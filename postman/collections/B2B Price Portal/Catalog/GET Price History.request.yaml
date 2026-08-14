@@ -1,0 +1,8 @@
+$kind: http-request
+name: GET Price History
+method: GET
+url: '{{base_url}}/api/v1/catalog/products/{{sku}}/price-history'
+order: 4000
+pathVariables:
+  - key: sku
+    value: 'ARTICLE-001'

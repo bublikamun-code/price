@@ -1,9 +1,11 @@
 """Роутер аутентификации. См. ARCHITECTURE_PLAN.md §6."""
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, validate_csrf
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.user import User
@@ -24,6 +26,11 @@ def _set_auth_cookies(response: Response, tokens: TokenPair) -> None:
         "refresh_token", tokens.refresh_token,
         max_age=settings.refresh_token_ttl_days * 86400,
         httponly=True, secure=secure, samesite="lax", path="/",
+    )
+    response.set_cookie(
+        settings.csrf_cookie_name, secrets.token_urlsafe(32),
+        max_age=settings.refresh_token_ttl_days * 86400,
+        httponly=False, secure=secure, samesite="lax", path="/",
     )
 
 
@@ -54,7 +61,7 @@ async def login(
     return tokens
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post("/refresh", response_model=TokenPair, dependencies=[Depends(validate_csrf)])
 async def refresh(
     request: Request,
     response: Response,
@@ -77,7 +84,11 @@ async def refresh(
     return tokens
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(validate_csrf)],
+)
 async def logout(
     request: Request,
     response: Response,
@@ -90,6 +101,9 @@ async def logout(
     secure = settings.env != "dev"
     response.delete_cookie("access_token", path="/", secure=secure, httponly=True, samesite="lax")
     response.delete_cookie("refresh_token", path="/", secure=secure, httponly=True, samesite="lax")
+    response.delete_cookie(
+        settings.csrf_cookie_name, path="/", secure=secure, httponly=False, samesite="lax"
+    )
 
 
 @router.get("/me", response_model=UserPublic)

@@ -671,7 +671,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | JWT | RS256 (приватный ключ в vault), access 15 мин, refresh 7 дней, rotate refresh. |
 | Хранение refresh | хэш в `sessions`, httpOnly + Secure + SameSite=Lax cookie. |
 | RBAC | зависимости FastAPI `Depends(require_role("MANAGER"))`. |
-| CSRF | для cookie-based auth — `SameSite` + double-submit token на mutating-запросах. |
+| CSRF | Для cookie-based auth — `SameSite=Lax` + double-submit: отдельная JS-readable cookie `csrf_token` и заголовок `X-CSRF-Token` должны совпадать (constant-time) на `POST/PUT/PATCH/DELETE`, включая refresh/logout; безопасные методы и Bearer-only запросы не проверяются. Cookie имеет `Secure` в staging/prod и без `Secure` только в dev. |
 | Rate limiting | slowapi + общее Redis-хранилище счётчиков между API workers: 5 попыток логина / 15 мин с IP; экспорт — 10/час для клиента. |
 | Валидация загрузок | magic-bytes (не доверять расширению), max 100МБ, антивирус-скан (ClamAV) — опц. |
 | SQL-injection | только параметризованные запросы / ORM, никакого f-string SQL. |

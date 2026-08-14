@@ -108,22 +108,24 @@ make test          # тесты
 
 Реализация идёт по этапам из [`ARCHITECTURE_PLAN.md` §15/§19](./ARCHITECTURE_PLAN.md).
 
-Текущий статус: **Этапы 0–4 (ядро)** ✅🟡 — скелет, БД/ядро, авторизация/RBAC, каталог+цены, импорт CSV (Celery).
+Текущий статус: **Этапы 0–5 и часть этапов 6–8** ✅🟡 — ядро, авторизация/RBAC, каталог и персональные цены, импорт CSV, клиентские заявки и основные frontend-сценарии реализованы.
 
 | Этап | Статус | Примечание |
 |---|---|---|
 | 0 — Скелет + Docker | ✅ | compose/Makefile (pre-commit/CI нет) |
 | 1 — БД и ядро BE | ✅ | модели, миграции, конфиг, structlog |
-| 2 — Авторизация + RBAC | ✅ | JWT/сессии, `require_role`, seed-менеджер |
-| 3 — Каталог и цены | 🟡 | PricingService + каталог API + страница каталога готовы; **нет Redis-кэша с тегами** |
-| 4 — Импорт CSV (Celery) | 🟡 | ядро готово (upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO); отложены photo-ZIP/миниатюры, rollback, price-change-digest |
-| 5 — Frontend | 🟡 | login/catalog/layouts/middleware готовы; **нет manager-страниц и детальной карточки товара** |
-| 6–12 | ⬜ | заявки, экспорт, менеджер-панель, hardening, observability, деплой, TG Mini App |
+| 2 — Авторизация + RBAC | ✅ | JWT/сессии, `require_role`, seed-менеджер; CSRF double-submit остаётся задачей hardening |
+| 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией |
+| 4 — Импорт CSV (Celery) | 🟡 | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI готовы; отложены streaming upload в S3, photo-ZIP/миниатюры и rollback версии |
+| 5 — Frontend | 🟡 | login, каталог и карточка товара, корзина/checkout, заявки, избранное, профиль и основные manager-страницы готовы; остаются недостающие экраны и полировка UX |
+| 6–8 — Заявки и менеджер | 🟡 | клиентские и manager API/UI заявок реализованы; экспорт и оставшиеся manager-сценарии не завершены |
+| 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
 
-**Кандидаты на следующий этап** (выбрать в новой сессии):
-- **Этап 5 (frontend)** — manager-страницы (особенно `/manager/import`, потребляющая эндпоинт Этапа 4) + `/product/[sku]`;
-- **Этап 3 gap** — слой Redis-кэша каталога/цен с инвалидацией по тегам;
-- **Этап 4 deferred** — photo-ZIP+миниатюры, rollback версии, `PRICE_CHANGED_DIGEST`.
+**Ближайшие задачи / остаток:**
+- **Hardening и поиск** — CSRF double-submit для cookie auth, RS256 production secrets, FTS/pg_trgm вместо ILIKE;
+- **Импорт** — streaming upload в S3, photo-ZIP+миниатюры и rollback версии;
+- **Продуктовые сценарии** — экспорт, оставшиеся manager-экраны и UX-полировка;
+- **Инфраструктура** — observability, production deployment и TG Mini App.
 
 ---
 

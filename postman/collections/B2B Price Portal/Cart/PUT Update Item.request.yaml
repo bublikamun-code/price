@@ -1,0 +1,18 @@
+$kind: http-request
+name: PUT Update Item
+method: PUT
+url: '{{base_url}}/api/v1/cart/items/{{sku}}'
+order: 3000
+pathVariables:
+  - key: sku
+    value: 'ARTICLE-001'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "quantity": 2,
+      "note": "Комментарий"
+    }

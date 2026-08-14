@@ -73,6 +73,30 @@ async def _truncate_tables(engine):
         await conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
 
 
+@pytest_asyncio.fixture(autouse=True, loop_scope="function")
+async def _isolated_cache():
+    """Module-level Redis-клиент кэша привязан к первому event-loop, а у каждого
+    теста свой loop → подменяем клиент на свежий и чистим ключи между тестами
+    (RESTART IDENTITY переиспользует user_id, stale-кэш протёк бы в следующий тест)."""
+    from redis.asyncio import Redis
+
+    from app.core.config import settings
+    from app.services import cache as cache_module
+
+    original_redis = cache_module.cache.redis
+    client = Redis.from_url(settings.redis_url, decode_responses=True)
+    cache_module.cache.redis = client
+    try:
+        keys = await client.keys(f"{settings.cache_key_prefix}:*")
+        if keys:
+            await client.delete(*keys)
+    except Exception:
+        pass  # Redis недоступен (локальный запуск без compose) — тесты кэша со своими стабами
+    yield
+    cache_module.cache.redis = original_redis
+    await client.aclose()
+
+
 # ---------- helpers ----------
 @pytest_asyncio.fixture
 async def session_factory(engine):
@@ -211,6 +235,19 @@ async def api_client(engine, session_factory):
     limiter.enabled = False
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
+        original_request = client.request
+
+        async def _request_with_csrf(method, url, **kwargs):
+            if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+                headers = dict(kwargs.pop("headers", {}) or {})
+                if "Authorization" not in headers and "authorization" not in headers:
+                    csrf_token = client.cookies.get("csrf_token")
+                    if csrf_token:
+                        headers.setdefault("X-CSRF-Token", csrf_token)
+                kwargs["headers"] = headers
+            return await original_request(method, url, **kwargs)
+
+        client.request = _request_with_csrf
         yield client
     app.dependency_overrides.clear()
     limiter.enabled = False

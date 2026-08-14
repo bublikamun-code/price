@@ -1,0 +1,8 @@
+$kind: http-request
+name: POST Cancel Order
+method: POST
+url: '{{base_url}}/api/v1/orders/{{order_id}}/cancel'
+order: 5000
+pathVariables:
+  - key: order_id
+    value: ''

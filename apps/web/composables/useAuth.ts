@@ -39,6 +39,11 @@ function apiBaseURL(): string {
   return import.meta.server ? config.apiBase : config.public.apiBase
 }
 
+function csrfHeaders(): Record<string, string> {
+  const csrfToken = useCookie<string | null>('csrf_token').value
+  return csrfToken ? { 'X-CSRF-Token': csrfToken } : {}
+}
+
 const COOKIE_MAX_AGE = {
   token: 60 * 60, // 1 ч
   user: 60 * 60 * 24, // 1 день
@@ -161,6 +166,7 @@ export const useAuthStore = defineStore('auth', () => {
       const pair = await $fetch<TokenPair>('/api/v1/auth/refresh', {
         baseURL,
         method: 'POST',
+        headers: csrfHeaders(),
         credentials: 'include',
       })
       applyTokens(pair)
@@ -176,7 +182,7 @@ export const useAuthStore = defineStore('auth', () => {
       await $fetch('/api/v1/auth/logout', {
         baseURL,
         method: 'POST',
-        headers: authHeaders(),
+        headers: { ...authHeaders(), ...csrfHeaders() },
         credentials: 'include',
       })
     } catch {

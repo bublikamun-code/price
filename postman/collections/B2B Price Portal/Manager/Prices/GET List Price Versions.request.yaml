@@ -1,0 +1,14 @@
+$kind: http-request
+name: GET List Price Versions
+method: GET
+url: '{{base_url}}/api/v1/manager/prices/versions'
+order: 2000
+queryParams:
+  - key: page
+    value: '1'
+    description: 'Номер страницы'
+    disabled: true
+  - key: per_page
+    value: '20'
+    description: 'Элементов на странице'
+    disabled: true

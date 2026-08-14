@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.router import api_router
 from app.api.v1 import health
 from app.core.config import settings
+from app.core.deps import validate_csrf
 from app.core.limiter import limiter
 from app.core.logging import get_logger, setup_logging
 from app.schemas import APIError, ErrorResponse
@@ -59,6 +60,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------- Middleware: CSRF для cookie-аутентификации ----------
+class CSRFMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            validate_csrf(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return await call_next(request)
+
+
+app.add_middleware(CSRFMiddleware)
 
 
 # ---------- Middleware: correlation id + логирование запросов ----------

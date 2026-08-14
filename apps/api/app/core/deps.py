@@ -2,6 +2,7 @@
 
 См. ARCHITECTURE_PLAN.md §6, §11.
 """
+import secrets
 import uuid
 from typing import Sequence
 
@@ -9,6 +10,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.models as m
+from app.core.config import settings
 from app.core.security import JWTError, decode_token
 from app.db.session import get_db
 from app.models.enums import UserRole
@@ -27,6 +29,21 @@ def _extract_refresh_token(request: Request) -> str | None:
     if body_refresh:
         return body_refresh
     return request.cookies.get("refresh_token")
+
+
+def validate_csrf(request: Request) -> None:
+    """Double-submit CSRF для mutating-запросов с cookie-аутентификацией."""
+    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return
+    auth = request.headers.get("Authorization", "")
+    if auth.lower().startswith("bearer "):
+        return
+    if not (request.cookies.get("access_token") or request.cookies.get("refresh_token")):
+        return
+    cookie_token = request.cookies.get(settings.csrf_cookie_name)
+    header_token = request.headers.get(settings.csrf_header_name)
+    if not cookie_token or not header_token or not secrets.compare_digest(cookie_token, header_token):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF-токен отсутствует или неверен")
 
 
 async def get_current_user(

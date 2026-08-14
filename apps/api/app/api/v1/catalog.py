@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.catalog import Brand, Series
@@ -24,6 +25,15 @@ from app.schemas.catalog import (
     ProductCard,
     ProductDetail,
     SeriesRef,
+)
+from app.services.cache import (
+    CATALOG_TAG,
+    FILTERS_TAG,
+    cache,
+    catalog_key,
+    product_key,
+    stable_hash,
+    user_tag,
 )
 from app.services.pricing import PricingService
 
@@ -48,6 +58,23 @@ async def list_products(
     filters = repo.CatalogFilters(
         q=q, brand_ids=brand, series_ids=series, stock=stock
     )
+    key = catalog_key(
+        user_id=user.id,
+        mode=price_calc_mode,
+        filters={
+            "q": q,
+            "brand": sorted(str(v) for v in (brand or [])),
+            "series": sorted(str(v) for v in (series or [])),
+            "stock": stock,
+            "sort": sort,
+            "page": page,
+            "per_page": per_page,
+        },
+    )
+    cached = await cache.get(key)
+    if cached is not None:
+        return CatalogPage.model_validate(cached)
+
     limit, offset = per_page, (page - 1) * per_page
 
     rows = await repo.fetch_catalog(
@@ -78,7 +105,14 @@ async def list_products(
             )
         )
 
-    return CatalogPage(data=cards, meta=MetaPage(page=page, per_page=per_page, total=total))
+    result = CatalogPage(data=cards, meta=MetaPage(page=page, per_page=per_page, total=total))
+    await cache.set(
+        key,
+        result.model_dump(mode="json"),
+        ttl=settings.cache_ttl_seconds,
+        tags=[CATALOG_TAG, user_tag(user.id)],
+    )
+    return result
 
 
 @router.get("/filters", response_model=FiltersOut)
@@ -86,8 +120,19 @@ async def get_filters(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FiltersOut:
+    key = f"filters:{stable_hash({})}"
+    cached = await cache.get(key)
+    if cached is not None:
+        return FiltersOut.model_validate(cached)
     data = await repo.fetch_filters(db)
-    return FiltersOut(**data)
+    result = FiltersOut(**data)
+    await cache.set(
+        key,
+        result.model_dump(mode="json"),
+        ttl=settings.cache_ttl_seconds,
+        tags=[FILTERS_TAG],
+    )
+    return result
 
 
 @router.get("/products/{sku}", response_model=ProductDetail)
@@ -97,6 +142,11 @@ async def get_product(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ProductDetail:
+    key = product_key(user_id=user.id, mode=price_calc_mode, sku=sku)
+    cached = await cache.get(key)
+    if cached is not None:
+        return ProductDetail.model_validate(cached)
+
     product = await repo.get_by_sku(db, sku)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Товар не найден")
@@ -116,7 +166,7 @@ async def get_product(
         if s:
             series = SeriesRef(id=s.id, name=s.name, brand_id=s.brand_id, photo_key=s.photo_key)
 
-    return ProductDetail(
+    result = ProductDetail(
         id=product.id,
         sku=product.sku,
         name=product.name,
@@ -128,6 +178,13 @@ async def get_product(
         override_price=float(product.override_price) if product.override_price is not None else None,
         **prices,
     )
+    await cache.set(
+        key,
+        result.model_dump(mode="json"),
+        ttl=settings.cache_ttl_seconds,
+        tags=[CATALOG_TAG, user_tag(user.id)],
+    )
+    return result
 
 
 @router.get("/products/{sku}/price-history", response_model=list[PriceHistoryItem])

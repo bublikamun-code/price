@@ -1,0 +1,5 @@
+$kind: http-request
+name: DELETE Clear Cart
+method: DELETE
+url: '{{base_url}}/api/v1/cart'
+order: 5000

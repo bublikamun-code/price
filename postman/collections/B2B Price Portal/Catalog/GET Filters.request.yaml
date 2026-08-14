@@ -1,0 +1,5 @@
+$kind: http-request
+name: GET Filters
+method: GET
+url: '{{base_url}}/api/v1/catalog/filters'
+order: 2000

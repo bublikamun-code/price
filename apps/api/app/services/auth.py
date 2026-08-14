@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.core.security import create_access_token, verify_password
 from app.models.user import Session as SessionModel, User
 from app.schemas.auth import TokenPair, UserUpdate
+from app.services.cache import invalidate_tags, user_tag
 
 log = get_logger("app.services.auth")
 
@@ -104,6 +105,8 @@ class AuthService:
         for field, value in changed.items():
             setattr(user, field, value)
         await self.db.commit()
+        if "display_currency" in changed:
+            await invalidate_tags(user_tag(user.id))
         log.info("auth.update_profile", user_id=str(user.id), fields=",".join(changed))
         return user
 

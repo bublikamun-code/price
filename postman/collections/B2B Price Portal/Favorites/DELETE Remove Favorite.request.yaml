@@ -1,0 +1,8 @@
+$kind: http-request
+name: DELETE Remove Favorite
+method: DELETE
+url: '{{base_url}}/api/v1/favorites/{{sku}}'
+order: 3000
+pathVariables:
+  - key: sku
+    value: 'ARTICLE-001'

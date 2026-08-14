@@ -1,0 +1,8 @@
+$kind: http-request
+name: GET Price Version Errors
+method: GET
+url: '{{base_url}}/api/v1/manager/prices/versions/{{version_id}}/errors'
+order: 4000
+pathVariables:
+  - key: version_id
+    value: ''

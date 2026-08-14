@@ -1,0 +1,56 @@
+$kind: collection
+name: B2B Price Portal
+version: '3.0'
+item:
+  - name: Health
+    item:
+      - $ref: './Health/GET Liveness.request.yaml'
+      - $ref: './Health/GET Readiness.request.yaml'
+  - name: Auth
+    item:
+      - $ref: './Auth/POST Login.request.yaml'
+      - $ref: './Auth/POST Refresh Token.request.yaml'
+      - $ref: './Auth/POST Logout.request.yaml'
+      - $ref: './Auth/GET Me.request.yaml'
+      - $ref: './Auth/PATCH Update Me.request.yaml'
+  - name: Catalog
+    item:
+      - $ref: './Catalog/GET List Products.request.yaml'
+      - $ref: './Catalog/GET Filters.request.yaml'
+      - $ref: './Catalog/GET Product by SKU.request.yaml'
+      - $ref: './Catalog/GET Price History.request.yaml'
+  - name: Cart
+    item:
+      - $ref: './Cart/GET Cart.request.yaml'
+      - $ref: './Cart/POST Add Item.request.yaml'
+      - $ref: './Cart/PUT Update Item.request.yaml'
+      - $ref: './Cart/DELETE Remove Item.request.yaml'
+      - $ref: './Cart/DELETE Clear Cart.request.yaml'
+  - name: Favorites
+    item:
+      - $ref: './Favorites/GET List Favorites.request.yaml'
+      - $ref: './Favorites/POST Add Favorite.request.yaml'
+      - $ref: './Favorites/DELETE Remove Favorite.request.yaml'
+  - name: Orders
+    item:
+      - $ref: './Orders/GET List Orders.request.yaml'
+      - $ref: './Orders/POST Create Order.request.yaml'
+      - $ref: './Orders/GET Order by ID.request.yaml'
+      - $ref: './Orders/POST Repeat Order.request.yaml'
+      - $ref: './Orders/POST Cancel Order.request.yaml'
+  - name: Manager
+    item:
+      - name: Prices
+        item:
+          - $ref: './Manager/Prices/POST Import Price List.request.yaml'
+          - $ref: './Manager/Prices/GET List Price Versions.request.yaml'
+          - $ref: './Manager/Prices/GET Price Version by ID.request.yaml'
+          - $ref: './Manager/Prices/GET Price Version Errors.request.yaml'
+      - name: Orders
+        item:
+          - $ref: './Manager/Orders/GET List All Orders.request.yaml'
+          - $ref: './Manager/Orders/GET Order by ID.request.yaml'
+          - $ref: './Manager/Orders/PATCH Update Order Status.request.yaml'
+      - name: Ping
+        item:
+          - $ref: './Manager/Ping/GET Manager Ping.request.yaml'

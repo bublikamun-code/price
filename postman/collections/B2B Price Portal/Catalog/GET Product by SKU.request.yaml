@@ -1,0 +1,13 @@
+$kind: http-request
+name: GET Product by SKU
+method: GET
+url: '{{base_url}}/api/v1/catalog/products/{{sku}}'
+order: 3000
+pathVariables:
+  - key: sku
+    value: 'ARTICLE-001'
+queryParams:
+  - key: price_calc_mode
+    value: ''
+    description: 'fixed или nbrb_current'
+    disabled: true
