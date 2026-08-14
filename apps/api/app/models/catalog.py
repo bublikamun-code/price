@@ -105,6 +105,19 @@ class Product(Base, TimestampMixin, UUIDPrimaryKey):
             postgresql_using="gin",
             postgresql_ops={"attributes": "jsonb_path_ops"},
         ),
+        # pg_trgm GIN для поиска-подстроки (ILIKE '%q%') по каталогу (§5.2)
+        Index(
+            "ix_products_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_products_sku_trgm",
+            "sku",
+            postgresql_using="gin",
+            postgresql_ops={"sku": "gin_trgm_ops"},
+        ),
     )
 
 

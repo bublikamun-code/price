@@ -115,14 +115,14 @@ make test          # тесты
 | 0 — Скелет + Docker | ✅ | compose/Makefile (pre-commit/CI нет) |
 | 1 — БД и ядро BE | ✅ | модели, миграции, конфиг, structlog |
 | 2 — Авторизация + RBAC | ✅ | JWT/сессии, `require_role`, seed-менеджер; CSRF double-submit остаётся задачей hardening |
-| 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией |
+| 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией; индексированный pg_trgm-поиск |
 | 4 — Импорт CSV (Celery) | 🟡 | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI готовы; отложены streaming upload в S3, photo-ZIP/миниатюры и rollback версии |
 | 5 — Frontend | 🟡 | login, каталог и карточка товара, корзина/checkout, заявки, избранное, профиль и основные manager-страницы готовы; остаются недостающие экраны и полировка UX |
 | 6–8 — Заявки и менеджер | 🟡 | клиентские и manager API/UI заявок реализованы; экспорт и оставшиеся manager-сценарии не завершены |
 | 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
 
 **Ближайшие задачи / остаток:**
-- **Hardening и поиск** — CSRF double-submit для cookie auth, RS256 production secrets, FTS/pg_trgm вместо ILIKE;
+- **Hardening и поиск** — CSRF double-submit ✅ и pg_trgm-индексы поиска ✅ сделаны; остаются RS256 production secrets;
 - **Импорт** — streaming upload в S3, photo-ZIP+миниатюры и rollback версии;
 - **Продуктовые сценарии** — экспорт, оставшиеся manager-экраны и UX-полировка;
 - **Инфраструктура** — observability, production deployment и TG Mini App.

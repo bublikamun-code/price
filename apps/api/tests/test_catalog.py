@@ -88,6 +88,22 @@ async def test_list_search_by_sku(api_client, session_factory):
     assert skus == ["A-100", "A-101"]
 
 
+async def test_list_search_by_name_substring_case_insensitive(api_client, session_factory):
+    """Поиск — подстрока без учёта регистра и по name (семантика ILIKE,
+    которую ускоряют pg_trgm GIN-индексы; см. §5.2)."""
+    sf = session_factory
+    await _seed_basic_catalog(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    r = await api_client.get("/api/v1/catalog/products?q=wIdGeT")
+    skus = [p["sku"] for p in r.json()["data"]]
+    assert skus == ["A-100", "A-101"]
+
+    r2 = await api_client.get("/api/v1/catalog/products?q=Gadget")
+    assert [p["sku"] for p in r2.json()["data"]] == ["B-200"]
+
+
 async def test_list_filter_by_brand(api_client, session_factory):
     sf = session_factory
     brand_a, brand_b, s1, _ = await _seed_basic_catalog(sf)

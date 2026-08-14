@@ -325,6 +325,7 @@ app/
 - `GIN (search_vector)`
 - `btree (brand_id), btree (series_id)`
 - `pg_trgm GIN ON (name gin_trgm_ops)` — для поиска «как в Google».
+- `pg_trgm GIN ON (sku gin_trgm_ops)` — поиск каталога `q` идёт по `sku ILIKE '%…%' OR name ILIKE '%…%'`; обе ветки ускоряются bitmap-сканом по trgm-индексам (сама семантика ILIKE-подстроки сохраняется).
 - `GIN (attributes jsonb_path_ops)` — фильтрация по характеристикам через оператор `@>` (JSONB-контейнмент).
 
 > **`attributes` (JSONB).** Гибкое хранилище спецификаций товара без жёсткой схемы: цвет, кол-во модулей, IP-рейтинг, габариты, материал и т.п. — состав зависит от категории (электротехника, корпуса, автоматы…). Пример:
