@@ -20,6 +20,9 @@ export interface UserPublic {
   is_active: boolean
   display_currency: string
   consent_accepted: boolean
+  // Дайджест изменения цен (in-app уведомления). См. PATCH /api/v1/auth/me.
+  price_digest_enabled: boolean
+  price_digest_sources: string[] // только 'cart' | 'favorite' | 'orders'
 }
 
 export interface BrandRef {

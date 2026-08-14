@@ -414,6 +414,7 @@ app/
 | POST | `/api/v1/auth/refresh` | Обновить access. |
 | POST | `/api/v1/auth/logout` | Отзыв refresh. |
 | GET | `/api/v1/auth/me` | Текущий пользователь + матрица скидок. |
+| PATCH | `/api/v1/auth/me` | Обновить свой профиль (partial update): `display_currency`, `price_digest_enabled`, `price_digest_sources` (§20.4). |
 
 ### Каталог и ценообразование
 | Method | Path | Описание |

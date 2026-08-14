@@ -7,7 +7,7 @@ from app.core.deps import get_current_user
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import LoginRequest, TokenPair, UserPublic
+from app.schemas.auth import LoginRequest, TokenPair, UserPublic, UserUpdate
 from app.services.auth import AuthError, AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -96,3 +96,18 @@ async def logout(
 async def me(current_user: User = Depends(get_current_user)) -> UserPublic:
     """Текущий пользователь."""
     return UserPublic.from_user(current_user)
+
+
+@router.patch("/me", response_model=UserPublic)
+async def update_me(
+    body: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserPublic:
+    """Частичное обновление профиля (§6): display_currency, настройки дайджеста цен (§20.4).
+
+    Доступно любому авторизованному (client/manager); применяются только заданные поля.
+    """
+    svc = AuthService(db)
+    user = await svc.update_profile(current_user, body)
+    return UserPublic.from_user(user)

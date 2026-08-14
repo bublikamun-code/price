@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import create_access_token, verify_password
 from app.models.user import Session as SessionModel, User
-from app.schemas.auth import TokenPair
+from app.schemas.auth import TokenPair, UserUpdate
 
 log = get_logger("app.services.auth")
 
@@ -92,6 +92,20 @@ class AuthService:
             session.revoked = True
             await self.db.commit()
             log.info("auth.logout", sid=str(session.id))
+
+    # ---------- update profile (PATCH /auth/me, §6 / §20.4) ----------
+    async def update_profile(self, user: User, updates: UserUpdate) -> User:
+        """Частичное обновление профиля: применяются только явно заданные поля.
+
+        ``null`` в значении трактуется как «поле не задано» (все поля Optional),
+        поэтому не затирает прежнее значение в БД.
+        """
+        changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
+        for field, value in changed.items():
+            setattr(user, field, value)
+        await self.db.commit()
+        log.info("auth.update_profile", user_id=str(user.id), fields=",".join(changed))
+        return user
 
     # ---------- внутреннее: создание сессии + токенов ----------
     async def _issue_new_session(

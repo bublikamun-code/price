@@ -7,8 +7,8 @@ Provides:
   - api_client (httpx AsyncClient поверх FastAPI через ASGITransport)
   - create_user(email, role, password) -> User  (хелпер для сидинга)
 """
-import asyncio
 import os
+from datetime import date
 
 import pytest
 import pytest_asyncio
@@ -23,7 +23,9 @@ from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.enums import UserRole
+from app.models.catalog import Brand, Product, Series
+from app.models.enums import StockStatus, UserRole
+from app.models.pricing import ExchangeRate, UserBrand
 from app.models.user import User
 
 # testcontainers — импортируем лениво (нужен только без TEST_DB_URL)
@@ -95,12 +97,6 @@ async def create_user(
 
 
 # ---------- catalog seed helpers ----------
-import uuid as _uuid
-from datetime import date, datetime, timezone
-
-from app.models.catalog import Brand, PriceHistory, Product, Series
-from app.models.enums import StockStatus
-from app.models.pricing import ExchangeRate, UserBrand
 
 
 async def create_brand(session_factory, *, name: str, slug: str | None = None) -> Brand:

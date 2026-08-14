@@ -3,6 +3,7 @@
 Покрытие:
   - login: успех, неверный пароль, неактивный пользователь, case-insensitive email
   - /me: с токеном, без токена (401), с кривым токеном (401)
+  - PATCH /me: display_currency (нормализация/422), дайджест цен (§20.4), дедупликация источников, пустое тело (422), без токена (401)
   - refresh: rotation, повторное использование старого refresh (401)
   - logout: отзыв сессии, /me после logout (401)
   - RBAC: клиент → /manager/ping (403), менеджер → 200
@@ -102,6 +103,99 @@ async def test_me_with_bad_token(api_client):
     r = await api_client.get(
         "/api/v1/auth/me", headers={"Authorization": "Bearer not.a.jwt"}
     )
+    assert r.status_code == 401
+
+
+# =========================================================
+# PATCH /ME (профиль: display_currency, дайджест цен — §6, §20.4)
+# =========================================================
+async def test_me_returns_digest_fields(api_client, session_factory):
+    """GET /me отдаёт настройки дайджеста: выключен, все 3 источника по умолчанию."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.get("/api/v1/auth/me")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["price_digest_enabled"] is False
+    assert body["price_digest_sources"] == ["cart", "favorite", "orders"]
+
+
+async def test_patch_me_updates_digest(api_client, session_factory):
+    """PATCH настроек дайджеста: ответ отражает изменения и они зафиксированы в БД."""
+    from app.models.user import User
+
+    user = await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch(
+        "/api/v1/auth/me",
+        json={"price_digest_enabled": True, "price_digest_sources": ["cart", "orders"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["price_digest_enabled"] is True
+    assert body["price_digest_sources"] == ["cart", "orders"]
+
+    async with session_factory() as s:
+        db_user = await s.get(User, user.id)
+        assert db_user.price_digest_enabled is True
+        assert db_user.price_digest_sources == ["cart", "orders"]
+
+
+async def test_patch_me_display_currency_ok(api_client, session_factory):
+    """Валюта нормализуется (strip + upper, как в manager/prices.py): 'usd' → 'USD'.
+
+    Прочие поля профиля (дайджест) не затрагиваются — применяются только заданные поля.
+    """
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": " usd "})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["display_currency"] == "USD"
+    assert body["price_digest_enabled"] is False  # не задано — не изменилось
+
+
+async def test_patch_me_display_currency_invalid(api_client, session_factory):
+    """display_currency обязана быть ровно 3 латинскими заглавными (после нормализации)."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    for bad in ("us", "USDD", "ЁUR", ""):
+        r = await api_client.patch("/api/v1/auth/me", json={"display_currency": bad})
+        assert r.status_code == 422, f"{bad!r}: {r.status_code} {r.text}"
+
+
+async def test_patch_me_invalid_source(api_client, session_factory):
+    """Источники дайджеста — только 'cart' | 'favorite' | 'orders'."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch(
+        "/api/v1/auth/me", json={"price_digest_sources": ["wishlist"]}
+    )
+    assert r.status_code == 422
+
+
+async def test_patch_me_dedup_sources(api_client, session_factory):
+    """Дубликаты источников дедуплицируются (порядок сохраняется)."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch(
+        "/api/v1/auth/me", json={"price_digest_sources": ["cart", "cart", "orders"]}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["price_digest_sources"] == ["cart", "orders"]
+
+
+async def test_patch_me_empty_body(api_client, session_factory):
+    """Пустое тело / все поля null → 422 «нечего обновлять»."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch("/api/v1/auth/me", json={})
+    assert r.status_code == 422
+
+
+async def test_patch_me_unauthorized(api_client):
+    """Без авторизации PATCH /me → 401."""
+    r = await api_client.patch("/api/v1/auth/me", json={"price_digest_enabled": True})
     assert r.status_code == 401
 
 

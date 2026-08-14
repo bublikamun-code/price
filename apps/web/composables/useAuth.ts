@@ -15,6 +15,16 @@ export interface AuthUser {
   displayCurrency: string
   company?: string | null
   phone?: string | null
+  // Дайджест изменения цен (in-app уведомления).
+  priceDigestEnabled: boolean
+  priceDigestSources: string[] // 'cart' | 'favorite' | 'orders'
+}
+
+/** Тело PATCH /api/v1/auth/me (минимум одно поле). */
+export interface UserMePatch {
+  display_currency?: string
+  price_digest_enabled?: boolean
+  price_digest_sources?: string[]
 }
 
 /** Cookie-refs, регистрируемые плагином auth.session.ts. */
@@ -77,6 +87,9 @@ export const useAuthStore = defineStore('auth', () => {
         displayCurrency: u.display_currency,
         company: u.company,
         phone: u.phone,
+        // дефолты — на случай, если бэкенд ещё не отдаёт новые поля
+        priceDigestEnabled: u.price_digest_enabled ?? false,
+        priceDigestSources: u.price_digest_sources ?? [],
       }
     }
     if (cookies) cookies.userC.value = user.value
@@ -128,6 +141,19 @@ export const useAuthStore = defineStore('auth', () => {
     applyUser(me)
   }
 
+  /** Обновить профиль (PATCH /api/v1/auth/me): валюта, дайджест цен. */
+  async function updateMe(patch: UserMePatch): Promise<UserPublic> {
+    // useApi берётся лениво (только клиентские submit'ы): при вызове в setup стора
+    // получился бы цикл useAuth → useApi → useAuth во время создания стора.
+    const { request } = useApi()
+    const me = await request<UserPublic>('/api/v1/auth/me', {
+      method: 'PATCH',
+      body: patch,
+    })
+    applyUser(me)
+    return me
+  }
+
   /** Обновить access-токен. true — успех. */
   async function refresh(): Promise<boolean> {
     const baseURL = apiBaseURL()
@@ -164,7 +190,7 @@ export const useAuthStore = defineStore('auth', () => {
     user, token,
     isAuthenticated, isClient, isManager,
     registerCookies,
-    login, fetchMe, refresh, logout, clear, applyUser, applyTokens,
+    login, fetchMe, updateMe, refresh, logout, clear, applyUser, applyTokens,
   }
 })
 

@@ -291,7 +291,7 @@
 ### `/profile/notifications` — Настройки уведомлений
 - **Роль:** client/manager.
 - **Блоки:** таблица типов уведомлений × чекбоксы каналов (in-app / Telegram); для `PRICE_CHANGED_DIGEST` — выбор источника (корзина/избранное/заказы).
-- **API:** `GET/PUT /users/me/notification-settings`.
+- **API:** `GET /auth/me`, `PATCH /auth/me` (настройки — поля `price_digest_*` в профиле, см. §6).
 
 ### `/profile/sessions` — Активные сессии (фича I)
 - **Роль:** client/manager.

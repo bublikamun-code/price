@@ -9,7 +9,6 @@
   - RBAC: каталог требует авторизации
   - архив/soft-delete: удалённые товары не видны
 """
-import pytest
 
 from app.models.enums import StockStatus, UserRole
 from tests.conftest import (
@@ -286,7 +285,7 @@ async def test_attributes_surfaced_in_list_and_detail(api_client, session_factor
 
 
 async def test_product_not_found(api_client, session_factory):
-    await create_user(sf := session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
     r = await api_client.get("/api/v1/catalog/products/NOPE-999")
     assert r.status_code == 404
