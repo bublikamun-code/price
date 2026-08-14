@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Базовые стили дизайн-системы. См. ARCHITECTURE_PLAN.md §3.
+   Плоский, воздушный, минимализм, мягкие цвета.
+   ============================================================ */
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display font-semibold text-ink;
+  }
+
+  /* Скроллбар — мягкий */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-pill;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-faint;
+  }
+}
+
+@layer components {
+  /* Карточка-плитка — основной строительный блок UI */
+  .card {
+    @apply bg-surface rounded-card shadow-card border border-border/60
+           transition-all duration-200 ease-soft;
+  }
+  .card-hover {
+    @apply hover:-translate-y-0.5 hover:shadow-card-hover;
+  }
+
+  /* Кнопки */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5
+           rounded-pill font-medium text-sm transition-all duration-200 ease-soft
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-hover active:scale-[.98];
+  }
+  .btn-secondary {
+    @apply btn bg-secondary-soft text-secondary hover:bg-secondary/15;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-muted hover:bg-canvas hover:text-ink;
+  }
+  .btn-outline {
+    @apply btn bg-surface border border-border text-ink hover:border-primary hover:text-primary;
+  }
+
+  /* Чипы/бейджи */
+  .chip {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-pill text-xs font-medium;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-xs font-medium;
+  }
+  .badge-success { @apply badge bg-success-soft text-success; }
+  .badge-warning { @apply badge bg-warning-soft text-warning; }
+  .badge-danger  { @apply badge bg-danger-soft text-danger; }
+  .badge-info    { @apply badge bg-primary-soft text-primary; }
+
+  /* Поля ввода */
+  .input {
+    @apply w-full px-4 py-2.5 rounded-pill bg-surface border border-border
+           text-ink placeholder:text-ink-faint text-sm
+           focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15
+           transition-all duration-200;
+  }
+  .label {
+    @apply block text-sm font-medium text-ink mb-1.5;
+  }
+
+  /* Sidebar-навигация */
+  .nav-link {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-card text-sm font-medium
+           text-ink-muted hover:bg-canvas hover:text-ink transition-colors duration-150;
+  }
+  .nav-link-active {
+    @apply bg-primary-soft text-primary;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    @apply bg-gradient-to-r from-border via-surface-2 to-border bg-[length:200%_100%] animate-pulse rounded-card;
+  }
+}
+
+@layer utilities {
+  .container-app {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+}

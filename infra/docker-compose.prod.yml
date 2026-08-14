@@ -1,0 +1,60 @@
+# ============================================================
+#  docker-compose PROD override
+#  Применение: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#  Отличия от dev:
+#    - нет монтирования исходников (код внутри образа)
+#    - api запускается через gunicorn+uvicorn-workers
+#    - web отдаёт собранный .output (Nitro), без dev-сервера
+#    - nginx на 80/443 с TLS (сертификаты монтируются извне)
+#    - рестарты always
+# ============================================================
+
+services:
+  api:
+    build:
+      target: runtime
+    env_file: ../.env
+    command: >
+      gunicorn app.main:app
+      --worker-class uvicorn.workers.UvicornWorker
+      --workers 4 --bind 0.0.0.0:8000
+      --timeout 120 --graceful-timeout 30
+    volumes: []
+    restart: always
+    ports: !reset []           # наружу только через nginx
+
+  worker:
+    build:
+      target: runtime
+    volumes: []
+    restart: always
+    command: celery -A app.workers.celery_app worker -l info --concurrency=4
+
+  beat:
+    build:
+      target: runtime
+    volumes: []
+    restart: always
+
+  bot:
+    build:
+      target: runtime
+    volumes: []
+    restart: always
+
+  web:
+    build:
+      target: runtime
+    volumes: []
+    restart: always
+    command: ["node", ".output/server/index.mjs"]
+
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    restart: always

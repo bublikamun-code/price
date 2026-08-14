@@ -1,0 +1,220 @@
+"""Тестовая инфраструктура.
+
+Поднимает PostgreSQL (testcontainers) на сессию, создаёт схему по моделям
+(Base.metadata.create_all), для каждого теста чистит таблицы (TRUNCATE CASCADE).
+Provides:
+  - db_url, engine, db_session (низкоуровневый доступ к БД)
+  - api_client (httpx AsyncClient поверх FastAPI через ASGITransport)
+  - create_user(email, role, password) -> User  (хелпер для сидинга)
+"""
+import asyncio
+import os
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+import app.models  # noqa: F401  (регистрация моделей в Base.metadata)
+from app.core.limiter import limiter
+from app.core.security import hash_password
+from app.db.base import Base
+from app.db.session import get_db
+from app.main import app
+from app.models.enums import UserRole
+from app.models.user import User
+
+# testcontainers — импортируем лениво (нужен только без TEST_DB_URL)
+def _import_pg_container():
+    from testcontainers.postgres import PostgresContainer
+    return PostgresContainer
+
+
+# ---------- DB URL: env override или testcontainers ----------
+@pytest.fixture(scope="session")
+def db_url():
+    env_url = os.environ.get("TEST_DB_URL")
+    if env_url:
+        yield env_url
+        return
+    PostgresContainer = _import_pg_container()
+    container = PostgresContainer("postgres:16-alpine", driver="asyncpg")
+    container.start()
+    try:
+        yield container.get_connection_url()
+    finally:
+        container.stop()
+
+
+# ---------- Engine + schema (session-scoped) ----------
+@pytest_asyncio.fixture(scope="session")
+async def engine(db_url):
+    # NullPool: новое соединение на каждый checkout → нет переиспользования
+    # между разными event-loop'ами (pytest-asyncio + asyncpg).
+    eng = create_async_engine(db_url, pool_pre_ping=True, poolclass=NullPool)
+    # Расширения, нужные моделям (create_all не запускает логику миграций)
+    async with eng.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _truncate_tables(engine):
+    """Чистим все таблицы перед каждым тестом."""
+    async with engine.begin() as conn:
+        names = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
+        await conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+
+
+# ---------- helpers ----------
+@pytest_asyncio.fixture
+async def session_factory(engine):
+    return async_sessionmaker(bind=engine, expire_on_commit=False)
+
+
+async def create_user(
+    session_factory, *, email: str, role: UserRole, password: str = "Passw0rd!"
+) -> User:
+    async with session_factory() as s:
+        user = User(
+            email=email,
+            password_hash=hash_password(password),
+            full_name=email.split("@")[0].title(),
+            role=role,
+            is_active=True,
+        )
+        s.add(user)
+        await s.commit()
+        await s.refresh(user)
+        return user
+
+
+# ---------- catalog seed helpers ----------
+import uuid as _uuid
+from datetime import date, datetime, timezone
+
+from app.models.catalog import Brand, PriceHistory, Product, Series
+from app.models.enums import StockStatus
+from app.models.pricing import ExchangeRate, UserBrand
+
+
+async def create_brand(session_factory, *, name: str, slug: str | None = None) -> Brand:
+    async with session_factory() as s:
+        brand = Brand(name=name, slug=slug or name.lower().replace(" ", "-"))
+        s.add(brand)
+        await s.commit()
+        await s.refresh(brand)
+        return brand
+
+
+async def create_series(session_factory, *, brand: Brand, name: str, photo_key: str | None = None) -> Series:
+    async with session_factory() as s:
+        ser = Series(name=name, brand_id=brand.id, photo_key=photo_key)
+        s.add(ser)
+        await s.commit()
+        await s.refresh(ser)
+        return ser
+
+
+async def create_product(
+    session_factory,
+    *,
+    sku: str,
+    name: str,
+    brand: Brand | None = None,
+    series: Series | None = None,
+    base_price=100,
+    override_price=None,
+    stock: StockStatus = StockStatus.IN_STOCK,
+    attributes: dict | None = None,
+) -> Product:
+    async with session_factory() as s:
+        p = Product(
+            sku=sku,
+            name=name,
+            brand_id=brand.id if brand else None,
+            series_id=series.id if series else None,
+            base_price=base_price,
+            override_price=override_price,
+            stock_status=stock,
+            attributes=attributes or {},
+        )
+        s.add(p)
+        await s.commit()
+        await s.refresh(p)
+        return p
+
+
+async def set_discount(session_factory, *, user: User, brand: Brand, percent) -> None:
+    async with session_factory() as s:
+        s.add(UserBrand(user_id=user.id, brand_id=brand.id, discount_percent=percent))
+        await s.commit()
+
+
+async def set_rate(
+    session_factory,
+    *,
+    currency: str,
+    rate,
+    scale: int = 1,
+    fetched_at: date | None = None,
+    source: str = "NBRB",
+) -> ExchangeRate:
+    async with session_factory() as s:
+        er = ExchangeRate(
+            currency_code=currency.upper(),
+            rate=rate,
+            scale=scale,
+            fetched_at=fetched_at or date.today(),
+            source=source,
+            is_manual=False,
+        )
+        s.add(er)
+        await s.commit()
+        await s.refresh(er)
+        return er
+
+
+async def set_fixed_rate_for_user(session_factory, *, user: User, rate: ExchangeRate) -> User:
+    async with session_factory() as s:
+        db_user = await s.get(User, user.id)
+        db_user.fixed_rate_id = rate.id
+        db_user.display_currency = rate.currency_code
+        await s.commit()
+        return db_user
+
+
+async def set_display_currency(session_factory, *, user: User, currency: str) -> None:
+    async with session_factory() as s:
+        db_user = await s.get(User, user.id)
+        db_user.display_currency = currency.upper()
+        await s.commit()
+
+
+# ---------- HTTP client ----------
+@pytest_asyncio.fixture
+async def api_client(engine, session_factory):
+    """httpx AsyncClient с переопределённой get_db → тестовый движок.
+
+    Rate-limiter отключён (включается точечно в тесте rate-limit).
+    """
+    async def _override_get_db():
+        async with session_factory() as s:
+            try:
+                yield s
+            except Exception:
+                await s.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = _override_get_db
+    limiter.enabled = False
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+    app.dependency_overrides.clear()
+    limiter.enabled = False

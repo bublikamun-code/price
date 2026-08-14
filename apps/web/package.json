@@ -1,0 +1,42 @@
+{
+  "name": "price-portal-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.5.5",
+    "nuxt": "^3.13.2",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.15.2",
+    "@nuxtjs/color-mode": "^3.5.1",
+    "@nuxtjs/tailwindcss": "^6.12.2",
+    "@types/node": "^22.7.5",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.12.0",
+    "eslint-flat-config-utils": "^2.1.4",
+    "nuxt-icon": "^0.6.10",
+    "postcss": "^8.4.47",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.8",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.3",
+    "vue-tsc": "^2.1.6"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

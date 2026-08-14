@@ -1,0 +1,7 @@
+⚠ Изменились цены на {{ count }} товар(ов) в ваших отслеживаемых позициях:
+{% for p in items %}
+• {{ p.sku }} {{ p.name }} — {{ p.sign }}{{ p.delta_percent|default('—') }}% ({{ p.category }})
+{% endfor %}{% if count > items|length %}
+
+…и ещё {{ count - items|length }}.
+{% endif %}

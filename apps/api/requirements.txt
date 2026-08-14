@@ -1,0 +1,47 @@
+# ============================================================
+#  Python dependencies — runtime (FastAPI backend)
+#  См. ARCHITECTURE_PLAN.md §2
+# ============================================================
+
+# --- Web framework ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+gunicorn==23.0.0
+python-multipart==0.0.9          # загрузка файлов (CSV, ZIP)
+
+# --- DB / ORM ---
+SQLAlchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+alembic==1.13.3
+
+# --- Validation / config ---
+pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0
+
+# --- Auth / security ---
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.0
+slowapi==0.1.9                   # rate-limiting
+
+# --- Background tasks ---
+celery[redis]==5.4.0
+redis==5.0.8
+
+# --- Object storage (MinIO/S3) ---
+boto3==1.35.23
+
+# --- Data parsing / export ---
+polars==1.7.1                    # быстрый парсинг CSV
+openpyxl==3.1.5                  # экспорт .xlsx
+# weasyprint==62.3               # PDF-генерация (раскомментировать при Этапе 7; требует системных deps)
+Jinja2==3.1.4                    # шаблоны (уведомления, PDF)
+
+# --- HTTP клиент (НБ РБ, Telegram API) ---
+httpx==0.27.2
+
+# --- Logging / observability ---
+structlog==24.4.0
+
+# --- Test (также в requirements-dev.txt, дублируем для удобства запуска в контейнере) ---
+# pytest см. dev
