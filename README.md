@@ -116,14 +116,14 @@ make test          # тесты
 | 1 — БД и ядро BE | ✅ | модели, миграции, конфиг, structlog |
 | 2 — Авторизация + RBAC | ✅ | JWT/сессии, `require_role`, seed-менеджер, CSRF double-submit |
 | 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией; индексированный pg_trgm-поиск |
-| 4 — Импорт CSV (Celery) | 🟡 | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI готовы; streaming upload в S3 (multipart, без буферизации в памяти) ✅; отложены photo-ZIP/миниатюры и rollback версии |
+| 4 — Импорт CSV (Celery) | 🟡 | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI готовы; streaming upload в S3 (multipart, без буферизации в памяти) ✅; rollback версии прайса (§16 п.14) ✅; отложены photo-ZIP/миниатюры |
 | 5 — Frontend | 🟡 | login, каталог и карточка товара, корзина/checkout, заявки, избранное, профиль и основные manager-страницы готовы; остаются недостающие экраны и полировка UX |
 | 6–8 — Заявки и менеджер | 🟡 | клиентские и manager API/UI заявок реализованы; экспорт и оставшиеся manager-сценарии не завершены |
 | 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
 
 **Ближайшие задачи / остаток:**
 - **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅; остаются RS256 production secrets;
-- **Импорт** — streaming upload в S3 ✅; остаются photo-ZIP+миниатюры и rollback версии;
+- **Импорт** — streaming upload в S3 ✅, rollback версии прайса ✅; остаются photo-ZIP+миниатюры;
 - **Продуктовые сценарии** — экспорт, оставшиеся manager-экраны и UX-полировка;
 - **Инфраструктура** — observability, production deployment и TG Mini App.
 

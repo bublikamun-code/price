@@ -153,6 +153,12 @@ class PriceListVersion(Base, UUIDPrimaryKey):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
+    # Аудит отката версии (§16 п.14): заполнено — версия уже откачена.
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rolled_back_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
 
 class PriceHistory(Base, UUIDPrimaryKey):
     """История изменения цены по SKU (фича J). Пишется при каждом импорте."""

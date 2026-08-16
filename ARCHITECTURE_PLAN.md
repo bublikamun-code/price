@@ -3,8 +3,8 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.1 — готов к передаче команде / ИИ-ассистенту.
-> **Дата:** 2026-08-11
+> **Статус:** v1.2 — готов к передаче команде / ИИ-ассистенту.
+> **Дата:** 2026-08-16
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
 >
@@ -368,6 +368,7 @@ app/
 | status | ENUM('QUEUED','PROCESSING','DONE','FAILED') |
 | error_log_key | TEXT | S3-ключ с детальным отчётом ошибок |
 | started_at / finished_at | TIMESTAMPTZ |
+| rolled_back_at / rolled_back_by | TIMESTAMPTZ / UUID FK NULL — отметка отката версии (когда и кто, §16 п.14) |
 
 #### `file_assets` — каталоги/выгрузки для скачивания
 | id | UUID PK |
@@ -443,7 +444,7 @@ app/
 | PUT | `/api/v1/manager/users/{id}/discounts` | Сохранить матрицу скидок `[{brand_id, percent}]`. |
 | POST | `/api/v1/manager/prices/import` | Загрузить CSV. Multipart. Body: `file`, `mode`, `currency`. Возвращает `version_id`. |
 | GET | `/api/v1/manager/prices/versions` | История импортов + статус. |
-| POST | `/api/v1/manager/prices/versions/{id}/rollback` | Откат (архивация товаров версии). |
+| POST | `/api/v1/manager/prices/versions/{id}/rollback` | Откат версии (§16 п.14): товарам, существовавшим до версии, возвращаются цены из последнего снапшота `price_history` до неё; товары, впервые появившиеся в версии, архивируются (soft-delete, `ARCHIVE`). Разрешён только для последней DONE-версии; повторный откат/не-DONE/не последняя → 409. Инвалидирует кэш каталога тегами импорта. Возвращает карточку версии + счётчики `restored`/`archived`. |
 | POST | `/api/v1/manager/brands` \| `/series` | CRUD брендов/серий. |
 | GET \| PATCH | `/api/v1/manager/orders` | Все заявки, смена статусов. |
 | POST | `/api/v1/manager/files` | Загрузить файл (PDF/CSV/ZIP). |
@@ -840,6 +841,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 11 | Регион хостинга | **Беларусь** | Провайдеры: beCloud, *activeby*, datacenter.by. НБ РБ-курс доступен без Geo-ограничений. Учесть требования Закона РБ «О защите персональных данных» (локализация ПДн в РБ — выполняется автоматически). |
 | 12 | Интеграция с 1С | **Оставить архитектурную возможность** (не реализовывать в MVP) | Спроектировать DTO заказов в формате, близком к 1С (XML/JSON CommerceML 2.x). Эндпоинт-заглушка `POST /integrations/1c/orders/export` под auth-token. См. §18. |
 | 13 | Контейнеризация | **Да, Docker + docker-compose** (dev и prod). 8+ сервисов (API, Celery worker, Celery beat, Nuxt, PostgreSQL, Redis, MinIO, TG-бот, Nginx) — без compose не управляемо. Идентичные среды dev/staging/prod, лёгкий деплой на РБ-VPS, мгновенный rollback версиями образов | `docker-compose.yml` (dev) + `docker-compose.prod.yml` (override). Подробно см. §14. |
+| 14 | Семантика rollback версии прайса | **Восстановление + архив новых; откатывать только последнюю DONE-версию** (согласовано 2026-08-16) | `POST /manager/prices/versions/{id}/rollback`: товарам, существовавшим до версии X, возвращаются `base_price`/`override_price` из их последнего снапшота `price_history` до X; товары, впервые появившиеся в X, архивируются (soft-delete, `stock_status=ARCHIVE`). Guards: версия существует (404), статус DONE, последняя DONE, не откачена ранее (иначе 409). Аудит: `price_list_versions.rolled_back_at/rolled_back_by` (§5); кэш каталога инвалидируется тегами импорта. |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 
@@ -1105,5 +1107,5 @@ CREATE INDEX ix_notif_user_unread ON notifications(user_id) WHERE is_read = FALS
 
 ---
 
-> **Текущая версия документа:** v1.1
+> **Текущая версия документа:** v1.2
 > **Сопутствующие файлы:** `SITEMAP.md` (карта сайта/экранов).

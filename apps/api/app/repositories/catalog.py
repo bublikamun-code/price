@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Brand, PriceHistory, PriceListVersion, Product, Series
@@ -318,3 +318,75 @@ async def get_price_list_version(
     return await db.scalar(
         select(PriceListVersion).where(PriceListVersion.id == version_id)
     )
+
+
+# ----------------------------- rollback версии -----------------------------
+
+# Restore: последним (changed_at DESC) «чужим» снапшотом вернуть цены и версию.
+_RESTORE_SQL = text("""
+    WITH last_snapshot AS (
+        SELECT DISTINCT ON (ph.product_id)
+               ph.product_id, ph.base_price, ph.override_price,
+               ph.price_list_version_id
+        FROM price_history ph
+        WHERE ph.price_list_version_id != :vid
+          -- push-down: DISTINCT ON только по товарам версии (иначе full scan
+          -- истории); индекс ix_price_history_product_time ведёт поиск
+          AND ph.product_id IN (
+              SELECT id FROM products WHERE price_list_version_id = :vid
+          )
+        ORDER BY ph.product_id, ph.changed_at DESC
+    )
+    UPDATE products p
+    SET base_price = ls.base_price,
+        override_price = ls.override_price,
+        price_list_version_id = ls.price_list_version_id,
+        updated_at = now()
+    FROM last_snapshot ls
+    WHERE p.id = ls.product_id
+      AND p.price_list_version_id = :vid
+      AND p.deleted_at IS NULL
+""")
+
+# Archive: товары версии без «чужих» снапшотов (впервые появились в ней).
+_ARCHIVE_SQL = text("""
+    UPDATE products p
+    SET deleted_at = now(),
+        stock_status = 'ARCHIVED',
+        updated_at = now()
+    WHERE p.price_list_version_id = :vid
+      AND p.deleted_at IS NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM price_history ph
+          WHERE ph.product_id = p.id
+            AND ph.price_list_version_id != :vid
+      )
+""")
+
+
+async def rollback_version(
+    db: AsyncSession, version_id: uuid.UUID
+) -> tuple[int, int]:
+    """Откат версии прайса на уровне каталога (§16 п.14), set-based SQL.
+
+    Два statement'а, порядок важен (restore первым — восстановленные товары
+    перестают принадлежать версии и в archive не попадают):
+      1. restore — товарам версии ``version_id`` (не удалённым), у которых есть
+         снапшот ``price_history`` другой версии, вернуть ``base_price`` /
+         ``override_price`` последнего такого снапшота и его версию;
+      2. archive — товарам версии без снапшотов других версий (впервые
+         появились в ней) — soft-delete: ``deleted_at=now()``,
+         ``stock_status='ARCHIVED'``.
+
+    Возвращает ``(restored, archived)``. Не коммитит — транзакцией владеет
+    сервис (``services.price_list_import.rollback_version``).
+    """
+    restore = await db.execute(_RESTORE_SQL, {"vid": version_id})
+    restored = int(restore.rowcount or 0)
+
+    archive = await db.execute(_ARCHIVE_SQL, {"vid": version_id})
+    archived = int(archive.rowcount or 0)
+
+    await db.flush()
+    return restored, archived
+

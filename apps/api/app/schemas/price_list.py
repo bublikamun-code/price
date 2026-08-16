@@ -39,6 +39,22 @@ class PriceListVersionRead(BaseModel):
     created_at: datetime
     uploaded_by: uuid.UUID | None
 
+    # Аудит отката версии (§16 п.14): заполнено — версия уже откачена.
+    rolled_back_at: datetime | None = None
+    rolled_back_by: uuid.UUID | None = None
+
+
+class RollbackOut(BaseModel):
+    """Ответ на ``POST /manager/prices/versions/{id}/rollback`` (§16 п.14).
+
+    ``restored`` — товары, возвращённые к ценам последнего снапшота до версии;
+    ``archived`` — товары, впервые появившиеся в версии (soft-delete).
+    """
+
+    version: PriceListVersionRead
+    restored: int
+    archived: int
+
 
 class PriceListVersionPage(BaseModel):
     data: list[PriceListVersionRead]

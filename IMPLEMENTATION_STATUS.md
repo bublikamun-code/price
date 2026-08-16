@@ -54,6 +54,13 @@
 - `db.commit()` в cart/favorites/orders-роутерах сохранён — согласованный UoW-паттерн проекта (транзакцию коммитит владелец запроса), не долг.
 - Проверки: 159 passed (`make test`, docker), ruff по изменённым файлам — чисто (3 предсуществующих E702 в `tests/test_cache.py` не тронуты), compileall exit 0.
 
+## Пакет 2026-08-16 (2): rollback версии прайса (Этап 9, §16 п.14)
+
+- Канон-first (§21): §16 п.14 (семантика: восстановление цен из `price_history` + архивация новых товаров; откат только последней DONE-версии, иначе 409), §5 (`rolled_back_at/by`), §6 (контракт эндпоинта); документ поднят до v1.2. Семантика согласована с заказчиком в сессии.
+- Backend: миграция `47c20b0f969c` (применена к dev-БД); `repositories/catalog.rollback_version` — set-based SQL (restore через `DISTINCT ON` с push-down по товарам версии + архивация через `NOT EXISTS`); `services/price_list_import.rollback_version` — FOR UPDATE, гварды, commit + инвалидация `CATALOG_TAG/FILTERS_TAG`; роутер `POST /manager/prices/versions/{id}/rollback` → 404/409/200 `RollbackOut{version, restored, archived}`.
+- Frontend: `manager/import.vue` — кнопка «Откатить» (только последняя DONE, confirm-диалог), бейдж «Откатена» с датой, сообщение с счётчиками; типы в `types/api.ts`.
+- Проверки: 169 passed (`make test`, +10 `test_rollback.py`: happy/409×3/404/403/кэш), ruff по изменённым файлам — чисто, web `npm run typecheck` — 0 ошибок, alembic 1 head.
+
 ## Проверки
 
 - `python3 -m compileall -q apps/api/app apps/api/tests` — успешно после Redis rate-limiter пакета.

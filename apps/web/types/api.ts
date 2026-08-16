@@ -102,11 +102,21 @@ export interface PriceListVersionRead {
   finished_at: string | null
   created_at: string
   uploaded_by: string | null
+  // Аудит отката версии (§16 п.14): заполнено — версия уже откачена.
+  rolled_back_at?: string | null
+  rolled_back_by?: string | null
 }
 
 export interface PriceListVersionPage {
   data: PriceListVersionRead[]
   meta: MetaPage
+}
+
+// Ответ отката версии прайса (§16 п.14): восстановленные и архивированные товары.
+export interface RollbackOut {
+  version: PriceListVersionRead
+  restored: number
+  archived: number
 }
 
 // История цены товара.

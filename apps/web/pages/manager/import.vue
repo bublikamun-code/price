@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// Импорт прайс-листа (менеджер). См. SITEMAP.md §7, ARCHITECTURE_PLAN.md §6.
-// Реальные данные: POST /manager/prices/import, GET /manager/prices/versions[/{id}[/errors]].
-// Вкладка «Изменения цен» и rollback отсутствуют — эндпоинтов пока нет в бэкенде.
+// Импорт прайс-листа (менеджер). См. SITEMAP.md §7, ARCHITECTURE_PLAN.md §6, §16 п.14.
+// Реальные данные: POST /manager/prices/import, GET /manager/prices/versions[/{id}[/errors]],
+// POST /manager/prices/versions/{id}/rollback (откат последней DONE-версии).
 import type {
   ImportMode,
   ImportUploadOut,
   PriceListVersionRead,
   PriceListVersionPage,
+  RollbackOut,
 } from '~/types/api'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
@@ -184,6 +185,47 @@ function maybePoll() {
     (v) => v.status === 'QUEUED' || v.status === 'PROCESSING',
   )
   if (active) loadHistory(true)
+}
+
+// --- Rollback версии (§16 п.14) ---
+// Откатить можно только последнюю DONE-версию, ещё не откаченную.
+const rollbackLoadingId = ref<string | null>(null)
+
+const latestDoneId = computed(() => {
+  // список отсортирован по created_at DESC — первая DONE и есть последняя
+  const done = versions.value.find((v) => v.status === 'DONE')
+  return done?.id ?? null
+})
+
+function canRollback(v: PriceListVersionRead): boolean {
+  return v.id === latestDoneId.value && !v.rolled_back_at
+}
+
+async function onRollback(v: PriceListVersionRead) {
+  const ok = window.confirm(
+    `Откатить версию ${v.filename}? Цены вернутся к предыдущему состоянию, ` +
+    'новые товары версии будут архивированы.',
+  )
+  if (!ok) return
+
+  rollbackLoadingId.value = v.id
+  submitError.value = ''
+  try {
+    const res = await request<RollbackOut>(
+      `/api/v1/manager/prices/versions/${v.id}/rollback`,
+      { method: 'POST' },
+    )
+    successMsg.value =
+      `Версия откачена: цен восстановлено — ${res.restored}, ` +
+      `товаров архивировано — ${res.archived}`
+    if (successTimer) clearTimeout(successTimer)
+    successTimer = setTimeout(() => (successMsg.value = ''), 6000)
+    await loadHistory()
+  } catch (e) {
+    submitError.value = getErrorMessage(e, 'Не удалось откатить версию')
+  } finally {
+    rollbackLoadingId.value = null
+  }
 }
 
 // --- Модалка деталей версии ---
@@ -392,6 +434,7 @@ onUnmounted(() => {
               <th class="px-4 py-3 font-medium">Статус</th>
               <th class="px-4 py-3 font-medium min-w-[140px]">Прогресс</th>
               <th class="px-4 py-3 font-medium">Ошибки</th>
+              <th class="px-4 py-3 font-medium">Откат</th>
               <th class="px-4 py-3 font-medium text-right">Действие</th>
             </tr>
           </thead>
@@ -426,6 +469,25 @@ onUnmounted(() => {
                 <span :class="v.rows_error > 0 ? 'text-danger font-semibold' : 'text-ink-muted'">
                   {{ v.rows_error }}
                 </span>
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap">
+                <template v-if="v.rolled_back_at">
+                  <span class="badge-warning">Откатена</span>
+                  <span class="text-xs text-ink-faint ml-1.5">{{ formatDate(v.rolled_back_at) }}</span>
+                </template>
+                <button
+                  v-else-if="canRollback(v)"
+                  class="btn-ghost text-sm py-1.5 text-danger"
+                  :disabled="rollbackLoadingId === v.id"
+                  @click="onRollback(v)"
+                >
+                  <span
+                    v-if="rollbackLoadingId === v.id"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+                  />
+                  <template v-else>Откатить</template>
+                </button>
+                <span v-else class="text-ink-faint">—</span>
               </td>
               <td class="px-4 py-3 text-right">
                 <button class="btn-ghost text-sm py-1.5" @click="openDetails(v.id)">

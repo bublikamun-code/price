@@ -1,12 +1,14 @@
 """Импорт прайс-листов менеджером: ``/api/v1/manager/prices/*``.
 
-См. ARCHITECTURE_PLAN.md §6 (контракт), §7 (пайплайн), §17.2 (курс прайса).
+См. ARCHITECTURE_PLAN.md §6 (контракт), §7 (пайплайн), §16 п.14 (rollback),
+§17.2 (курс прайса).
 
 Эндпоинты:
   * ``POST /import``          — multipart-загрузка CSV → запуск Celery-задачи.
   * ``GET  /versions``        — история импортов (пагинация).
   * ``GET  /versions/{id}``   — карточка версии (статус, счётчики, курс).
   * ``GET  /versions/{id}/errors`` — presigned-URL на CSV-отчёт ошибок (S3).
+  * ``POST /versions/{id}/rollback`` — откат версии к предыдущему состоянию.
 
 Все эндпоинты требуют роль ``MANAGER`` (RBAC, §11).
 """
@@ -28,9 +30,9 @@ from app.schemas.price_list import (
     ImportUploadOut,
     PriceListVersionPage,
     PriceListVersionRead,
+    RollbackOut,
 )
-from app.services import storage
-from app.services.price_list_import import start_import
+from app.services import price_list_import, storage
 
 router = APIRouter(prefix="/prices", tags=["manager:prices"])
 
@@ -229,3 +231,36 @@ async def get_version_errors(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
     return {"url": url}
+
+
+@router.post("/versions/{version_id}/rollback", response_model=RollbackOut)
+async def rollback_version(
+    version_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+) -> RollbackOut:
+    """Откатить версию прайса к предыдущему состоянию (ARCHITECTURE_PLAN.md §16 п.14).
+
+    Товарам версии возвращаются цены последнего «чужого» снапшота
+    ``price_history`` (restore), товары без более ранних снапшотов
+    архивируются (soft-delete). Use-case и гварды —
+    ``services.price_list_import.rollback_version``; роутер мапит: версия
+    не найдена → 404, ``VersionNotRollbackable`` → 409 (detail = причина).
+    """
+    try:
+        result = await price_list_import.rollback_version(
+            db, version_id=version_id, manager_id=manager.id
+        )
+    except price_list_import.VersionNotRollbackable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=exc.reason
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Версия не найдена")
+
+    version, restored, archived = result
+    return RollbackOut(
+        version=PriceListVersionRead.model_validate(version),
+        restored=restored,
+        archived=archived,
+    )
