@@ -12,7 +12,7 @@
 | Валюта обрезается до 3 символов | ✅ исправлено | Строгая проверка ровно трёх латинских букв, иначе 422. |
 | CSRF для cookie auth | ⏳ актуально | Требует отдельного согласованного внедрения double-submit во все mutating-запросы и frontend. |
 | HS256/default secret вместо RS256 | ⏳ актуально | Канон требует RS256 в production; нужны схема хранения/передачи ключей и обновление deployment secrets. |
-| SQL в роутерах | ⏳ актуально | Подтверждено в manager prices; нужен поэтапный рефакторинг services/repositories. |
+| SQL в роутерах | ✅ исправлено (2026-08-16) | `manager/prices`: оркестрация импорта → `services/price_list_import.start_import`; `catalog`: `select(Brand/Series)` → `repositories/catalog.get_brand/get_series`. В `api/v1` прямой ORM остался только в `health.py` (SELECT 1, healthcheck). |
 | Каталог vs §6, response envelopes | ⏳ требует отдельной сверки | Контракт объёмный; не менялся без полного endpoint-by-endpoint решения. |
 | ILIKE вместо FTS/pg_trgm | ⏳ актуально | Подтверждено в `repositories/catalog.py`. |
 | N+1 каталога | ⏳ требует профилирования | Старый отчёт недостаточен как доказательство после изменений кода. |
@@ -45,6 +45,14 @@
 - Реализация: `Settings.redis_url` собирает URL из существующих `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`; slowapi использует этот URL вместо process-local memory storage.
 - Тесты: `apps/api/tests/test_health.py` проверяет сборку Redis URL и Redis backend limiter-а без подключения к production-инфраструктуре.
 - Миграции, новые секреты и продуктовые решения не требуются.
+
+## Пакет 2026-08-16: SQL из роутеров (§4)
+
+- Канон §4: роутеры тонкие («только HTTP»), use-case'ы в `services/`, DAO в `repositories/`.
+- `manager/prices`: use-case импорта (создание `PriceListVersion` → streaming в S3 → rollback при `StorageError` → commit → dispatch Celery) вынесен в `services/price_list_import.py`; роутер — HTTP-валидация и маппинг `StorageError` → 502.
+- `catalog`: прямые `select(Brand)`/`select(Series)` в `get_product` заменены на `repositories/catalog.get_brand/get_series`.
+- `db.commit()` в cart/favorites/orders-роутерах сохранён — согласованный UoW-паттерн проекта (транзакцию коммитит владелец запроса), не долг.
+- Проверки: 159 passed (`make test`, docker), ruff по изменённым файлам — чисто (3 предсуществующих E702 в `tests/test_cache.py` не тронуты), compileall exit 0.
 
 ## Проверки
 

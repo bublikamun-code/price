@@ -104,6 +104,14 @@ async def get_by_sku(db: AsyncSession, sku: str) -> Product | None:
     )
 
 
+async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand | None:
+    return await db.scalar(select(Brand).where(Brand.id == brand_id))
+
+
+async def get_series(db: AsyncSession, series_id: uuid.UUID) -> Series | None:
+    return await db.scalar(select(Series).where(Series.id == series_id))
+
+
 async def fetch_filters(db: AsyncSession) -> dict:
     """Доступные значения фильтров (бренды, серии, статусы)."""
     brands = (
@@ -310,4 +318,3 @@ async def get_price_list_version(
     return await db.scalar(
         select(PriceListVersion).where(PriceListVersion.id == version_id)
     )
-

@@ -7,13 +7,11 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.catalog import Brand, Series
 from app.models.user import User
 from app.repositories import catalog as repo
 from app.schemas import MetaPage
@@ -156,13 +154,13 @@ async def get_product(
 
     brand = None
     if product.brand_id:
-        b = await db.scalar(select(Brand).where(Brand.id == product.brand_id))
+        b = await repo.get_brand(db, product.brand_id)
         if b:
             brand = BrandRef(id=b.id, name=b.name)
 
     series = None
     if product.series_id:
-        s = await db.scalar(select(Series).where(Series.id == product.series_id))
+        s = await repo.get_series(db, product.series_id)
         if s:
             series = SeriesRef(id=s.id, name=s.name, brand_id=s.brand_id, photo_key=s.photo_key)
 

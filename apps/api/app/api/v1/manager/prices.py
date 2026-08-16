@@ -15,14 +15,12 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import require_role
 from app.db.session import get_db
-from app.models.catalog import PriceListVersion
-from app.models.enums import ImportMode, PriceListVersionStatus, UserRole
+from app.models.enums import ImportMode, UserRole
 from app.models.user import User
 from app.repositories.catalog import fetch_price_list_versions, get_price_list_version
 from app.schemas import MetaPage
@@ -32,7 +30,7 @@ from app.schemas.price_list import (
     PriceListVersionRead,
 )
 from app.services import storage
-from app.tasks.import_price_list import run_import
+from app.services.price_list_import import start_import
 
 router = APIRouter(prefix="/prices", tags=["manager:prices"])
 
@@ -141,6 +139,8 @@ async def import_prices(
 ) -> ImportUploadOut:
     """Принять CSV, залить в MinIO (tmp-uploads) стримингом, запустить задачу.
 
+    Здесь — только HTTP-валидация (расширение, content-type, размер, заголовок
+    CSV, валюта/курс); use-case — ``services/price_list_import.start_import``.
     Конвертация цены в BYN делается в задаче по ``rate_to_byn`` (§17.2 Уровень 1).
     MVP: источник курса всегда MANUAL (``rate_source='MANUAL'``).
     """
@@ -159,36 +159,19 @@ async def import_prices(
             status_code=status.HTTP_400_BAD_REQUEST, detail="rate_to_byn должен быть > 0"
         )
 
-    version = PriceListVersion(
-        uploaded_by=manager.id,
-        filename=file.filename or "upload.csv",
-        import_mode=mode,
-        status=PriceListVersionStatus.QUEUED,
-        base_currency=cur,
-        rate_to_byn=rate,
-        rate_source="MANUAL",
-    )
-    db.add(version)
-    await db.flush()  # получаем version.id без commit
-
-    key = f"{version.id}/{version.filename}"
     try:
-        await file.seek(0)
-        # Стриминг spool-файла в MinIO (multipart, буфер — одна часть 8 МБ);
-        # sync-клиент boto3 уводим в threadpool, чтобы не блокировать loop.
-        await run_in_threadpool(
-            storage.upload_fileobj,
-            settings.s3_bucket_tmp, key, file.file,
-            content_type="text/csv",
+        version = await price_list_import.start_import(
+            db,
+            manager_id=manager.id,
+            upload=file,
+            mode=mode,
+            base_currency=cur,
+            rate_to_byn=rate,
         )
-    except storage.StorageError as exc:  # откатываем создание версии
-        await db.rollback()
+    except storage.StorageError as exc:  # сервис уже откатил версию
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
-
-    await db.commit()
-    run_import.delay(str(version.id))
 
     return ImportUploadOut(
         version_id=version.id,

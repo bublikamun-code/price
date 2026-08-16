@@ -5,11 +5,14 @@
   2. Задача импорта (интеграция с БД, S3 замокан): upsert, конвертация валюты,
      override preserve, ARCHIVE_MISSING, PriceHistory, отчёт ошибок.
   3. Эндпоинт /manager/prices/* : RBAC, загрузка, список версий, отчёт ошибок.
+  4. Сервис start_import: версия + S3 tmp-uploads + dispatch, rollback при StorageError.
 """
+import io
 import uuid
 from decimal import Decimal
 
 import pytest
+from fastapi import UploadFile
 from sqlalchemy import select
 
 import app.tasks.import_price_list as import_task
@@ -31,6 +34,8 @@ from app.models.enums import (
     StockStatus,
     UserRole,
 )
+from app.services import price_list_import as pli_service
+from app.services.storage import StorageError
 from tests.conftest import create_product, create_user
 
 PASSWORD = "Passw0rd!"
@@ -325,7 +330,7 @@ class TestPricesEndpoint:
 
         called = {}
         uploads = []
-        monkeypatch.setattr(prices_api.run_import, "delay", lambda vid: called.setdefault("vid", vid))
+        monkeypatch.setattr(pli_service.run_import, "delay", lambda vid: called.setdefault("vid", vid))
         monkeypatch.setattr(
             prices_api.storage,
             "upload_fileobj",
@@ -440,7 +445,7 @@ class TestPricesEndpoint:
         """>1 МБ уходит через дисковый spool-файл: содержимое fileobj полное."""
         await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
         await _login(api_client, MANAGER_EMAIL)
-        monkeypatch.setattr(prices_api.run_import, "delay", lambda vid: None)
+        monkeypatch.setattr(pli_service.run_import, "delay", lambda vid: None)
         uploads = []
         monkeypatch.setattr(
             prices_api.storage,
@@ -465,7 +470,7 @@ class TestPricesEndpoint:
     ):
         await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
         await _login(api_client, MANAGER_EMAIL)
-        monkeypatch.setattr(prices_api.run_import, "delay", lambda vid: None)
+        monkeypatch.setattr(pli_service.run_import, "delay", lambda vid: None)
         monkeypatch.setattr(prices_api.storage, "upload_fileobj", lambda *a, **k: None)
 
         r = await api_client.post(
@@ -522,3 +527,75 @@ class TestPricesEndpoint:
         r = await api_client.get(f"/api/v1/manager/prices/versions/{v.id}/errors")
         assert r.status_code == 200
         assert r.json()["url"].startswith("http://minio.local")
+
+
+# ===========================================================================
+# 4. Сервис start_import (unit: БД реальная, S3/задача замоканы)
+# ===========================================================================
+@pytest.mark.asyncio
+class TestStartImportService:
+    def _upload(self, data: bytes, name: str = "p.csv") -> UploadFile:
+        return UploadFile(file=io.BytesIO(data), filename=name)
+
+    async def test_creates_version_uploads_and_dispatches(
+        self, session_factory, monkeypatch
+    ):
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        csv_bytes = b"sku;name;base_price\nA;N;1\n"
+        dispatched: list[str] = []
+        uploads = []
+        monkeypatch.setattr(pli_service.run_import, "delay", dispatched.append)
+        monkeypatch.setattr(
+            pli_service.storage,
+            "upload_fileobj",
+            lambda bucket, key, fileobj, **kw: uploads.append(
+                (bucket, key, len(fileobj.read()), kw)
+            ),
+        )
+
+        async with session_factory() as s:
+            version = await pli_service.start_import(
+                s, manager_id=mgr.id, upload=self._upload(csv_bytes),
+                mode=ImportMode.UPSERT, base_currency="BYN", rate_to_byn=1.0,
+            )
+            assert version.status == PriceListVersionStatus.QUEUED
+            assert version.rate_source == "MANUAL"
+
+        # файл залит стримингом в tmp-uploads: ключ и content_type на месте
+        bucket, key, size, kwargs = uploads[0]
+        assert bucket == settings.s3_bucket_tmp
+        assert key == f"{version.id}/p.csv"
+        assert size == len(csv_bytes)
+        assert kwargs.get("content_type") == "text/csv"
+        # задача диспатчнулась с id закоммиченной версии
+        assert dispatched == [str(version.id)]
+
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, version.id)
+            assert v is not None
+            assert v.uploaded_by == mgr.id
+
+    async def test_rollback_version_on_storage_error(
+        self, session_factory, monkeypatch
+    ):
+        """StorageError → rollback созданной версии, ошибка прокинута роутеру."""
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        dispatched: list[str] = []
+        monkeypatch.setattr(pli_service.run_import, "delay", dispatched.append)
+
+        def _boom(bucket, key, fileobj, **kw):
+            raise StorageError("minio недоступен")
+
+        monkeypatch.setattr(pli_service.storage, "upload_fileobj", _boom)
+
+        async with session_factory() as s:
+            with pytest.raises(StorageError):
+                await pli_service.start_import(
+                    s, manager_id=mgr.id, upload=self._upload(b"sku;name;base_price\n"),
+                    mode=ImportMode.UPSERT, base_currency="BYN", rate_to_byn=1.0,
+                )
+
+        assert dispatched == []  # задача не запускалась
+        async with session_factory() as s:  # flush откачен — версии нет
+            rows = (await s.scalars(select(PriceListVersion))).all()
+            assert rows == []

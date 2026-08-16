@@ -10,6 +10,8 @@
   - архив/soft-delete: удалённые товары не видны
 """
 
+import uuid
+
 from app.models.enums import StockStatus, UserRole
 from tests.conftest import (
     create_brand,
@@ -371,3 +373,22 @@ async def test_catalog_served_from_db_when_redis_down(
     r2 = await api_client.get("/api/v1/catalog/products?q=widget")
     assert r2.status_code == 200
     assert [p["sku"] for p in r2.json()["data"]] == ["A-100", "A-101"]
+
+
+# =========================================================
+# РЕПОЗИТОРИЙ: get_brand / get_series (карточка товара)
+# =========================================================
+async def test_repo_get_brand_and_series(session_factory):
+    from app.repositories import catalog as catalog_repo
+
+    sf = session_factory
+    brand_a, _brand_b, s1, _products = await _seed_basic_catalog(sf)
+
+    async with sf() as s:
+        b = await catalog_repo.get_brand(s, brand_a.id)
+        assert b is not None and b.name == "Alpha"
+        assert await catalog_repo.get_brand(s, uuid.uuid4()) is None
+
+        ser = await catalog_repo.get_series(s, s1.id)
+        assert ser is not None and ser.name == "Serie X"
+        assert await catalog_repo.get_series(s, uuid.uuid4()) is None
