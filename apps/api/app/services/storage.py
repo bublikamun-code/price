@@ -3,14 +3,16 @@
 См. ARCHITECTURE_PLAN.md §10 (бакеты), §7.2 (пайплайн импорта).
 
 Используется:
-  * эндпоинтом загрузки CSV — ``put_bytes`` в бакет ``tmp-uploads``;
+  * эндпоинтом загрузки CSV — ``upload_fileobj`` (стримингом) в бакет
+    ``tmp-uploads``;
   * Celery-задачей импорта — ``get_bytes`` исходника и ``put_bytes`` отчёта
     ошибок в ``error-logs``;
   * запросом статуса — ``presigned_get`` для выдачи менеджеру ссылки на отчёт.
 
-Sync-клиент выбран намеренно: Celery-задача sync, а FastAPI-эндпоинт читает
-поток ``UploadFile`` тоже синхронно (через ``read()``). Для асинхронной
-обёртки (aioboto3) пока нет нужды — объёмы загрузок небольшие (≤100 МБ).
+Sync-клиент выбран намеренно: Celery-задача sync, а FastAPI-эндпоинт зовёт
+storage-функции через ``run_in_threadpool`` (event loop не блокируется).
+Для асинхронной обёртки (aioboto3) пока нет нужды: boto3 сам стримит
+file-like объекты частями (multipart), не материализуя их в памяти.
 """
 from __future__ import annotations
 
@@ -52,6 +54,24 @@ def put_bytes(
         client.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
     except (BotoCoreError, ClientError) as exc:
         log.warning("s3.put_failed", bucket=bucket, key=key, error=str(exc))
+        raise StorageError(f"Не удалось загрузить объект {bucket}/{key}") from exc
+
+
+def upload_fileobj(
+    bucket: str, key: str, fileobj, *, content_type: str = "application/octet-stream"
+) -> None:
+    """Загрузить file-like объект стримингом (multipart, буфер — одна часть).
+
+    Файл не читается в память целиком: boto3 TransferManager сам читает
+    ``fileobj`` частями по 8 МБ. Перебои сети → :class:`StorageError`.
+    """
+    client = get_s3_client()
+    try:
+        client.upload_fileobj(
+            fileobj, bucket, key, ExtraArgs={"ContentType": content_type}
+        )
+    except (BotoCoreError, ClientError) as exc:
+        log.warning("s3.upload_fileobj_failed", bucket=bucket, key=key, error=str(exc))
         raise StorageError(f"Не удалось загрузить объект {bucket}/{key}") from exc
 
 

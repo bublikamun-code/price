@@ -15,6 +15,7 @@ from sqlalchemy import select
 import app.tasks.import_price_list as import_task
 import app.tasks.notifications as notif_task
 from app.api.v1.manager import prices as prices_api
+from app.core.config import settings
 from app.importers.csv_price import (
     NormalizedRow,
     RowError,
@@ -323,17 +324,30 @@ class TestPricesEndpoint:
         await _login(api_client, MANAGER_EMAIL)
 
         called = {}
+        uploads = []
         monkeypatch.setattr(prices_api.run_import, "delay", lambda vid: called.setdefault("vid", vid))
-        monkeypatch.setattr(prices_api.storage, "put_bytes", lambda *a, **k: None)
+        monkeypatch.setattr(
+            prices_api.storage,
+            "upload_fileobj",
+            lambda bucket, key, fileobj, **kw: uploads.append((bucket, key, len(fileobj.read()), kw)),
+        )
 
+        csv_bytes = b"sku;name;base_price\nA;N;1\n"
         r = await api_client.post(
             "/api/v1/manager/prices/import",
-            files={"file": ("p.csv", b"sku;name;base_price\nA;N;1\n", "text/csv")},
+            files={"file": ("p.csv", csv_bytes, "text/csv")},
             data={"mode": "UPSERT", "base_currency": "BYN", "rate_to_byn": "1"},
         )
         assert r.status_code == 202, r.text
         vid = r.json()["version_id"]
         assert called.get("vid") == vid
+        # файл залит стримингом: bucket/tmp-ключ и полное содержимое fileobj
+        assert len(uploads) == 1
+        bucket, key, size, kwargs = uploads[0]
+        assert bucket == settings.s3_bucket_tmp
+        assert key == f"{vid}/p.csv"
+        assert size == len(csv_bytes)
+        assert kwargs.get("content_type") == "text/csv"
 
         async with session_factory() as s:
             v = await s.get(PriceListVersion, uuid.UUID(vid))
@@ -363,7 +377,7 @@ class TestPricesEndpoint:
     async def test_upload_rejects_wrong_extension(self, api_client, session_factory, monkeypatch):
         await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
         await _login(api_client, MANAGER_EMAIL)
-        monkeypatch.setattr(prices_api.storage, "put_bytes", lambda *a, **k: None)
+        monkeypatch.setattr(prices_api.storage, "upload_fileobj", lambda *a, **k: None)
         r = await api_client.post(
             "/api/v1/manager/prices/import",
             files={"file": ("p.xlsx", b"bytes", "application/octet-stream")},
@@ -386,7 +400,9 @@ class TestPricesEndpoint:
         await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
         await _login(api_client, MANAGER_EMAIL)
         stored = []
-        monkeypatch.setattr(prices_api.storage, "put_bytes", lambda *a, **k: stored.append(a))
+        monkeypatch.setattr(
+            prices_api.storage, "upload_fileobj", lambda *a, **k: stored.append(a)
+        )
 
         r = await api_client.post(
             "/api/v1/manager/prices/import",
@@ -397,13 +413,60 @@ class TestPricesEndpoint:
         assert r.status_code == expected_status
         assert stored == []
 
+    async def test_upload_rejects_oversize_streaming(
+        self, api_client, session_factory, monkeypatch
+    ):
+        """Лимит размера проверяется потоково: 413 ДО заливки в S3."""
+        await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        await _login(api_client, MANAGER_EMAIL)
+        monkeypatch.setattr(prices_api, "_MAX_BYTES", 1024)
+        stored = []
+        monkeypatch.setattr(
+            prices_api.storage, "upload_fileobj", lambda *a, **k: stored.append(a)
+        )
+
+        big = b"sku;name;base_price\n" + b"A;N;1\n" * 300  # ~1.7 КБ > 1024
+        r = await api_client.post(
+            "/api/v1/manager/prices/import",
+            files={"file": ("p.csv", big, "text/csv")},
+            data={"mode": "UPSERT"},
+        )
+        assert r.status_code == 413
+        assert stored == []
+
+    async def test_upload_streams_multimegabyte_file(
+        self, api_client, session_factory, monkeypatch
+    ):
+        """>1 МБ уходит через дисковый spool-файл: содержимое fileobj полное."""
+        await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        await _login(api_client, MANAGER_EMAIL)
+        monkeypatch.setattr(prices_api.run_import, "delay", lambda vid: None)
+        uploads = []
+        monkeypatch.setattr(
+            prices_api.storage,
+            "upload_fileobj",
+            lambda bucket, key, fileobj, **kw: uploads.append((bucket, key, len(fileobj.read()))),
+        )
+
+        rows = "".join(f"SKU-{i:06d};Товар {i};{i % 100}.99\n" for i in range(80_000))
+        csv_bytes = ("sku;name;base_price\n" + rows).encode("utf-8")
+        assert len(csv_bytes) > 2 * 1024 * 1024  # гарантия rollover spool→диск
+
+        r = await api_client.post(
+            "/api/v1/manager/prices/import",
+            files={"file": ("big.csv", csv_bytes, "text/csv")},
+            data={"mode": "UPSERT"},
+        )
+        assert r.status_code == 202, r.text
+        assert uploads == [(settings.s3_bucket_tmp, f"{r.json()['version_id']}/big.csv", len(csv_bytes))]
+
     async def test_upload_accepts_utf8_bom_and_generic_mime(
         self, api_client, session_factory, monkeypatch
     ):
         await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
         await _login(api_client, MANAGER_EMAIL)
         monkeypatch.setattr(prices_api.run_import, "delay", lambda vid: None)
-        monkeypatch.setattr(prices_api.storage, "put_bytes", lambda *a, **k: None)
+        monkeypatch.setattr(prices_api.storage, "upload_fileobj", lambda *a, **k: None)
 
         r = await api_client.post(
             "/api/v1/manager/prices/import",

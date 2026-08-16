@@ -10,10 +10,12 @@
 
 Все эндпоинты требуют роль ``MANAGER`` (RBAC, §11).
 """
+import codecs
 import re
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -35,6 +37,8 @@ from app.tasks.import_price_list import run_import
 router = APIRouter(prefix="/prices", tags=["manager:prices"])
 
 _MAX_BYTES = settings.import_max_file_mb * 1024 * 1024
+_READ_CHUNK = 1024 * 1024
+_HEADER_CAP = 1024 * 1024
 _ALLOWED_CSV_CONTENT_TYPES = {
     "application/csv",
     "application/octet-stream",
@@ -59,21 +63,7 @@ def _validate_upload_metadata(file: UploadFile) -> None:
         )
 
 
-def _validate_csv_content(data: bytes) -> None:
-    if b"\x00" in data:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Файл не похож на текстовый CSV",
-        )
-    try:
-        text = data.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="CSV должен быть в кодировке UTF-8",
-        ) from exc
-
-    header = text.splitlines()[0] if text.splitlines() else ""
+def _validate_header_line(header: str) -> None:
     separator = max((";", ",", "\t"), key=header.count)
     columns = {column.strip().casefold() for column in header.split(separator)}
     sku_aliases = {"sku", "артикул", "article"}
@@ -83,6 +73,57 @@ def _validate_csv_content(data: bytes) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="CSV должен содержать заголовок с колонками sku и name",
         )
+
+
+async def _validate_csv_stream(file: UploadFile, *, max_bytes: int) -> None:
+    """Потоковая валидация CSV (§7.1) без буферизации файла в памяти.
+
+    Читаем чанками из spool-файла Starlette (крупные загрузки уже на диске).
+    Порядок ошибок как у прежней in-memory версии: 413 → 415 → 400 → 422.
+    """
+    decoder = codecs.getincrementaldecoder("utf-8-sig")()
+    header_text = ""
+    header_done = False
+    total = 0
+    while chunk := await file.read(_READ_CHUNK):
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Файл превышает лимит {settings.import_max_file_mb} МБ",
+            )
+        if b"\x00" in chunk:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Файл не похож на текстовый CSV",
+            )
+        try:
+            text = decoder.decode(chunk)
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="CSV должен быть в кодировке UTF-8",
+            ) from exc
+        if not header_done and text:
+            header_text += text
+            if "\n" in header_text:
+                header_done = True
+            elif len(header_text) > _HEADER_CAP:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="CSV должен содержать заголовок с колонками sku и name",
+                )
+    try:
+        decoder.decode(b"", final=True)  # обрубленный multi-byte хвост → не UTF-8
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="CSV должен быть в кодировке UTF-8",
+        ) from exc
+    if total == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
+    lines = header_text.splitlines()
+    _validate_header_line(lines[0] if lines else "")
 
 
 @router.post(
@@ -98,22 +139,13 @@ async def import_prices(
     db: AsyncSession = Depends(get_db),
     manager: User = Depends(require_role(UserRole.MANAGER)),
 ) -> ImportUploadOut:
-    """Принять CSV, положить в MinIO (tmp-uploads), запустить задачу импорта.
+    """Принять CSV, залить в MinIO (tmp-uploads) стримингом, запустить задачу.
 
     Конвертация цены в BYN делается в задаче по ``rate_to_byn`` (§17.2 Уровень 1).
     MVP: источник курса всегда MANUAL (``rate_source='MANUAL'``).
     """
     _validate_upload_metadata(file)
-
-    data = await file.read(_MAX_BYTES + 1)
-    if len(data) > _MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Файл превышает лимит {settings.import_max_file_mb} МБ",
-        )
-    if not data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
-    _validate_csv_content(data)
+    await _validate_csv_stream(file, max_bytes=_MAX_BYTES)
 
     cur = (base_currency or "BYN").strip().upper()
     if not re.fullmatch(r"[A-Z]{3}", cur):
@@ -141,8 +173,13 @@ async def import_prices(
 
     key = f"{version.id}/{version.filename}"
     try:
-        storage.put_bytes(
-            settings.s3_bucket_tmp, key, data, content_type="text/csv"
+        await file.seek(0)
+        # Стриминг spool-файла в MinIO (multipart, буфер — одна часть 8 МБ);
+        # sync-клиент boto3 уводим в threadpool, чтобы не блокировать loop.
+        await run_in_threadpool(
+            storage.upload_fileobj,
+            settings.s3_bucket_tmp, key, file.file,
+            content_type="text/csv",
         )
     except storage.StorageError as exc:  # откатываем создание версии
         await db.rollback()

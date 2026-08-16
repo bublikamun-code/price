@@ -498,7 +498,9 @@ app/
 [Менеджер POST /import]
         │  (multipart upload, до ~100МБ)
         ▼
-[FastAPI] ──сохраняет файл в S3 (tmp/)──▶ создаёт PriceListVersion(QUEUED)
+[FastAPI] ──сохраняет файл в S3 (tmp/) стримингом──▶ создаёт PriceListVersion(QUEUED)
+        │  (upload_fileobj multipart, без буферизации целиком в памяти API;
+        │   потоковая валидация: лимит 100МБ / UTF-8 / заголовок — до заливки)
         │
         └─▶ celery.send_task("import_price_list", version_id)
 
