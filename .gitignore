@@ -59,6 +59,9 @@ infra/data/**
 postgres-data/
 minio-data/
 
+# --- JWT RSA-ключи (секреты; генерируются `make gen-jwt-keys`, §16 п.15) ---
+infra/jwt-keys/
+
 # --- Alembic local ---
 apps/api/alembic/versions/__pycache__/
 

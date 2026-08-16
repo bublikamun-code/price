@@ -11,7 +11,7 @@
 | Upload читает весь файл до лимита | ✅ исправлено частично | Чтение ограничено `limit + 1`; полный streaming в S3 остаётся отдельной задачей. |
 | Валюта обрезается до 3 символов | ✅ исправлено | Строгая проверка ровно трёх латинских букв, иначе 422. |
 | CSRF для cookie auth | ⏳ актуально | Требует отдельного согласованного внедрения double-submit во все mutating-запросы и frontend. |
-| HS256/default secret вместо RS256 | ⏳ актуально | Канон требует RS256 в production; нужны схема хранения/передачи ключей и обновление deployment secrets. |
+| HS256/default secret вместо RS256 | ✅ исправлено (2026-08-16) | Схема §16 п.15 (v1.3): dev HS256+SECRET_KEY, prod RS256 с PEM-ключами read-only (`JWT_*_KEY_PATH`); fail-fast валидация на старте, `make gen-jwt-keys`, prod-compose обновлён. |
 | SQL в роутерах | ✅ исправлено (2026-08-16) | `manager/prices`: оркестрация импорта → `services/price_list_import.start_import`; `catalog`: `select(Brand/Series)` → `repositories/catalog.get_brand/get_series`. В `api/v1` прямой ORM остался только в `health.py` (SELECT 1, healthcheck). |
 | Каталог vs §6, response envelopes | ⏳ требует отдельной сверки | Контракт объёмный; не менялся без полного endpoint-by-endpoint решения. |
 | ILIKE вместо FTS/pg_trgm | ⏳ актуально | Подтверждено в `repositories/catalog.py`. |
@@ -60,6 +60,14 @@
 - Backend: миграция `47c20b0f969c` (применена к dev-БД); `repositories/catalog.rollback_version` — set-based SQL (restore через `DISTINCT ON` с push-down по товарам версии + архивация через `NOT EXISTS`); `services/price_list_import.rollback_version` — FOR UPDATE, гварды, commit + инвалидация `CATALOG_TAG/FILTERS_TAG`; роутер `POST /manager/prices/versions/{id}/rollback` → 404/409/200 `RollbackOut{version, restored, archived}`.
 - Frontend: `manager/import.vue` — кнопка «Откатить» (только последняя DONE, confirm-диалог), бейдж «Откатена» с датой, сообщение с счётчиками; типы в `types/api.ts`.
 - Проверки: 169 passed (`make test`, +10 `test_rollback.py`: happy/409×3/404/403/кэш), ruff по изменённым файлам — чисто, web `npm run typecheck` — 0 ошибок, alembic 1 head.
+
+## Пакет 2026-08-16 (3): RS256 для production JWT (§16 п.15)
+
+- Решение заказчика (§21): PEM-файлы, смонтированные read-only (Vault вне MVP). Канон: §11 уточнён, §16 п.15, v1.3.
+- Backend: `config.py` — `jwt_private/public_key_path` + fail-fast `model_validator` (RS256 без ключей/с нечитаемыми файлами → ошибка старта; whitelist HS256/RS256; HS256+пути → warning), свойства `jwt_signing_key`/`jwt_verify_key` с кэшем PEM по пути; `security.py` подписывает/проверяет соответствующим ключом.
+- Инфра: `make gen-jwt-keys` (RSA-2048 в `infra/jwt-keys/`, отказ при перезаписи), `.gitignore`, `infra/docker-compose.prod.yml` — env+монтирование ключей для api; попутно исправлен предсуществующий баг: `volumes: []` в override не убирал dev-монтирование исходников → `!override`.
+- Тесты: `test_jwt_rs256.py` (9): roundtrip access/refresh, чужой ключ → JWTError, валидации конфига, кэш, HS256-дефолт. Итого 178 passed; ruff/compileall чисто; `docker compose config` для prod проверен.
+- Замечание: JWT декодирует только api (deps.py); если включить RS256 глобально через общий `.env`, worker/bot упадут на старте с понятной ошибкой (fail-fast) — при необходимости монтировать ключи и им.
 
 ## Проверки
 

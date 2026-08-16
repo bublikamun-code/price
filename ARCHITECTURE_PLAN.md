@@ -3,7 +3,7 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.2 — готов к передаче команде / ИИ-ассистенту.
+> **Статус:** v1.3 — готов к передаче команде / ИИ-ассистенту.
 > **Дата:** 2026-08-16
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
@@ -672,7 +672,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | Контроль | Реализация |
 |---|---|
 | Хэш паролей | bcrypt, cost=12. |
-| JWT | RS256 (приватный ключ в vault), access 15 мин, refresh 7 дней, rotate refresh. |
+| JWT | RS256 в prod / HS256 в dev. RS256: PEM-ключи файлами, смонтированными в контейнеры read-only (`JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`, §16 п.15); access 15 мин, refresh 7 дней, rotate refresh. |
 | Хранение refresh | хэш в `sessions`, httpOnly + Secure + SameSite=Lax cookie. |
 | RBAC | зависимости FastAPI `Depends(require_role("MANAGER"))`. |
 | CSRF | Для cookie-based auth — `SameSite=Lax` + double-submit: отдельная JS-readable cookie `csrf_token` и заголовок `X-CSRF-Token` должны совпадать (constant-time) на `POST/PUT/PATCH/DELETE`, включая refresh/logout; безопасные методы и Bearer-only запросы не проверяются. Cookie имеет `Secure` в staging/prod и без `Secure` только в dev. |
@@ -842,6 +842,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 12 | Интеграция с 1С | **Оставить архитектурную возможность** (не реализовывать в MVP) | Спроектировать DTO заказов в формате, близком к 1С (XML/JSON CommerceML 2.x). Эндпоинт-заглушка `POST /integrations/1c/orders/export` под auth-token. См. §18. |
 | 13 | Контейнеризация | **Да, Docker + docker-compose** (dev и prod). 8+ сервисов (API, Celery worker, Celery beat, Nuxt, PostgreSQL, Redis, MinIO, TG-бот, Nginx) — без compose не управляемо. Идентичные среды dev/staging/prod, лёгкий деплой на РБ-VPS, мгновенный rollback версиями образов | `docker-compose.yml` (dev) + `docker-compose.prod.yml` (override). Подробно см. §14. |
 | 14 | Семантика rollback версии прайса | **Восстановление + архив новых; откатывать только последнюю DONE-версию** (согласовано 2026-08-16) | `POST /manager/prices/versions/{id}/rollback`: товарам, существовавшим до версии X, возвращаются `base_price`/`override_price` из их последнего снапшота `price_history` до X; товары, впервые появившиеся в X, архивируются (soft-delete, `stock_status=ARCHIVE`). Guards: версия существует (404), статус DONE, последняя DONE, не откачена ранее (иначе 409). Аудит: `price_list_versions.rolled_back_at/rolled_back_by` (§5); кэш каталога инвалидируется тегами импорта. |
+| 15 | Схема хранения JWT-ключей RS256 | **PEM-файлы, смонтированные в контейнеры read-only** (согласовано 2026-08-16) | Dev: HS256 + `SECRET_KEY` (без изменений). Prod: `JWT_ALGORITHM=RS256`; RSA-2048 ключи генерируются на хосте (`make gen-jwt-keys`), лежат в `infra/jwt-keys/` (`.gitignore`), монтируются read-only, пути — `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`. Публичный ключ раздаётся сервисам, проверяющим токены. Vault не входит в MVP-инфраструктуру — §11 скорректирован с «vault» на эту схему. |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 
@@ -1107,5 +1108,5 @@ CREATE INDEX ix_notif_user_unread ON notifications(user_id) WHERE is_read = FALS
 
 ---
 
-> **Текущая версия документа:** v1.2
+> **Текущая версия документа:** v1.3
 > **Сопутствующие файлы:** `SITEMAP.md` (карта сайта/экранов).

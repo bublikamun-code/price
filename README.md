@@ -122,7 +122,7 @@ make test          # тесты
 | 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
 
 **Ближайшие задачи / остаток:**
-- **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅; остаются RS256 production secrets;
+- **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅; остаток — production TLS (проверяется при деплое, Этап 11);
 - **Импорт** — streaming upload в S3 ✅, rollback версии прайса ✅; остаются photo-ZIP+миниатюры;
 - **Продуктовые сценарии** — экспорт, оставшиеся manager-экраны и UX-полировка;
 - **Инфраструктура** — observability, production deployment и TG Mini App.

@@ -1,7 +1,9 @@
 """Безопасность: хэширование паролей (bcrypt) + JWT (access/refresh).
 
-См. ARCHITECTURE_PLAN.md §11.
-На старте HS256 (один SECRET_KEY); в prod переключаем на RS256 (§11).
+См. ARCHITECTURE_PLAN.md §11, §16 п.15.
+Алгоритм задаётся JWT_ALGORITHM: dev — HS256 (SECRET_KEY);
+prod — RS256 (PEM-ключи из файлов, см. settings.jwt_signing_key/jwt_verify_key
+и `make gen-jwt-keys`).
 """
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -42,7 +44,7 @@ def _create_token(
     }
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(payload, settings.jwt_signing_key, algorithm=settings.jwt_algorithm)
 
 
 def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> str:
@@ -64,7 +66,7 @@ def create_refresh_token(subject: str) -> str:
 
 def decode_token(token: str) -> dict[str, Any]:
     """Декодирует и проверяет срок. Бросает JWTError при невалидном токене."""
-    return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+    return jwt.decode(token, settings.jwt_verify_key, algorithms=[settings.jwt_algorithm])
 
 
 __all__ = [

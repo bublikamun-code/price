@@ -14,12 +14,17 @@ services:
     build:
       target: runtime
     env_file: ../.env
+    environment:
+      JWT_ALGORITHM: RS256                        # prod: RS256 + PEM-ключи (§16 п.15)
+      JWT_PRIVATE_KEY_PATH: /jwt-keys/jwt_rsa.key
+      JWT_PUBLIC_KEY_PATH: /jwt-keys/jwt_rsa.pub
     command: >
       gunicorn app.main:app
       --worker-class uvicorn.workers.UvicornWorker
       --workers 4 --bind 0.0.0.0:8000
       --timeout 120 --graceful-timeout 30
-    volumes: []
+    volumes: !override            # код внутри образа; только JWT-ключи read-only
+      - ./jwt-keys:/jwt-keys:ro   # = infra/jwt-keys (make gen-jwt-keys)
     restart: always
     ports: !reset []           # наружу только через nginx
 

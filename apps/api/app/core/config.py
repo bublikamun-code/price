@@ -3,11 +3,15 @@
 Все настройки берутся из переменных окружения (см. .env.example).
 Не хардкодить секреты — только через Settings.
 """
+import logging
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -24,8 +28,41 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     secret_key: str = Field(default="change-me", min_length=16)
     jwt_algorithm: str = "HS256"
+    # RS256 (prod, §16 п.15): пути к PEM-файлам, смонтированным read-only
+    # (пару ключей создаёт `make gen-jwt-keys` → infra/jwt-keys/)
+    jwt_private_key_path: str | None = None
+    jwt_public_key_path: str | None = None
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 7
+
+    # Кэш PEM-ключей по пути: файл читается один раз, а не на каждый запрос (§16 п.15)
+    _jwt_pem_cache: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def _read_pem(self, path: str) -> str:
+        """PEM-содержимое файла с кэшем по пути.
+
+        Потокобезопасно: запись в dict атомарна под GIL, гонка даёт лишь
+        повторное чтение того же файла — результат идемпотентен.
+        """
+        pem = self._jwt_pem_cache.get(path)
+        if pem is None:
+            pem = Path(path).read_text(encoding="utf-8")
+            self._jwt_pem_cache[path] = pem
+        return pem
+
+    @property
+    def jwt_signing_key(self) -> str:
+        """Ключ подписи JWT: HS256 → SECRET_KEY, RS256 → приватный PEM (§16 п.15)."""
+        if self.jwt_algorithm == "RS256":
+            return self._read_pem(self.jwt_private_key_path)
+        return self.secret_key
+
+    @property
+    def jwt_verify_key(self) -> str:
+        """Ключ проверки JWT: HS256 → SECRET_KEY, RS256 → публичный PEM (§16 п.15)."""
+        if self.jwt_algorithm == "RS256":
+            return self._read_pem(self.jwt_public_key_path)
+        return self.secret_key
 
     # --- БД ---
     postgres_host: str = "db"
@@ -119,6 +156,34 @@ class Settings(BaseSettings):
     @classmethod
     def _lower(cls, v: str) -> str:
         return v.lower()
+
+    @model_validator(mode="after")
+    def _check_jwt_keys(self) -> "Settings":
+        """RS256 требует PEM-ключи из файлов — проверяем на старте, fail fast (§16 п.15)."""
+        if self.jwt_algorithm not in ("HS256", "RS256"):
+            # опечатка в алгоритме молча уводила бы подпись в HS256-ветку
+            raise ValueError(
+                f"JWT_ALGORITHM: допустимы только HS256 и RS256, получено {self.jwt_algorithm!r}"
+            )
+        if self.jwt_algorithm == "RS256":
+            if not self.jwt_private_key_path or not self.jwt_public_key_path:
+                raise ValueError(
+                    "JWT_ALGORITHM=RS256: обязательны JWT_PRIVATE_KEY_PATH и "
+                    "JWT_PUBLIC_KEY_PATH (пару ключей создаст `make gen-jwt-keys`)"
+                )
+            for name, path in (
+                ("JWT_PRIVATE_KEY_PATH", self.jwt_private_key_path),
+                ("JWT_PUBLIC_KEY_PATH", self.jwt_public_key_path),
+            ):
+                try:
+                    Path(path).read_text(encoding="utf-8")
+                except OSError as exc:
+                    raise ValueError(f"{name}={path}: файл не найден или не читается ({exc})") from exc
+        elif self.jwt_algorithm == "HS256" and (self.jwt_private_key_path or self.jwt_public_key_path):
+            logger.warning(
+                "Заданы JWT_*_KEY_PATH при JWT_ALGORITHM=HS256 — PEM-ключи не используются (§16 п.15)"
+            )
+        return self
 
 
 @lru_cache

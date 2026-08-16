@@ -6,7 +6,7 @@
 DC = docker compose -f infra/docker-compose.yml --env-file .env
 DC_PROD = docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml
 
-.PHONY: help up down build logs ps api-shell web-shell migrate migrate-gen seed seed-catalog seed-all test lint fmt db-reset
+.PHONY: help up down build logs ps api-shell web-shell migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys
 
 help: ## показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -65,3 +65,16 @@ fmt: ## форматирование
 db-reset: ## пересоздать БД с нуля (ОСТОРОЖНО: удаляет данные)
 	$(DC) down -v
 	$(DC) up -d db redis minio
+
+gen-jwt-keys: ## сгенерировать RSA-пару для JWT RS256, prod (§16 п.15)
+	@if [ -e infra/jwt-keys/jwt_rsa.key ] || [ -e infra/jwt-keys/jwt_rsa.pub ]; then \
+		echo "infra/jwt-keys/ уже содержит ключи — не перезаписываю (удалите вручную, если нужно)"; \
+		exit 1; \
+	fi
+	mkdir -p infra/jwt-keys
+	openssl genrsa -out infra/jwt-keys/jwt_rsa.key 2048
+	openssl rsa -in infra/jwt-keys/jwt_rsa.key -pubout -out infra/jwt-keys/jwt_rsa.pub
+	chmod 600 infra/jwt-keys/jwt_rsa.key
+	chmod 644 infra/jwt-keys/jwt_rsa.pub
+	@echo "Ключи созданы: infra/jwt-keys/jwt_rsa.key (600) и jwt_rsa.pub (644)"
+	@echo "Prod монтирует их read-only в /jwt-keys (docker-compose.prod.yml); в git не коммитить (.gitignore)"
