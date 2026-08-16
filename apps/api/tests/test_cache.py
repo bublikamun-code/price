@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from app.services.cache import TaggedCache, catalog_key, product_key, user_tag
+from app.services import cache as cache_module
 
 
 class MemoryPipeline:
@@ -70,3 +71,41 @@ def test_catalog_keys_are_partitioned_by_user_mode_and_filters():
     assert product_key(user_id=user_a, mode="fixed", sku="A") != product_key(
         user_id=user_a, mode="nbrb_current", sku="A"
     )
+
+
+class BrokenRedis:
+    """Имитация лежащего Redis: любое обращение — ConnectionError."""
+
+    async def get(self, key):
+        raise ConnectionError("redis down")
+
+    async def set(self, key, value, ex=None):
+        raise ConnectionError("redis down")
+
+    async def sadd(self, key, value):
+        raise ConnectionError("redis down")
+
+    async def sunion(self, *keys):
+        raise ConnectionError("redis down")
+
+    async def delete(self, *keys):
+        raise ConnectionError("redis down")
+
+
+@pytest.mark.asyncio
+async def test_fail_open_when_redis_down():
+    """Каталог не должен падать при недоступном Redis (§4): safe_* молча
+    деградируют в «мимо кэша», best-effort invalidate возвращает 0."""
+    broken = TaggedCache(BrokenRedis(), prefix="test")
+    assert await broken.safe_get("catalog:key") is None
+    await broken.safe_set("catalog:key", {"data": []}, ttl=300, tags=["catalog"])  # не raise
+
+    cache_module.cache.redis = BrokenRedis()
+    try:
+        assert await cache_module.invalidate_tags("catalog", "user:1") == 0
+    finally:
+        # восстановим рабочий клиент (conftest всё равно подменит на свой)
+        from app.core.config import settings
+        from redis.asyncio import Redis
+
+        cache_module.cache.redis = Redis.from_url(settings.redis_url, decode_responses=True)

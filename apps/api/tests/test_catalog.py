@@ -331,3 +331,43 @@ async def test_archived_products_hidden(api_client, session_factory):
     skus = [p["sku"] for p in r.json()["data"]]
     assert "LIVE-1" in skus
     assert "ARCH-1" not in skus
+
+
+# =========================================================
+# FAIL-OPEN: каталог жив при лежащем Redis (§4)
+# =========================================================
+class _BrokenRedis:
+    async def get(self, key):
+        raise ConnectionError("redis down")
+
+    async def set(self, key, value, ex=None):
+        raise ConnectionError("redis down")
+
+    async def sadd(self, key, value):
+        raise ConnectionError("redis down")
+
+    async def delete(self, *keys):
+        raise ConnectionError("redis down")
+
+
+async def test_catalog_served_from_db_when_redis_down(
+    api_client, session_factory, monkeypatch
+):
+    from app.services import cache as cache_module
+
+    sf = session_factory
+    await _seed_basic_catalog(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    monkeypatch.setattr(cache_module.cache, "redis", _BrokenRedis())
+
+    r = await api_client.get("/api/v1/catalog/products?q=widget")
+    assert r.status_code == 200, r.text
+    skus = [p["sku"] for p in r.json()["data"]]
+    assert skus == ["A-100", "A-101"]  # данные из БД, не из кэша
+
+    # повторный запрос (путь записи в кэш) тоже не валится
+    r2 = await api_client.get("/api/v1/catalog/products?q=widget")
+    assert r2.status_code == 200
+    assert [p["sku"] for p in r2.json()["data"]] == ["A-100", "A-101"]

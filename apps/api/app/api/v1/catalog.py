@@ -71,7 +71,7 @@ async def list_products(
             "per_page": per_page,
         },
     )
-    cached = await cache.get(key)
+    cached = await cache.safe_get(key)
     if cached is not None:
         return CatalogPage.model_validate(cached)
 
@@ -106,7 +106,7 @@ async def list_products(
         )
 
     result = CatalogPage(data=cards, meta=MetaPage(page=page, per_page=per_page, total=total))
-    await cache.set(
+    await cache.safe_set(
         key,
         result.model_dump(mode="json"),
         ttl=settings.cache_ttl_seconds,
@@ -121,12 +121,12 @@ async def get_filters(
     db: AsyncSession = Depends(get_db),
 ) -> FiltersOut:
     key = f"filters:{stable_hash({})}"
-    cached = await cache.get(key)
+    cached = await cache.safe_get(key)
     if cached is not None:
         return FiltersOut.model_validate(cached)
     data = await repo.fetch_filters(db)
     result = FiltersOut(**data)
-    await cache.set(
+    await cache.safe_set(
         key,
         result.model_dump(mode="json"),
         ttl=settings.cache_ttl_seconds,
@@ -143,7 +143,7 @@ async def get_product(
     db: AsyncSession = Depends(get_db),
 ) -> ProductDetail:
     key = product_key(user_id=user.id, mode=price_calc_mode, sku=sku)
-    cached = await cache.get(key)
+    cached = await cache.safe_get(key)
     if cached is not None:
         return ProductDetail.model_validate(cached)
 
@@ -178,7 +178,7 @@ async def get_product(
         override_price=float(product.override_price) if product.override_price is not None else None,
         **prices,
     )
-    await cache.set(
+    await cache.safe_set(
         key,
         result.model_dump(mode="json"),
         ttl=settings.cache_ttl_seconds,

@@ -60,6 +60,23 @@ class TaggedCache:
             results = await pipe.execute()
         return int(results[0] if data_keys else 0)
 
+    # ---- fail-open обёртки для прод-вызовов (§4: кэш не должен валить каталог) ----
+
+    async def safe_get(self, key: str) -> Any | None:
+        """Redis недоступен → «мимо кэша» (None), запрос обслуживается из БД."""
+        try:
+            return await self.get(key)
+        except Exception as exc:
+            log.warning("cache.get_failed", key=key, error=str(exc))
+            return None
+
+    async def safe_set(self, key: str, value: Any, *, ttl: int, tags: Iterable[str]) -> None:
+        """Redis недоступен → просто не кэшируем (следующий запрос — мимо)."""
+        try:
+            await self.set(key, value, ttl=ttl, tags=tags)
+        except Exception as exc:
+            log.warning("cache.set_failed", key=key, error=str(exc))
+
 
 _redis = Redis.from_url(settings.redis_url, decode_responses=True)
 cache = TaggedCache(_redis, prefix=settings.cache_key_prefix)
