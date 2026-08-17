@@ -5,7 +5,7 @@ import type { CartItemRead } from '~/types/api'
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Корзина' })
 
-const { photoOf } = useProductPhoto()
+const { thumbOf } = useProductPhoto()
 const { data: cart, loading, refresh, update, remove, clear } = useCart()
 const error = ref('')
 const updatingSku = ref<string | null>(null)
@@ -101,7 +101,7 @@ onMounted(refresh)
         >
           <!-- Фото -->
           <div class="w-20 h-20 shrink-0 rounded-card bg-canvas overflow-hidden flex items-center justify-center">
-            <img v-if="photoOf(item)" :src="photoOf(item)!" :alt="item.name" class="w-full h-full object-contain" >
+            <img v-if="thumbOf(item.photo_key)" :src="thumbOf(item.photo_key)!" :alt="item.name" class="w-full h-full object-contain" >
             <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
           </div>
 

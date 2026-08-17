@@ -184,6 +184,19 @@ def _slugify(name: str) -> str:
     return name.lower().strip().replace(" ", "-")
 
 
+# Префикс ключей обработанных фото серий в S3 (§10, §16 п.17):
+# ``photos-series/{stem}.webp`` / ``photos-series/{stem}_thumb.webp``.
+# Значение ``photo_key`` без этого префикса — «сырое» имя файла из колонки
+# ``series_photo`` CSV (например ``serie_a.jpg``), оно остаётся до тех пор,
+# пока ZIP с фото не зальёт настоящий webp-ключ.
+PHOTO_KEY_PREFIX = "photos-series/"
+
+
+def is_raw_photo_key(photo_key: str | None) -> bool:
+    """True, если ``photo_key`` — сырьё имя из CSV, а не webp-ключ из photo-ZIP."""
+    return not photo_key or not photo_key.startswith(PHOTO_KEY_PREFIX)
+
+
 async def get_or_create_brand(
     db: AsyncSession, *, name: str, slug: str | None = None
 ) -> Brand:
@@ -204,12 +217,19 @@ async def get_or_create_series(
     brand_id: uuid.UUID,
     photo_key: str | None = None,
 ) -> Series:
+    """Найти/создать серию по ``(name, brand_id)``.
+
+    ``photo_key`` — «сырое» имя файла из колонки ``series_photo`` CSV (§7,
+    §16 п.17): сохраняется при создании серии и дозаполняет существующую,
+    только пока там нет обработанного webp-ключа (``photos-series/…``) —
+    готовое фото из ZIP импорт CSV не перезаписывает.
+    """
     series = await db.scalar(
         select(Series).where(Series.name == name, Series.brand_id == brand_id)
     )
     if series is not None:
-        # Дозаполняем фото, если ранее серия была без него.
-        if photo_key and not series.photo_key:
+        # Дозаполняем фото, если ранее серия была без него или с сырым именем.
+        if photo_key and is_raw_photo_key(series.photo_key):
             series.photo_key = photo_key
             await db.flush()
         return series

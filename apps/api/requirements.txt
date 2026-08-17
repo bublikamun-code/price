@@ -28,8 +28,9 @@ slowapi==0.1.9                   # rate-limiting
 celery[redis]==5.4.0
 redis==5.0.8
 
-# --- Object storage (MinIO/S3) ---
+# --- Object storage / медиа ---
 boto3==1.35.23
+Pillow==11.2.1                   # обработка фото: webp thumb/large (§10)
 
 # --- Data parsing / export ---
 polars==1.7.1                    # быстрый парсинг CSV

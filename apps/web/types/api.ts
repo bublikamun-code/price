@@ -135,6 +135,22 @@ export interface RollbackOut {
   archived: number
 }
 
+// Photo-ZIP: обработка ZIP с фото серий. См. §6 + app/api/v1/manager/prices.py, §16 п.17.
+export interface PhotoZipStartOut {
+  job_id: string
+}
+
+export interface PhotoZipJobOut {
+  job_id: string
+  status: ExportJobStatus
+  files: number       // обработано изображений
+  matched: number     // привязано к сериям
+  unmatched: number   // без серии (фото всё равно залиты)
+  error?: string | null
+  errors: string[]    // первые 50 ошибок по файлам
+  created_at?: string | null
+}
+
 // История цены товара.
 export interface PriceHistoryItem {
   base_price: number

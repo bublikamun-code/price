@@ -27,7 +27,7 @@ from app.importers.csv_price import (
     normalize_row,
     resolve_columns,
 )
-from app.models.catalog import PriceHistory, PriceListVersion, Product
+from app.models.catalog import PriceHistory, PriceListVersion, Product, Series
 from app.models.enums import (
     ImportMode,
     PriceListVersionStatus,
@@ -36,7 +36,7 @@ from app.models.enums import (
 )
 from app.services import price_list_import as pli_service
 from app.services.storage import StorageError
-from tests.conftest import create_product, create_user
+from tests.conftest import create_brand, create_product, create_series, create_user
 
 PASSWORD = "Passw0rd!"
 MANAGER_EMAIL = "manager@example.by"
@@ -317,6 +317,42 @@ class TestImportTask:
 
         res = await import_task._run_import(version.id)
         assert res["status"] == "skipped"
+
+    async def test_series_photo_saved_and_webp_preserved(
+        self, session_factory, monkeypatch
+    ):
+        """series_photo из CSV → photo_key серии (§7, §16 п.17).
+
+        Новая серия получает «сырое» имя файла; существующая серия с готовым
+        webp-ключом из photo-ZIP его не теряет.
+        """
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        brand = await create_brand(session_factory, name="KEAZ")
+        await create_series(
+            session_factory, brand=brand, name="With Webp",
+            photo_key="photos-series/with-webp.webp",
+        )
+        version = await _make_version(session_factory, manager=mgr)
+        csv = (
+            b"sku;name;brand;series;series_photo;base_price\n"
+            b"A-1;Widget;KEAZ;Serie A;serie_a.jpg;10\n"
+            b"A-2;Gadget;KEAZ;With Webp;another_name.jpg;20\n"
+        )
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+        _patch_storage(monkeypatch, csv)
+
+        await import_task._run_import(version.id)
+
+        async with session_factory() as s:
+            created = (await s.execute(
+                select(Series).where(Series.name == "Serie A")
+            )).scalar_one()
+            assert created.photo_key == "serie_a.jpg"  # сырьё имя из CSV
+            existing = (await s.execute(
+                select(Series).where(Series.name == "With Webp")
+            )).scalar_one()
+            # webp-ключ из photo-ZIP не перезаписан
+            assert existing.photo_key == "photos-series/with-webp.webp"
 
 
 # ===========================================================================

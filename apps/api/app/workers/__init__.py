@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.tasks.fetch_nbrb_rates",
         "app.tasks.notifications",
         "app.tasks.export_catalog",
+        "app.tasks.photo_zip",
     ],
 )
 

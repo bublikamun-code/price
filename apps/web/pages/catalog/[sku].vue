@@ -14,7 +14,8 @@ definePageMeta({ layout: 'client', middleware: 'auth' })
 
 const route = useRoute()
 const { request } = useApi()
-const { photoOf } = useProductPhoto()
+// карточка/лайтбокс — large; миниатюры — thumb (§16 п.17)
+const { photoOf, thumbOf } = useProductPhoto()
 
 const sku = computed(() => String(route.params.sku))
 
@@ -232,7 +233,7 @@ onUnmounted(() => {
           <!-- Миниатюры (одно фото → одна) -->
           <div v-if="photoOf(product)" class="flex gap-3 mt-3">
             <div class="w-20 h-20 rounded-card overflow-hidden border-2 border-primary bg-surface-2">
-              <img :src="photoOf(product)!" :alt="product.name" class="w-full h-full object-cover" >
+              <img :src="thumbOf(product.photo_key)!" :alt="product.name" class="w-full h-full object-cover" >
             </div>
           </div>
         </div>
@@ -345,8 +346,8 @@ onUnmounted(() => {
           >
             <div class="aspect-square bg-canvas rounded-card mb-3 flex items-center justify-center overflow-hidden">
               <img
-                v-if="photoOf(s)"
-                :src="photoOf(s)!"
+                v-if="thumbOf(s.photo_key)"
+                :src="thumbOf(s.photo_key)!"
                 :alt="s.name"
                 loading="lazy"
                 class="w-full h-full object-contain"

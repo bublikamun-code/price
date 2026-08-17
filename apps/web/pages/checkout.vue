@@ -6,7 +6,7 @@ definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Оформление заявки' })
 
 const { request } = useApi()
-const { photoOf } = useProductPhoto()
+const { thumbOf } = useProductPhoto()
 const { data: cartData, loading, refresh, clear } = useCart()
 
 const notes = ref('')
@@ -76,7 +76,7 @@ onMounted(refresh)
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-3">
                     <div class="w-10 h-10 shrink-0 rounded-card bg-canvas overflow-hidden flex items-center justify-center">
-                      <img v-if="photoOf(item)" :src="photoOf(item)!" :alt="item.name" class="w-full h-full object-contain" >
+                      <img v-if="thumbOf(item.photo_key)" :src="thumbOf(item.photo_key)!" :alt="item.name" class="w-full h-full object-contain" >
                       <Icon v-else name="heroicons:photo" class="w-5 h-5 text-ink-faint" />
                     </div>
                     <div class="min-w-0">

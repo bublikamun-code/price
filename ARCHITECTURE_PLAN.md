@@ -3,7 +3,7 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.4 — готов к передаче команде / ИИ-ассистенту.
+> **Статус:** v1.5 — готов к передаче команде / ИИ-ассистенту.
 > **Дата:** 2026-08-17
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
@@ -445,6 +445,8 @@ app/
 | POST | `/api/v1/manager/prices/import` | Загрузить CSV. Multipart. Body: `file`, `mode`, `currency`. Возвращает `version_id`. |
 | GET | `/api/v1/manager/prices/versions` | История импортов + статус. |
 | POST | `/api/v1/manager/prices/versions/{id}/rollback` | Откат версии (§16 п.14): товарам, существовавшим до версии, возвращаются цены из последнего снапшота `price_history` до неё; товары, впервые появившиеся в версии, архивируются (soft-delete, `ARCHIVE`). Разрешён только для последней DONE-версии; повторный откат/не-DONE/не последняя → 409. Инвалидирует кэш каталога тегами импорта. Возвращает карточку версии + счётчики `restored`/`archived`. |
+| POST | `/api/v1/manager/prices/photo-zip` | Загрузить ZIP с фото серий (multipart, §10/§16 п.17): валидация (zip, magic-bytes, лимиты) → S3 tmp-uploads → Celery-обработка (webp thumb/large + матчинг к сериям). Возвращает `{job_id}` (202). |
+| GET | `/api/v1/manager/prices/photo-zip/{job_id}` | Статус обработки ZIP (только владелец): `QUEUED/RUNNING/DONE/FAILED` + счётчики `files/matched/unmatched` и список ошибок. |
 | POST | `/api/v1/manager/brands` \| `/series` | CRUD брендов/серий. |
 | GET \| PATCH | `/api/v1/manager/orders` | Все заявки, смена статусов. |
 | POST | `/api/v1/manager/files` | Загрузить файл (PDF/CSV/ZIP). |
@@ -458,6 +460,7 @@ app/
 |---|---|---|
 | GET | `/api/v1/files` | Список downloadable assets (PDF-каталоги брендов, выгрузки CSV). Фильтр по типу/бренду. |
 | GET | `/api/v1/files/{id}/download` | Presigned URL (время жизни — 5 мин). |
+| GET | `/api/v1/files/photo` | Фото серии: `?key=photos-series/...` → 307-редирект на presigned URL (5 мин, §16 п.17). |
 
 ### Realtime-уведомления (для менеджера)
 | Method | Path | Описание |
@@ -655,11 +658,13 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 - `error-logs/` — отчёты по неудачным импортам.
 
 ### Обработка фото
-- На вход: ZIP с файлами `serie_a.jpg`, `serie_b.jpg`...
-- Worker распаковывает, для каждого:
-  - генерирует thumbnail (400×400 webp) и large (1200×1200 webp).
-  - кладёт в S3 с ключом `photos-series/{slug}.webp`.
-  - связывает с `series.photo_key` (по `series_photo` имени из CSV или по `series.name`).
+- На вход: ZIP с файлами `serie_a.jpg`, `serie_b.jpg`... (JPG/PNG/WebP; лимиты — §16 п.17).
+- Загрузка: `POST /manager/prices/photo-zip` (dropzone «обработать ZIP с фото серий» на странице импорта, SITEMAP §7); обработка — Celery-задача.
+- Worker распаковывает, для каждого файла:
+  - генерирует thumbnail (400×400 webp, fit — без кропа) и large (1200×1200 webp, fit);
+  - кладёт в S3: `photos-series/{slug}.webp` (large) и `photos-series/{slug}_thumb.webp` (конвенция суффикса `_thumb`, §16 п.17);
+  - связывает с `series.photo_key` = ключ large. Матчинг: нормализованное имя файла (без расширения, `_`/пробел → `-`, lower) == slug серии; приоритет — совпадение с именем из `series_photo` CSV, затем с slug по `series.name`.
+- Выдача: `GET /api/v1/files/photo?key=` → 307 на presigned (5 мин); значения `photo_key`, не являющиеся http(s)-URL, трактуются как S3-ключи.
 - Фронт: `<NuxtImg>` отдаёт webp, `vue-easy-lightbox` — зум.
 
 ### Загрузка файлов клиентом
@@ -844,6 +849,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 14 | Семантика rollback версии прайса | **Восстановление + архив новых; откатывать только последнюю DONE-версию** (согласовано 2026-08-16) | `POST /manager/prices/versions/{id}/rollback`: товарам, существовавшим до версии X, возвращаются `base_price`/`override_price` из их последнего снапшота `price_history` до X; товары, впервые появившиеся в X, архивируются (soft-delete, `stock_status=ARCHIVE`). Guards: версия существует (404), статус DONE, последняя DONE, не откачена ранее (иначе 409). Аудит: `price_list_versions.rolled_back_at/rolled_back_by` (§5); кэш каталога инвалидируется тегами импорта. |
 | 15 | Схема хранения JWT-ключей RS256 | **PEM-файлы, смонтированные в контейнеры read-only** (согласовано 2026-08-16) | Dev: HS256 + `SECRET_KEY` (без изменений). Prod: `JWT_ALGORITHM=RS256`; RSA-2048 ключи генерируются на хосте (`make gen-jwt-keys`), лежат в `infra/jwt-keys/` (`.gitignore`), монтируются read-only, пути — `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`. Публичный ключ раздаётся сервисам, проверяющим токены. Vault не входит в MVP-инфраструктуру — §11 скорректирован с «vault» на эту схему. |
 | 16 | Экспорт каталога: метод и форматы | **POST; CSV+XLSX сейчас, PDF отложен** (согласовано 2026-08-17) | Расхождение §6 (GET) и SITEMAP (POST) устранено в пользу POST — запуск генерации создаёт job (side-effect). Форматы: `csv` (UTF-8 BOM) и `xlsx` (openpyxl); `pdf` → 422 с сообщением (weasyprint требует системных deps — отдельной задачей, см. §16.1 F). Job-стейт — Redis (`export:job:{id}`, TTL 24 ч, статусы QUEUED/RUNNING/DONE/FAILED, доступ только владельцу); файлы — S3 `csv-exports/` (TTL 7 дней); rate-limit 10/час на клиента (§11). |
+| 17 | Photo-ZIP: эндпоинты, конвенции ключей и матчинг | **Согласовано 2026-08-17** | Эндпоинты: `POST /manager/prices/photo-zip` (202 + job) и `GET .../photo-zip/{job_id}` (статус, владелец-only) — job-стейт в Redis по паттерну экспорта (§16 п.16); выдача фото — `GET /files/photo?key=` → 307 на presigned (5 мин). Ключи: large `photos-series/{slug}.webp` (1200×1200 fit), thumb `photos-series/{slug}_thumb.webp` (400×400 fit), суффикс `_thumb` — конвенция. Матчинг к серии: нормализованный stem файла == series.slug; приоритет — имя, заявленное в CSV `series_photo` (при импорте сохраняется в series.photo_key до появления webp). Лимиты: ZIP ≤100 МБ, распакованный объём ≤500 МБ, ≤2000 файлов, входные форматы JPG/PNG/WebP. Импорт CSV: `series_photo` → `series.photo_key` (§7, закрывает нереализованное ранее связывание). |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 
@@ -1109,5 +1115,5 @@ CREATE INDEX ix_notif_user_unread ON notifications(user_id) WHERE is_read = FALS
 
 ---
 
-> **Текущая версия документа:** v1.4
+> **Текущая версия документа:** v1.5
 > **Сопутствующие файлы:** `SITEMAP.md` (карта сайта/экранов).

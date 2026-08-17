@@ -169,10 +169,12 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
             brand_cache[key] = await get_or_create_brand(db, name=name)
         return brand_cache[key].id
 
-    async def _series(name: str, brand_id: uuid.UUID) -> uuid.UUID:
+    async def _series(name: str, brand_id: uuid.UUID, photo: str | None = None) -> uuid.UUID:
         key = (name.lower().strip(), str(brand_id))
         if key not in series_cache:
-            series_cache[key] = await get_or_create_series(db, name=name, brand_id=brand_id)
+            series_cache[key] = await get_or_create_series(
+                db, name=name, brand_id=brand_id, photo_key=photo
+            )
         return series_cache[key].id
 
     for chunk in _chunks(normalized, BATCH_SIZE):
@@ -180,7 +182,12 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
             for _row_num, nr in chunk:
                 base_byn = (nr.base_price * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
                 brand_id = await _brand(nr.brand)
-                series_id = await _series(nr.series, brand_id) if nr.series else None
+                # series_photo (§7, §16 п.17) — «сырое» имя файла фото серии:
+                # сохранится в series.photo_key до появления webp из photo-ZIP.
+                series_id = (
+                    await _series(nr.series, brand_id, nr.series_photo)
+                    if nr.series else None
+                )
                 has_discount = nr.discount_price is not None
                 # discount_price тоже в валюте CSV → конвертируем в BYN (§17.2),
                 # override_price хранится в BYN наравне с base_price.

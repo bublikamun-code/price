@@ -6,7 +6,7 @@ definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Избранное' })
 
 const { request } = useApi()
-const { photoOf } = useProductPhoto()
+const { thumbOf } = useProductPhoto()
 const cart = useCart()
 
 const PER_PAGE = 12
@@ -101,7 +101,7 @@ onMounted(load)
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
         <article v-for="f in favorites" :key="f.product_id" class="card card-hover p-5 flex flex-col">
           <div class="aspect-square bg-canvas rounded-card mb-4 flex items-center justify-center overflow-hidden">
-            <img v-if="photoOf(f)" :src="photoOf(f)!" :alt="f.name" loading="lazy" class="w-full h-full object-contain" >
+            <img v-if="thumbOf(f.photo_key)" :src="thumbOf(f.photo_key)!" :alt="f.name" loading="lazy" class="w-full h-full object-contain" >
             <Icon v-else name="heroicons:photo" class="w-10 h-10 text-ink-faint" />
           </div>
 

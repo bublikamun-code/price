@@ -5,6 +5,8 @@
 import type {
   ImportMode,
   ImportUploadOut,
+  PhotoZipJobOut,
+  PhotoZipStartOut,
   PriceListVersionRead,
   PriceListVersionPage,
   RollbackOut,
@@ -134,6 +136,81 @@ async function onSubmit() {
   } finally {
     submitting.value = false
   }
+}
+
+// --- ZIP с фото серий (§16 п.17) ---
+const zipInput = ref<HTMLInputElement | null>(null)
+const zipFile = ref<File | null>(null)
+const zipSubmitting = ref(false)
+const zipError = ref('')
+const zipStatus = ref<PhotoZipJobOut | null>(null)
+let zipTimer: ReturnType<typeof setTimeout> | null = null
+
+function pickZip() {
+  zipInput.value?.click()
+}
+
+function onZipChange(e: Event) {
+  const f = (e.target as HTMLInputElement).files?.[0] ?? null
+  zipError.value = ''
+  zipStatus.value = null
+  if (f && !f.name.toLowerCase().endsWith('.zip')) {
+    zipError.value = 'Допустимы только .zip файлы'
+    return
+  }
+  zipFile.value = f
+}
+
+function clearZip() {
+  zipFile.value = null
+  zipStatus.value = null
+  zipError.value = ''
+  if (zipInput.value) zipInput.value.value = ''
+}
+
+async function onZipSubmit() {
+  if (!zipFile.value || zipSubmitting.value) return
+  zipSubmitting.value = true
+  zipError.value = ''
+  zipStatus.value = null
+  try {
+    const fd = new FormData()
+    fd.append('file', zipFile.value)
+    const res = await request<PhotoZipStartOut>('/api/v1/manager/prices/photo-zip', {
+      method: 'POST',
+      body: fd,
+    })
+    await pollZipJob(res.job_id)
+  } catch (e) {
+    zipError.value = getErrorMessage(e, 'Не удалось загрузить ZIP')
+  } finally {
+    zipSubmitting.value = false
+  }
+}
+
+// Опрос статуса обработки (Celery): 2 сек, максимум 60 попыток.
+function pollZipJob(jobId: string): Promise<void> {
+  return new Promise(resolve => {
+    let attempts = 0
+    const tick = async () => {
+      attempts++
+      let job: PhotoZipJobOut
+      try {
+        job = await request<PhotoZipJobOut>(`/api/v1/manager/prices/photo-zip/${jobId}`)
+      } catch (e) {
+        zipError.value = getErrorMessage(e, 'Не удалось получить статус обработки')
+        return resolve()
+      }
+      zipStatus.value = job
+      if (job.status === 'DONE' || job.status === 'FAILED') return resolve()
+      if (attempts >= 60) {
+        zipError.value = 'Обработка идёт слишком долго — проверьте позже'
+        return resolve()
+      }
+      zipTimer = setTimeout(tick, 2000)
+    }
+    tick()
+  })
 }
 
 // --- История импортов ---
@@ -289,6 +366,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   if (successTimer) clearTimeout(successTimer)
+  if (zipTimer) clearTimeout(zipTimer)
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
@@ -404,6 +482,53 @@ onUnmounted(() => {
         <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
         {{ submitting ? 'Запуск…' : 'Импортировать' }}
       </button>
+    </div>
+
+    <!-- ZIP с фото серий (§16 п.17) -->
+    <div class="card p-6 mt-6">
+      <h2 class="font-semibold mb-2">Фото серий</h2>
+      <p class="text-sm text-ink-muted mb-4">
+        ZIP с файлами вида <code>serie-a.jpg</code> — имя файла (без расширения) должно
+        совпадать с серией; сгенерируются миниатюра и основное фото (webp) и привяжутся к сериям.
+      </p>
+      <input ref="zipInput" type="file" accept=".zip" class="hidden" @change="onZipChange">
+
+      <div v-if="!zipFile" class="border-2 border-dashed border-border rounded-card p-6 text-center">
+        <button class="btn-ghost py-2" :disabled="zipSubmitting" @click="pickZip">
+          <Icon name="heroicons:photo" class="w-4 h-4" /> Выбрать ZIP
+        </button>
+      </div>
+
+      <div v-else class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="text-sm">
+          <span class="font-medium">{{ zipFile.name }}</span>
+          <span class="text-ink-faint ml-2">{{ (zipFile.size / 1024 / 1024).toFixed(1) }} МБ</span>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn-ghost py-2" :disabled="zipSubmitting" @click="clearZip">Убрать</button>
+          <button class="btn-primary py-2.5 px-5" :disabled="zipSubmitting" @click="onZipSubmit">
+            <span v-if="zipSubmitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+            {{ zipSubmitting ? 'Обработка…' : 'Загрузить и обработать' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="zipError" class="badge-danger w-full justify-center py-2 mt-4">{{ zipError }}</div>
+
+      <div v-if="zipStatus" class="mt-4 text-sm">
+        <div v-if="zipStatus.status === 'DONE'" class="badge-success w-full justify-center py-2">
+          <Icon name="heroicons:check-circle" class="w-4 h-4" />
+          Фото обработано: {{ zipStatus.files }} · привязано к сериям: {{ zipStatus.matched }} ·
+          без совпадений: {{ zipStatus.unmatched }}
+        </div>
+        <ul v-if="zipStatus.errors?.length" class="mt-3 text-xs text-ink-muted list-disc pl-5">
+          <li v-for="(err, i) in zipStatus.errors" :key="i">{{ err }}</li>
+        </ul>
+        <div v-else-if="zipStatus.status === 'FAILED'" class="badge-danger w-full justify-center py-2">
+          {{ zipStatus.error || 'Ошибка обработки' }}
+        </div>
+        <p v-else class="text-ink-muted">Обработка… ({{ zipStatus.status }})</p>
+      </div>
     </div>
 
     <!-- История импортов -->

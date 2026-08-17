@@ -59,3 +59,27 @@ class RollbackOut(BaseModel):
 class PriceListVersionPage(BaseModel):
     data: list[PriceListVersionRead]
     meta: MetaPage
+
+
+class PhotoZipStartOut(BaseModel):
+    """Ответ на ``POST /manager/prices/photo-zip`` — принятая в обработку задача."""
+
+    job_id: str
+
+
+class PhotoZipJobOut(BaseModel):
+    """Статус обработки ZIP с фото серий (§16 п.17).
+
+    ``files`` — обработано изображений, ``matched``/``unmatched`` — привязаны
+    ли к сериям (unmatched-фото всё равно заливаются в S3), ``errors`` —
+    первые 50 ошибок по файлам (битые/нечитаемые).
+    """
+
+    job_id: str
+    status: str
+    files: int
+    matched: int
+    unmatched: int
+    error: str | None = None
+    errors: list[str] = []
+    created_at: str | None = None

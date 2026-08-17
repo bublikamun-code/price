@@ -174,8 +174,8 @@ onUnmounted(() => {
   if (exportTimer) clearTimeout(exportTimer)
 })
 
-// мини-помощники для карточки
-const { photoOf } = useProductPhoto()
+// мини-помощники для карточки (в карточках каталога — thumb, §16 п.17)
+const { thumbOf } = useProductPhoto()
 function attrChips(p: ProductCard): { label: string; value: string }[] {
   const a = p.attributes || {}
   const out: { label: string; value: string }[] = []
@@ -331,8 +331,8 @@ onMounted(load)
             <!-- Фото -->
             <div class="aspect-square bg-canvas rounded-card mb-4 flex items-center justify-center overflow-hidden">
               <img
-                v-if="photoOf(p)"
-                :src="photoOf(p)!"
+                v-if="thumbOf(p.photo_key)"
+                :src="thumbOf(p.photo_key)!"
                 :alt="p.name"
                 loading="lazy"
                 class="w-full h-full object-contain"

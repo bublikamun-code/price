@@ -9,6 +9,8 @@
   * ``GET  /versions/{id}``   — карточка версии (статус, счётчики, курс).
   * ``GET  /versions/{id}/errors`` — presigned-URL на CSV-отчёт ошибок (S3).
   * ``POST /versions/{id}/rollback`` — откат версии к предыдущему состоянию.
+  * ``POST /photo-zip``       — multipart-загрузка ZIP с фото серий (§16 п.17).
+  * ``GET  /photo-zip/{job_id}`` — статус обработки ZIP (только владелец).
 
 Все эндпоинты требуют роль ``MANAGER`` (RBAC, §11).
 """
@@ -28,10 +30,13 @@ from app.repositories.catalog import fetch_price_list_versions, get_price_list_v
 from app.schemas import MetaPage
 from app.schemas.price_list import (
     ImportUploadOut,
+    PhotoZipJobOut,
+    PhotoZipStartOut,
     PriceListVersionPage,
     PriceListVersionRead,
     RollbackOut,
 )
+from app.services import photo_zip as photo_zip_service
 from app.services import price_list_import, storage
 
 router = APIRouter(prefix="/prices", tags=["manager:prices"])
@@ -45,6 +50,12 @@ _ALLOWED_CSV_CONTENT_TYPES = {
     "application/vnd.ms-excel",
     "text/csv",
     "text/plain",
+}
+
+_ALLOWED_ZIP_CONTENT_TYPES = {
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/octet-stream",
 }
 
 
@@ -124,6 +135,32 @@ async def _validate_csv_stream(file: UploadFile, *, max_bytes: int) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
     lines = header_text.splitlines()
     _validate_header_line(lines[0] if lines else "")
+
+
+async def _validate_zip_stream(file: UploadFile, *, max_bytes: int) -> None:
+    """Потоковая валидация ZIP (§16 п.17): magic-bytes ``PK`` + размер.
+
+    Читаем чанками (spool-файл Starlette не материализуется в памяти);
+    первый непустой чанк должен начинаться с ``PK`` (сигнатура ZIP).
+    """
+    total = 0
+    first: bytes | None = None
+    while chunk := await file.read(_READ_CHUNK):
+        if first is None:
+            first = chunk
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Файл превышает лимит {settings.import_max_file_mb} МБ",
+            )
+    if total == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
+    if not first.startswith(b"PK"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Файл не является ZIP-архивом",
+        )
 
 
 @router.post(
@@ -263,4 +300,66 @@ async def rollback_version(
         version=PriceListVersionRead.model_validate(version),
         restored=restored,
         archived=archived,
+    )
+
+
+@router.post(
+    "/photo-zip",
+    response_model=PhotoZipStartOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_photo_zip(
+    file: UploadFile = File(..., description="ZIP с фото серий (jpg/jpeg/png/webp)"),
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+) -> PhotoZipStartOut:
+    """Принять ZIP с фото серий, залить в MinIO (tmp-uploads), запустить задачу.
+
+    Здесь — только HTTP-валидация (расширение .zip, content-type, magic-bytes
+    ``PK``, размер ≤ ``import_max_file_mb``); обработка (webp thumb/large +
+    матчинг к сериям) — Celery-задача, статус опрашивается через
+    ``GET /photo-zip/{job_id}`` (§16 п.17).
+    """
+    name = (file.filename or "").lower()
+    if not name.endswith(".zip"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Допустимы только файлы .zip",
+        )
+    content_type = (file.content_type or "").lower().split(";", 1)[0].strip()
+    if content_type not in _ALLOWED_ZIP_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Неподдерживаемый Content-Type для ZIP",
+        )
+    await _validate_zip_stream(file, max_bytes=_MAX_BYTES)
+
+    try:
+        job_id = await photo_zip_service.start_photo_zip(user=manager, upload=file)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+    return PhotoZipStartOut(job_id=job_id)
+
+
+@router.get("/photo-zip/{job_id}", response_model=PhotoZipJobOut)
+async def get_photo_zip_job(
+    job_id: uuid.UUID,
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+) -> PhotoZipJobOut:
+    """Статус обработки ZIP с фото серий (только владелец, чужой → 404)."""
+    state = await photo_zip_service.get_job(manager.id, job_id)
+    if state is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена"
+        )
+    return PhotoZipJobOut(
+        job_id=state["job_id"],
+        status=state["status"],
+        files=state.get("files", 0),
+        matched=state.get("matched", 0),
+        unmatched=state.get("unmatched", 0),
+        error=state.get("error"),
+        errors=state.get("errors") or [],
+        created_at=state.get("created_at"),
     )

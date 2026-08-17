@@ -54,6 +54,15 @@
 - `db.commit()` в cart/favorites/orders-роутерах сохранён — согласованный UoW-паттерн проекта (транзакцию коммитит владелец запроса), не долг.
 - Проверки: 159 passed (`make test`, docker), ruff по изменённым файлам — чисто (3 предсуществующих E702 в `tests/test_cache.py` не тронуты), compileall exit 0.
 
+## Пакет 2026-08-17 (2): photo-ZIP — фото серий, webp-миниатюры, series_photo (Этап 4-остаток, §16 п.17)
+
+- Канон v1.5: §6 (`POST /manager/prices/photo-zip` + `GET /{job_id}`, `GET /files/photo` → 307), §10 (конвенция ключей `{slug}.webp`/`{slug}_thumb.webp`, матчинг), §16 п.17 (лимиты ZIP ≤100 МБ / распаковано ≤500 МБ / ≤2000 файлов / файл ≤50 МБ).
+- Backend: `services/photo_zip.py` + `tasks/photo_zip.py` (Pillow webp 400/1200 fit q82; zip-bomb guard: лимиты по заголовкам + capped-read; матчинг stem→slug, приоритет — «сырое» photo_key из CSV; unmatched-фото заливаются); импорт CSV: `series_photo` → `series.photo_key` (закрыт нереализованный §7-пункт); `GET /files/photo?key=` → 307 presigned (валидация ключа без `..`/схемы).
+- Инфра: Pillow==11.2.1, api-образ пересобран (webp ✓).
+- Frontend: dropzone ZIP на странице импорта (опрос job, счётчики matched/unmatched/errors); `useProductPhoto` — S3-ключи через `/files/photo` 307, `thumbOf` для карточек каталога.
+- Проверки: 202 passed (+15: 14 photo-zip + 1 series_photo), ruff/compileall чисто, web typecheck 0, eslint 0.
+- Выполнено агентом до лимита + доведено вручную: пересборка образа, фикс сломанной строки `versions`-ref в import.vue, дописан UI-блок ZIP и очистка таймера.
+
 ## Пакет 2026-08-17: экспорт каталога CSV/XLSX (Этап 7, §16 п.16)
 
 - Решения заказчика (§21): метод POST (расхождение §6-GET/SITEMAP-POST устранено), форматы CSV+XLSX сейчас / PDF отложен (422). Канон v1.4: §6, §16 п.16.
