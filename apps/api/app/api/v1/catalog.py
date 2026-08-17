@@ -6,11 +6,14 @@
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.limiter import limiter
+from app.core.security import JWTError, decode_token
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories import catalog as repo
@@ -18,12 +21,16 @@ from app.schemas import MetaPage
 from app.schemas.catalog import (
     BrandRef,
     CatalogPage,
+    ExportJobOut,
+    ExportStartOut,
     FiltersOut,
     PriceHistoryItem,
     ProductCard,
     ProductDetail,
     SeriesRef,
 )
+from app.services import export as export_service
+from app.services import storage
 from app.services.cache import (
     CATALOG_TAG,
     FILTERS_TAG,
@@ -36,6 +43,9 @@ from app.services.cache import (
 from app.services.pricing import PricingService
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+# Лимит запуска экспорта: 10/час на пользователя (§16 п.16).
+EXPORT_RATE_LIMIT = "10/hour"
 
 
 @router.get("/products", response_model=CatalogPage)
@@ -203,3 +213,91 @@ async def get_price_history(
         )
         for r in rows
     ]
+
+
+def _export_rate_key(request: Request) -> str:
+    """Ключ лимита экспорта — id пользователя из access-JWT (без похода в БД).
+
+    slowapi резолвит key_func до тела эндпоинта; неавторизованные попытки
+    (нет/битый токен) считаются по IP — как у login.
+    """
+    auth = request.headers.get("Authorization")
+    token = None
+    if auth and auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+    token = token or request.cookies.get("access_token")
+    if token:
+        try:
+            payload = decode_token(token)
+            if payload.get("type") == "access" and payload.get("sub"):
+                return f"user:{payload['sub']}"
+        except JWTError:
+            pass
+    return get_remote_address(request)
+
+
+@router.post(
+    "/export",
+    response_model=ExportStartOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@limiter.limit(EXPORT_RATE_LIMIT, key_func=_export_rate_key)
+async def start_catalog_export(
+    request: Request,
+    format: Literal["csv", "xlsx", "pdf"] = Query(description="Формат выгрузки"),
+    q: str | None = Query(default=None, description="Поиск по артикулу/наименованию"),
+    brand: list[uuid.UUID] | None = Query(default=None),
+    series: list[uuid.UUID] | None = Query(default=None),
+    stock: Literal["IN_STOCK", "PREORDER"] | None = None,
+    price_calc_mode: Literal["fixed", "nbrb_current"] = Query(
+        default="fixed", description="fixed=по договору, nbrb_current=по текущему НБ РБ"
+    ),
+    user: User = Depends(get_current_user),
+) -> ExportStartOut:
+    """Запустить экспорт каталога под текущие фильтры (CSV/XLSX, §16 п.16).
+
+    Фильтры идентичны ``GET /catalog/products``; в файле — персональные цены
+    пользователя. Файл собирает Celery-задача: статус опрашивается через
+    ``GET /catalog/export/{job_id}``. Лимит: 10 запусков/час на пользователя.
+    """
+    if format == "pdf":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="PDF-экспорт отложен (§16 п.16)",
+        )
+    filters = repo.CatalogFilters(q=q, brand_ids=brand, series_ids=series, stock=stock)
+    job_id = await export_service.start_export(
+        user=user, filters=filters, format=format, price_calc_mode=price_calc_mode
+    )
+    return ExportStartOut(job_id=job_id)
+
+
+@router.get("/export/{job_id}", response_model=ExportJobOut)
+async def get_export_job(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+) -> ExportJobOut:
+    """Статус job экспорта (только владелец, чужой/несуществующий → 404).
+
+    ``url`` — presigned-ссылка на файл в S3 (5 мин), отдаётся только при DONE.
+    """
+    state = await export_service.get_job(user.id, job_id)
+    if state is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Экспорт не найден"
+        )
+    url = None
+    if state.get("status") == "DONE" and state.get("s3_key"):
+        try:
+            url = storage.presigned_get(settings.s3_bucket_exports, state["s3_key"])
+        except storage.StorageError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            ) from exc
+    return ExportJobOut(
+        job_id=state["job_id"],
+        status=state["status"],
+        format=state["format"],
+        error=state.get("error"),
+        url=url,
+    )

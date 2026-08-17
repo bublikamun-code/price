@@ -27,17 +27,23 @@ class CatalogFilters:
         return any([self.q, self.brand_ids, self.series_ids, self.stock])
 
 
-async def fetch_catalog(
-    db: AsyncSession,
-    *,
-    user_id: uuid.UUID,
-    filters: CatalogFilters,
-    sort: str = "name",
-    limit: int = 50,
-    offset: int = 0,
-):
-    """Список товаров с брендом/серией/скидкой клиента. Возвращает list[Row]."""
-    stmt = (
+def _apply_catalog_filters(stmt, filters: CatalogFilters):
+    """Общая WHERE-логика каталога (список / счётчик / экспорт)."""
+    if filters.q:
+        pat = f"%{filters.q}%"
+        stmt = stmt.where(or_(Product.sku.ilike(pat), Product.name.ilike(pat)))
+    if filters.brand_ids:
+        stmt = stmt.where(Product.brand_id.in_(filters.brand_ids))
+    if filters.series_ids:
+        stmt = stmt.where(Product.series_id.in_(filters.series_ids))
+    if filters.stock:
+        stmt = stmt.where(Product.stock_status == filters.stock)
+    return stmt
+
+
+def _catalog_rows_stmt(user_id: uuid.UUID):
+    """Базовый select каталога: товар + бренд/серия + скидка клиента."""
+    return (
         select(
             Product,
             Brand.id.label("brand_id"),
@@ -57,15 +63,18 @@ async def fetch_catalog(
         .where(Product.deleted_at.is_(None), Product.stock_status != StockStatus.ARCHIVED)
     )
 
-    if filters.q:
-        pat = f"%{filters.q}%"
-        stmt = stmt.where(or_(Product.sku.ilike(pat), Product.name.ilike(pat)))
-    if filters.brand_ids:
-        stmt = stmt.where(Product.brand_id.in_(filters.brand_ids))
-    if filters.series_ids:
-        stmt = stmt.where(Product.series_id.in_(filters.series_ids))
-    if filters.stock:
-        stmt = stmt.where(Product.stock_status == filters.stock)
+
+async def fetch_catalog(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    filters: CatalogFilters,
+    sort: str = "name",
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Список товаров с брендом/серией/скидкой клиента. Возвращает list[Row]."""
+    stmt = _apply_catalog_filters(_catalog_rows_stmt(user_id), filters)
 
     # сортировка
     sort_map = {
@@ -82,19 +91,32 @@ async def fetch_catalog(
     return result.all()
 
 
-async def count_catalog(db: AsyncSession, *, filters: CatalogFilters) -> int:
-    stmt = select(func.count(Product.id)).where(
-        Product.deleted_at.is_(None), Product.stock_status != StockStatus.ARCHIVED
+async def fetch_catalog_all(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    filters: CatalogFilters,
+):
+    """Весь каталог под фильтры без пагинации (экспорт CSV/XLSX, §16 п.16).
+
+    Та же WHERE-логика/джойны, что у ``fetch_catalog``, но без limit/offset —
+    выгрузка отдаётся целиком в Celery-задачу экспорта. Строки те же:
+    ``row[0]`` — ``Product``, плюс brand_name/series_name для колонок файла.
+    """
+    stmt = _apply_catalog_filters(_catalog_rows_stmt(user_id), filters).order_by(
+        Product.name.asc(), Product.id.asc()
     )
-    if filters.q:
-        pat = f"%{filters.q}%"
-        stmt = stmt.where(or_(Product.sku.ilike(pat), Product.name.ilike(pat)))
-    if filters.brand_ids:
-        stmt = stmt.where(Product.brand_id.in_(filters.brand_ids))
-    if filters.series_ids:
-        stmt = stmt.where(Product.series_id.in_(filters.series_ids))
-    if filters.stock:
-        stmt = stmt.where(Product.stock_status == filters.stock)
+    result = await db.execute(stmt)
+    return result.all()
+
+
+async def count_catalog(db: AsyncSession, *, filters: CatalogFilters) -> int:
+    stmt = _apply_catalog_filters(
+        select(func.count(Product.id)).where(
+            Product.deleted_at.is_(None), Product.stock_status != StockStatus.ARCHIVED
+        ),
+        filters,
+    )
     return int(await db.scalar(stmt) or 0)
 
 

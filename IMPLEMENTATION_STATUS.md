@@ -54,6 +54,14 @@
 - `db.commit()` в cart/favorites/orders-роутерах сохранён — согласованный UoW-паттерн проекта (транзакцию коммитит владелец запроса), не долг.
 - Проверки: 159 passed (`make test`, docker), ruff по изменённым файлам — чисто (3 предсуществующих E702 в `tests/test_cache.py` не тронуты), compileall exit 0.
 
+## Пакет 2026-08-17: экспорт каталога CSV/XLSX (Этап 7, §16 п.16)
+
+- Решения заказчика (§21): метод POST (расхождение §6-GET/SITEMAP-POST устранено), форматы CSV+XLSX сейчас / PDF отложен (422). Канон v1.4: §6, §16 п.16.
+- Backend: `services/export.py` (job-стейт Redis `export:job:{id}`, TTL 24 ч, fail-open), `tasks/export_catalog.py` (RUNNING→DONE/FAILED, CSV utf-8-sig «;», XLSX openpyxl, upload в `csv-exports`), `repositories/catalog.fetch_catalog_all` (+ общий `_apply_catalog_filters` для списка/счётчика/экспорта), роутеры `POST /catalog/export` (rate-limit 10/час, ключ — user из JWT) и `GET /catalog/export/{job_id}` (владелец-only, presigned 5 мин).
+- Frontend: каталог — кнопка «Экспорт» (CSV/XLSX) с текущими фильтрами, опрос job каждые 2 с (макс. 60), скачивание по url.
+- Проверки: 187 passed (+9 `test_export.py`), ruff/compileall чисто, web typecheck — 0. Починен шум «Event loop is closed» на выходе pytest (тест без мока redis-клиента открывал реальное соединение → autouse FakeRedis в модуле).
+- Примечание: PDF-экспорт — отдельная задача (weasyprint + системные deps в образ, см. §16.1 F).
+
 ## Пакет 2026-08-16 (2): rollback версии прайса (Этап 9, §16 п.14)
 
 - Канон-first (§21): §16 п.14 (семантика: восстановление цен из `price_history` + архивация новых товаров; откат только последней DONE-версии, иначе 409), §5 (`rolled_back_at/by`), §6 (контракт эндпоинта); документ поднят до v1.2. Семантика согласована с заказчиком в сессии.

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Каталог / Прайс-лист — ключевая страница (SITEMAP.md §6).
 // Реальные данные: GET /api/v1/catalog/products, /catalog/filters.
-import type { CatalogPage, FiltersOut, ProductCard } from '~/types/api'
+// Экспорт каталога под текущие фильтры: POST /catalog/export + опрос статуса.
+import type { CatalogPage, ExportFormat, ExportJobOut, ExportStartOut, FiltersOut, ProductCard } from '~/types/api'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Каталог' })
@@ -103,6 +104,76 @@ function goPage(p: number) {
   load()
 }
 
+// Экспорт каталога (§16 п.16): Celery-задача собирает файл, статус опрашиваем.
+const EXPORT_POLL_MS = 2000
+const EXPORT_MAX_POLLS = 60
+const exporting = ref(false)
+const exportError = ref('')
+const exportMenuOpen = ref(false)
+let exportTimer: ReturnType<typeof setTimeout> | null = null
+
+async function startExport(format: ExportFormat) {
+  exportMenuOpen.value = false
+  if (exporting.value) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const started = await request<ExportStartOut>('/api/v1/catalog/export', {
+      method: 'POST',
+      query: {
+        format,
+        q: q.value || undefined,
+        brand: selectedBrands.value.length ? selectedBrands.value : undefined,
+        series: selectedSeries.value.length ? selectedSeries.value : undefined,
+        stock: selectedStock.value || undefined,
+        price_calc_mode: 'fixed',
+      },
+    })
+    await pollExport(started.job_id)
+  } catch (e) {
+    exportError.value = getErrorMessage(e, 'Не удалось запустить экспорт')
+    exporting.value = false
+  }
+}
+
+function pollExport(jobId: string): Promise<void> {
+  return new Promise(resolve => {
+    let attempts = 0
+    const tick = async () => {
+      attempts++
+      let job: ExportJobOut
+      try {
+        job = await request<ExportJobOut>(`/api/v1/catalog/export/${jobId}`)
+      } catch (e) {
+        exportError.value = getErrorMessage(e, 'Не удалось получить статус экспорта')
+        exporting.value = false
+        return resolve()
+      }
+      if (job.status === 'DONE' && job.url) {
+        window.open(job.url, '_blank')
+        exporting.value = false
+        return resolve()
+      }
+      if (job.status === 'FAILED') {
+        exportError.value = job.error || 'Экспорт не удался'
+        exporting.value = false
+        return resolve()
+      }
+      if (attempts >= EXPORT_MAX_POLLS) {
+        exportError.value = 'Экспорт выполняется слишком долго, попробуйте позже'
+        exporting.value = false
+        return resolve()
+      }
+      exportTimer = setTimeout(tick, EXPORT_POLL_MS)
+    }
+    tick()
+  })
+}
+
+onUnmounted(() => {
+  if (exportTimer) clearTimeout(exportTimer)
+})
+
 // мини-помощники для карточки
 const { photoOf } = useProductPhoto()
 function attrChips(p: ProductCard): { label: string; value: string }[] {
@@ -152,10 +223,40 @@ onMounted(load)
           <option value="-price">Цена ↓</option>
           <option value="sku">Артикул</option>
         </select>
+        <!-- Экспорт каталога под текущие фильтры -->
+        <div class="relative">
+          <button
+            class="btn-ghost py-2"
+            :disabled="exporting"
+            @click="exportMenuOpen = !exportMenuOpen"
+          >
+            <span
+              v-if="exporting"
+              class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
+            />
+            <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
+            {{ exporting ? 'Готовим файл…' : 'Экспорт' }}
+          </button>
+          <div v-if="exportMenuOpen && !exporting" class="absolute right-0 mt-2 card p-1.5 w-44 z-20">
+            <button
+              class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+              @click="startExport('csv')"
+            >
+              CSV (Excel)
+            </button>
+            <button
+              class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+              @click="startExport('xlsx')"
+            >
+              XLSX
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
     <div v-if="error" class="badge-danger w-full justify-center py-3 mb-6">{{ error }}</div>
+    <div v-if="exportError" class="badge-warning w-full justify-center py-3 mb-6">{{ exportError }}</div>
 
     <div class="flex gap-6">
       <!-- Фильтры -->

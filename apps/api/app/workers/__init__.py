@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.import_price_list",
         "app.tasks.fetch_nbrb_rates",
         "app.tasks.notifications",
+        "app.tasks.export_catalog",
     ],
 )
 

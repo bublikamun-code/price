@@ -3,8 +3,8 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.3 — готов к передаче команде / ИИ-ассистенту.
-> **Дата:** 2026-08-16
+> **Статус:** v1.4 — готов к передаче команде / ИИ-ассистенту.
+> **Дата:** 2026-08-17
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
 >
@@ -425,8 +425,8 @@ app/
 | GET | `/api/v1/catalog/products/{sku}` | Детализация товара + соседи по серии. |
 | GET | `/api/v1/catalog/filters` | Доступные фильтры (бренды, серии, статусы) — используется для UI. |
 | GET | `/api/v1/catalog/pricing/calculate` | Расчёт цены под клиента (для корзины). Body: `[{sku, qty}]` → `[{sku, unit_price, total}]`. |
-| GET | `/api/v1/catalog/export` | Запуск генерации экспорта. Query: те же фильтры + `format=csv\|xlsx\|pdf`, `price_mode`. Возвращает `job_id`. |
-| GET | `/api/v1/catalog/export/{job_id}` | Статус генерации + presigned URL готового файла в S3. |
+| POST | `/api/v1/catalog/export` | Запуск генерации выгрузки каталога (метод приведён к POST — см. §16 п.16). Query: фильтры каталога (`q`, `brand_ids`, `series_ids`, `stock`, `price_calc_mode`) + `format=csv\|xlsx` (`pdf` → 422, отложен §16 п.16). Rate-limit: 10/час на клиента. Возвращает `{job_id}`. |
+| GET | `/api/v1/catalog/export/{job_id}` | Статус генерации (`QUEUED/RUNNING/DONE/FAILED`, только владелец job) + presigned URL (5 мин) готового файла из S3 `csv-exports/`. |
 
 ### Заявки (клиент)
 | Method | Path | Описание |
@@ -843,6 +843,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 13 | Контейнеризация | **Да, Docker + docker-compose** (dev и prod). 8+ сервисов (API, Celery worker, Celery beat, Nuxt, PostgreSQL, Redis, MinIO, TG-бот, Nginx) — без compose не управляемо. Идентичные среды dev/staging/prod, лёгкий деплой на РБ-VPS, мгновенный rollback версиями образов | `docker-compose.yml` (dev) + `docker-compose.prod.yml` (override). Подробно см. §14. |
 | 14 | Семантика rollback версии прайса | **Восстановление + архив новых; откатывать только последнюю DONE-версию** (согласовано 2026-08-16) | `POST /manager/prices/versions/{id}/rollback`: товарам, существовавшим до версии X, возвращаются `base_price`/`override_price` из их последнего снапшота `price_history` до X; товары, впервые появившиеся в X, архивируются (soft-delete, `stock_status=ARCHIVE`). Guards: версия существует (404), статус DONE, последняя DONE, не откачена ранее (иначе 409). Аудит: `price_list_versions.rolled_back_at/rolled_back_by` (§5); кэш каталога инвалидируется тегами импорта. |
 | 15 | Схема хранения JWT-ключей RS256 | **PEM-файлы, смонтированные в контейнеры read-only** (согласовано 2026-08-16) | Dev: HS256 + `SECRET_KEY` (без изменений). Prod: `JWT_ALGORITHM=RS256`; RSA-2048 ключи генерируются на хосте (`make gen-jwt-keys`), лежат в `infra/jwt-keys/` (`.gitignore`), монтируются read-only, пути — `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`. Публичный ключ раздаётся сервисам, проверяющим токены. Vault не входит в MVP-инфраструктуру — §11 скорректирован с «vault» на эту схему. |
+| 16 | Экспорт каталога: метод и форматы | **POST; CSV+XLSX сейчас, PDF отложен** (согласовано 2026-08-17) | Расхождение §6 (GET) и SITEMAP (POST) устранено в пользу POST — запуск генерации создаёт job (side-effect). Форматы: `csv` (UTF-8 BOM) и `xlsx` (openpyxl); `pdf` → 422 с сообщением (weasyprint требует системных deps — отдельной задачей, см. §16.1 F). Job-стейт — Redis (`export:job:{id}`, TTL 24 ч, статусы QUEUED/RUNNING/DONE/FAILED, доступ только владельцу); файлы — S3 `csv-exports/` (TTL 7 дней); rate-limit 10/час на клиента (§11). |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 
@@ -1108,5 +1109,5 @@ CREATE INDEX ix_notif_user_unread ON notifications(user_id) WHERE is_read = FALS
 
 ---
 
-> **Текущая версия документа:** v1.3
+> **Текущая версия документа:** v1.4
 > **Сопутствующие файлы:** `SITEMAP.md` (карта сайта/экранов).

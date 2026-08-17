@@ -75,6 +75,22 @@ export interface FiltersOut {
   stock: string[]
 }
 
+// Экспорт каталога (CSV/XLSX). См. §6 + app/api/v1/catalog.py, §16 п.16.
+export type ExportFormat = 'csv' | 'xlsx'
+export type ExportJobStatus = 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED'
+
+export interface ExportStartOut {
+  job_id: string
+}
+
+export interface ExportJobOut {
+  job_id: string
+  status: ExportJobStatus
+  format: ExportFormat
+  error?: string | null
+  url?: string | null // presigned-ссылка (5 мин), только при DONE
+}
+
 // Импорт прайс-листа (менеджер). См. §6 + app/api/v1/manager/prices.py.
 export type ImportMode = 'UPSERT' | 'REPLACE' | 'ARCHIVE_MISSING'
 export type PriceListVersionStatus = 'QUEUED' | 'PROCESSING' | 'DONE' | 'FAILED'

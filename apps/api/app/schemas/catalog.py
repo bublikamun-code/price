@@ -1,5 +1,6 @@
 """DTO каталога. См. ARCHITECTURE_PLAN.md §6."""
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -59,3 +60,17 @@ class FiltersOut(BaseModel):
     brands: list[BrandRef]
     series: list[SeriesRef]
     stock: list[str]
+
+
+class ExportStartOut(BaseModel):
+    """Ответ на запуск экспорта каталога (202, §16 п.16)."""
+    job_id: str
+
+
+class ExportJobOut(BaseModel):
+    """Статус job экспорта каталога. ``url`` (presigned, 5 мин) — только при DONE."""
+    job_id: str
+    status: Literal["QUEUED", "RUNNING", "DONE", "FAILED"]
+    format: str
+    error: str | None = None
+    url: str | None = None
