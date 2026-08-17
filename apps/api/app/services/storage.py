@@ -45,6 +45,26 @@ def get_s3_client() -> BaseClient:
     )
 
 
+@lru_cache(maxsize=1)
+def get_s3_presign_client() -> BaseClient:
+    """Клиент для генерации presigned-URL.
+
+    Host входит в SigV4-подпись (SignedHeaders), поэтому ссылка для браузера
+    должна подписываться сразу внешним endpoint — строковая замена хоста
+    после генерации ломает подпись (SignatureDoesNotMatch).
+    ``generate_presigned_url`` не делает сетевых запросов, так что клиент
+    с внешним endpoint безопасен и внутри контейнера.
+    """
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.s3_external_endpoint or settings.s3_endpoint,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        region_name=settings.s3_region,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+    )
+
+
 def put_bytes(
     bucket: str, key: str, data: bytes, *, content_type: str = "application/octet-stream"
 ) -> None:
@@ -87,31 +107,32 @@ def get_bytes(bucket: str, key: str) -> bytes:
     return resp["Body"].read()
 
 
+def delete_object(bucket: str, key: str) -> None:
+    """Удалить объект из ``bucket``. Перебои сети → :class:`StorageError`.
+
+    S3 ``DeleteObject`` идемпотентен: отсутствие объекта — не ошибка
+    (204), поэтому «best effort»-удаление достаточно (§16 п.18).
+    """
+    client = get_s3_client()
+    try:
+        client.delete_object(Bucket=bucket, Key=key)
+    except (BotoCoreError, ClientError) as exc:
+        log.warning("s3.delete_failed", bucket=bucket, key=key, error=str(exc))
+        raise StorageError(f"Не удалось удалить объект {bucket}/{key}") from exc
+
+
 def presigned_get(bucket: str, key: str, *, expires: int | None = None) -> str:
     """Presigned URL на чтение объекта (TTL из настроек, по умолчанию 5 мин).
 
-    Используется браузером: host берётся из ``s3_external_endpoint``,
-    поэтому ссылка доступна снаружи контейнера.
+    Используется браузером: подпись считается клиентом на внешний endpoint
+    (``s3_external_endpoint``), поэтому ссылка валидна снаружи контейнера.
     """
-    client = get_s3_client()
+    client = get_s3_presign_client()
     ttl = expires if expires is not None else settings.s3_presign_ttl_seconds
     try:
-        # generate_presigned_url сам подставит s3_external_endpoint только если
-        # клиент создан с ним; мы создаём клиент на внутренний endpoint, поэтому
-        # генерируем ссылку и переписываем хост на внешний.
-        url = client.generate_presigned_url(
+        return client.generate_presigned_url(
             "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=ttl
         )
     except (BotoCoreError, ClientError) as exc:
         log.warning("s3.presign_failed", bucket=bucket, key=key, error=str(exc))
         raise StorageError(f"Не удалось создать ссылку на {bucket}/{key}") from exc
-    return _rewrite_host_to_external(url)
-
-
-def _rewrite_host_to_external(url: str) -> str:
-    """Заменить внутренний хост MinIO на внешний (доступный браузеру)."""
-    internal = settings.s3_endpoint
-    external = settings.s3_external_endpoint
-    if internal and external and url.startswith(internal):
-        return external + url[len(internal):]
-    return url

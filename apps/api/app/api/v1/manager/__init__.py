@@ -5,7 +5,7 @@
 """
 from fastapi import APIRouter, Depends
 
-from app.api.v1.manager import orders, prices
+from app.api.v1.manager import files, orders, prices
 from app.core.deps import require_role
 from app.models.enums import UserRole
 from app.models.user import User
@@ -13,6 +13,7 @@ from app.models.user import User
 router = APIRouter(prefix="/manager", tags=["manager"])
 router.include_router(prices.router)
 router.include_router(orders.router)
+router.include_router(files.router)
 
 
 @router.get("/ping")

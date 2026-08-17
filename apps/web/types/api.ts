@@ -263,3 +263,31 @@ export interface FavoriteListPage {
   data: FavoriteRead[]
   meta: MetaPage
 }
+
+// ---------- Этап 7: Файловый архив (SITEMAP `/files`, `/manager/files`; §16 п.18) ----------
+
+export type FileAssetType = 'BRAND_PDF' | 'CUSTOM_CSV' | 'PHOTO_ZIP' | 'OTHER'
+export type FileVisibility = 'PUBLIC' | 'AUTHED' | 'MANAGER_ONLY'
+
+export interface FileAsset {
+  id: string
+  type: FileAssetType
+  filename: string
+  content_type: string | null
+  size_bytes: number
+  brand_id: string | null
+  brand_name: string | null
+  visibility: FileVisibility
+  created_at: string
+}
+
+export interface FileAssetPage {
+  data: FileAsset[]
+  meta: MetaPage
+}
+
+// GET /files/{id}/download → presigned URL (TTL 5 мин), обёрнут в {"data": ...}.
+export interface FileDownloadOut {
+  url: string
+  expires_in: number
+}

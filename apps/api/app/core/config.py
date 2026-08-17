@@ -119,6 +119,9 @@ class Settings(BaseSettings):
     import_max_file_mb: int = 100  # верхний предел загрузки прайс-листа
     import_allowed_extensions: str = ".csv,.txt"  # регистронезависимо
 
+    # --- Файловый архив (§16 п.18) ---
+    files_max_mb: int = 200  # лимит загрузки файла в архив (pdf-catalogs)
+
     @property
     def import_allowed_ext_list(self) -> list[str]:
         return [e.strip().lower() for e in self.import_allowed_extensions.split(",") if e.strip()]

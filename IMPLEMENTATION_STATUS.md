@@ -23,6 +23,16 @@
 | Redis rate limiter | ✅ исправлено | slowapi использует общее Redis-хранилище счётчиков, URL собирается из `REDIS_HOST/PORT/DB`; покрыто конфигурационными тестами. |
 | Dead code, schema drift | ⏳ отдельный аудит | Требуют отдельной ограниченной сверки; не смешивались с rate-limiter пакетом. |
 
+## Пакет 2026-08-17 (3): файловый архив (Этап 7-остаток, §16 п.18)
+
+- Канон-first (§21): §16 п.18 — детали контракта (visibility-права CLIENT→PUBLIC/AUTHED, фильтры type/brand_id, лимит 200 МБ `FILES_MAX_MB`, magic-bytes %PDF/PK, ключ `{type}/{uuid}{ext}` в бакете `pdf-catalogs`, download presigned TTL 5 мин, DELETE сначала S3 → потом БД).
+- Backend: `schemas/file.py` + `repositories/file_assets.py` + `services/file_assets.py` (валидация, стриминг) + `GET /files`, `GET /files/{id}/download`, `POST/GET/DELETE /manager/files`; `storage.delete_object`; `files_max_mb=200`. Модель `file_assets` существовала (миграция 0001) — новых миграций нет.
+- Frontend: `pages/files.vue` (фильтры тип/бренд, таблица, скачивание), `pages/manager/files.vue` (dropzone ≤200 МБ, тип/видимость/бренд, удаление с confirm), типы в `types/api.ts`; бренды — из `GET /catalog/filters`.
+- Исправление (найдено GUI-тестом): `storage.presigned_get` переписывал хост строкой после генерации подписи → `SignatureDoesNotMatch` на ВСЕ presigned-ссылки (экспорт, логи ошибок). Фикс: отдельный клиент `get_s3_presign_client` на `s3_external_endpoint` (host входит в SigV4; `generate_presigned_url` сети не требует, безопасно из контейнера).
+- Инфра-починки dev-стенда: пересобран runtime-образ worker/beat (Pillow, §16 п.17); рестарт nginx (устаревший IP api); клиент фронтенда переведён на same-origin через nginx — `NUXT_PUBLIC_API_BASE=""` в compose + `??` вместо `||` в `nuxt.config.ts` (единый вход §14).
+- Проверки: pytest — все зелёные (+20 `test_files.py`), ruff чисто, web typecheck/eslint — 0 ошибок. GUI (browser-use): логин менеджером, обе страницы, фильтры, скачивание (presigned → 200, файл открывается), удаление; загрузка через GUI не проверялась (IAB-вебвью не поддерживает file chooser) — покрыта API-загрузкой и pytest.
+- Известные остатки (вне пакета): перелогин с остаточными cookie `access_token`/`refresh_token` без CSRF-заголовка → 403 без понятного сообщения (UX-дефект `validate_csrf`); `pp-bot` циклически рестартует (`python -m app.bot` — нет `__main__.py`).
+
 ## Изменённые файлы
 
 - `apps/api/app/api/v1/auth.py`

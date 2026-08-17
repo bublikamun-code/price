@@ -29,7 +29,8 @@ export default defineNuxtConfig({
     apiBase: process.env.API_INTERNAL_BASE || 'http://api:8000',
     // public (доступно на клиенте)
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      // '' => относительные запросы через nginx (единый вход, §14)
+      apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:8000',
     },
   },
 
