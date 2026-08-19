@@ -118,13 +118,13 @@ make test          # тесты
 | 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией; индексированный pg_trgm-поиск |
 | 4 — Импорт CSV (Celery) | ✅ | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI; streaming upload в S3; rollback версии прайса (§16 п.14); photo-ZIP: webp thumb/large + матчинг к сериям + `series_photo` CSV (§16 п.17) |
 | 5 — Frontend | 🟡 | login, каталог и карточка товара, корзина/checkout, заявки, избранное, профиль и основные manager-страницы готовы; остаются недостающие экраны и полировка UX |
-| 6–8 — Заявки и менеджер | 🟡 | клиентские и manager API/UI заявок реализованы; экспорт каталога CSV/XLSX (Celery + Redis-jobs + presigned) ✅, PDF отложен (§16 п.16); файловый архив `/files` + `/manager/files` (§16 п.18) ✅; остаются manager-сценарии |
+| 6–8 — Заявки и менеджер | 🟡 | клиентские и manager API/UI заявок реализованы; экспорт каталога CSV/XLSX (Celery + Redis-jobs + presigned) ✅, PDF отложен (§16 п.16); файловый архив `/files` + `/manager/files` (§16 п.18) ✅; клиенты и курсы Этапа 8 (§16 п.19) ✅: `/manager/users` CRUD + temp-пароли + матрица скидок + fixed-rate, `/manager/currency`, `/manager/audit`; остаются дашборд (фича G), `/manager/catalog`, `/manager/brands` |
 | 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
 
 **Ближайшие задачи / остаток:**
 - **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅; остаток — production TLS (проверяется при деплое, Этап 11);
 - **Импорт** — streaming upload в S3 ✅, rollback версии прайса ✅, photo-ZIP+миниатюры ✅;
-- **Продуктовые сценарии** — экспорт каталога (CSV/XLSX, §16 п.16) ✅, файловый архив (§16 п.18) ✅; остаются PDF-формат экспорта (weasyprint, §16.1 F), manager-экраны и UX-полировка;
+- **Продуктовые сценарии** — экспорт каталога (CSV/XLSX, §16 п.16) ✅, файловый архив (§16 п.18) ✅, клиенты/скидки/курсы/аудит Этапа 8 (§16 п.19) ✅; остаются PDF-формат экспорта (weasyprint, §16.1 F), дашборд (G), `/manager/catalog`, `/manager/brands` и UX-полировка;
 - **Инфраструктура** — observability, production deployment и TG Mini App.
 
 ---

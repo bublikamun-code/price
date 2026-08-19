@@ -1,11 +1,10 @@
 """Агрегирующий роутер менеджера (/api/v1/manager/**). См. §6.
 
 Все эндпоинты защищены RBAC: role=MANAGER (см. ARCHITECTURE_PLAN.md §11).
-Полная реализация — по этапам 8–10. Здесь — ping для проверки доступа.
 """
 from fastapi import APIRouter, Depends
 
-from app.api.v1.manager import files, orders, prices
+from app.api.v1.manager import audit, currencies, files, orders, prices, users
 from app.core.deps import require_role
 from app.models.enums import UserRole
 from app.models.user import User
@@ -14,6 +13,9 @@ router = APIRouter(prefix="/manager", tags=["manager"])
 router.include_router(prices.router)
 router.include_router(orders.router)
 router.include_router(files.router)
+router.include_router(users.router)
+router.include_router(currencies.router)
+router.include_router(audit.router)
 
 
 @router.get("/ping")

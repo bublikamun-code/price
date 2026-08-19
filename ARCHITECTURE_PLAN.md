@@ -3,8 +3,8 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.5 — готов к передаче команде / ИИ-ассистенту.
-> **Дата:** 2026-08-17
+> **Статус:** v1.6 — готов к передаче команде / ИИ-ассистенту.
+> **Дата:** 2026-08-20
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
 >
@@ -438,10 +438,12 @@ app/
 ### Менеджер (RBAC: `role=MANAGER`)
 | Method | Path | Описание |
 |---|---|---|
-| POST | `/api/v1/manager/users` | Создать клиента (email, ФИО, компания). Система генерирует temp-пароль и показывает 1 раз. |
-| GET \| PATCH \| `/api/v1/manager/users/{id}` | Профиль клиента. |
-| POST | `/api/v1/manager/users/{id}/reset-password` | Сброс пароля. |
-| PUT | `/api/v1/manager/users/{id}/discounts` | Сохранить матрицу скидок `[{brand_id, percent}]`. |
+| POST | `/api/v1/manager/users` | Создать клиента (email, ФИО, компания, телефон, опц. `discount_percent_all`). Система генерирует temp-пароль и показывает 1 раз (§16 п.19). |
+| GET | `/api/v1/manager/users` | Список клиентов: поиск `q` (email/ФИО/компания), стандартная пагинация §6; агрегаты `avg_discount_percent`, `orders_count`, `fixed_rate_currency` (§16 п.19). |
+| GET \| PATCH \| `/api/v1/manager/users/{id}` | Профиль клиента (+ текущая матрица скидок и зафиксированный курс). PATCH: `full_name`, `company`, `phone`, `is_active`, `display_currency`. |
+| POST | `/api/v1/manager/users/{id}/reset-password` | Сброс пароля: новый temp-пароль (показ 1 раз), все refresh-сессии отзываются (§16 п.19). |
+| PUT | `/api/v1/manager/users/{id}/discounts` | Сохранить матрицу скидок `[{brand_id, percent}]` (полная замена). |
+| PUT | `/api/v1/manager/users/{id}/fixed-rate` | Зафиксировать display-курс клиенту (§16 п.7б): `{currency_code, rate?}` — `rate` опущен → копия текущего курса НБ РБ; `{reset: true}` — снять фиксацию (§16 п.19). |
 | POST | `/api/v1/manager/prices/import` | Загрузить CSV. Multipart. Body: `file`, `mode`, `currency`. Возвращает `version_id`. |
 | GET | `/api/v1/manager/prices/versions` | История импортов + статус. |
 | POST | `/api/v1/manager/prices/versions/{id}/rollback` | Откат версии (§16 п.14): товарам, существовавшим до версии, возвращаются цены из последнего снапшота `price_history` до неё; товары, впервые появившиеся в версии, архивируются (soft-delete, `ARCHIVE`). Разрешён только для последней DONE-версии; повторный откат/не-DONE/не последняя → 409. Инвалидирует кэш каталога тегами импорта. Возвращает карточку версии + счётчики `restored`/`archived`. |
@@ -452,8 +454,10 @@ app/
 | POST | `/api/v1/manager/files` | Загрузить файл (PDF/CSV/ZIP). |
 | GET | `/api/v1/manager/files` | Список. |
 | DELETE | `/api/v1/manager/files/{id}` | Удалить. |
-| POST | `/api/v1/manager/currencies/rate` | Установить курс валюты. |
-| GET | `/api/v1/manager/audit` | Журнал аудита с фильтрами. |
+| POST | `/api/v1/manager/currencies/rate` | Установить курс валюты вручную (source=MANUAL): `{currency_code, rate, fetched_at?}` (§16 п.19). |
+| GET | `/api/v1/manager/currencies/rates` | Курсы USD/EUR/RUB за последние 7 дней (все источники), для страницы «Курсы валют» (§16 п.19). |
+| POST | `/api/v1/manager/currencies/refresh` | Форс-запрос курсов НБ РБ (постановка Celery-таски `fetch_nbrb_rates`), 202 (§16 п.19). |
+| GET | `/api/v1/manager/audit` | Журнал аудита с фильтрами (`action`, `actor_id`, `target_type`), стандартная пагинация §6. |
 
 ### Файлы (общедоступные/авторизованные)
 | Method | Path | Описание |
@@ -851,6 +855,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 16 | Экспорт каталога: метод и форматы | **POST; CSV+XLSX сейчас, PDF отложен** (согласовано 2026-08-17) | Расхождение §6 (GET) и SITEMAP (POST) устранено в пользу POST — запуск генерации создаёт job (side-effect). Форматы: `csv` (UTF-8 BOM) и `xlsx` (openpyxl); `pdf` → 422 с сообщением (weasyprint требует системных deps — отдельной задачей, см. §16.1 F). Job-стейт — Redis (`export:job:{id}`, TTL 24 ч, статусы QUEUED/RUNNING/DONE/FAILED, доступ только владельцу); файлы — S3 `csv-exports/` (TTL 7 дней); rate-limit 10/час на клиента (§11). |
 | 17 | Photo-ZIP: эндпоинты, конвенции ключей и матчинг | **Согласовано 2026-08-17** | Эндпоинты: `POST /manager/prices/photo-zip` (202 + job) и `GET .../photo-zip/{job_id}` (статус, владелец-only) — job-стейт в Redis по паттерну экспорта (§16 п.16); выдача фото — `GET /files/photo?key=` → 307 на presigned (5 мин). Ключи: large `photos-series/{slug}.webp` (1200×1200 fit), thumb `photos-series/{slug}_thumb.webp` (400×400 fit), суффикс `_thumb` — конвенция. Матчинг к серии: нормализованный stem файла == series.slug; приоритет — имя, заявленное в CSV `series_photo` (при импорте сохраняется в series.photo_key до появления webp). Лимиты: ZIP ≤100 МБ, распакованный объём ≤500 МБ, ≤2000 файлов, входные форматы JPG/PNG/WebP. Импорт CSV: `series_photo` → `series.photo_key` (§7, закрывает нереализованное ранее связывание). |
 | 18 | Файловый архив: детали контракта | **Согласовано 2026-08-17** | `GET /files` — только авторизованные: CLIENT видит `visibility IN (PUBLIC, AUTHED)`, MANAGER — все записи; фильтры `type`, `brand_id`, стандартная пагинация §6. `GET /files/{id}/download` → `{"data": {"url", "expires_in": 300}}` (presigned, TTL 5 мин; 404 при отсутствии/недоступности по visibility). `POST /manager/files`: multipart `file` + Form: `type` (BRAND_PDF/CUSTOM_CSV/OTHER; PHOTO_ZIP — системный → 422), `visibility` (default AUTHED), `brand_id` (опц.); валидация: расширение .pdf/.csv/.zip + content-type + magic-bytes (%PDF/PK), лимит 200 МБ (`FILES_MAX_MB`), стриминг в S3 без буферизации (паттерн CSV-импорта); статусы 201/415/413/502. Хранение: бакет `pdf-catalogs` (§10), ключ `{type}/{uuid}{ext}`, `filename_display` — оригинальное имя. `GET /manager/files` — все записи, те же фильтры; `DELETE /manager/files/{id}` → 204 (сначала объект S3, затем запись БД). Страницы `/files` и `/manager/files` — по SITEMAP. |
+| 19 | Этап 8 «Менеджер-панель: клиенты и курсы»: детализация контрактов | **Согласовано 2026-08-20** | Дополнен §6 (расхождения §6 ↔ SITEMAP устранены в пользу SITEMAP): `GET /manager/users` (список с поиском `q` и агрегатами avg-скидки/заказов), `PUT /manager/users/{id}/fixed-rate` (фиксация display-курса: `{currency_code, rate?}` manual-строкой source=MANUAL либо копией курса НБ РБ; `{reset: true}` — снять), `GET /manager/currencies/rates` (7 дней), `POST /manager/currencies/refresh` (202, Celery). Temp-пароль: `secrets.token_urlsafe(12)`, показ ровно 1 раз в теле ответа `POST /manager/users` и `POST .../reset-password` (в БД — только хэш); сброс пароля отзывает все refresh-сессии пользователя. In-app уведомление `ACCOUNT_CREATED` создаётся **без** plaintext-пароля (пароль передаётся клиенту вне системы). Все мутации пишут `audit_log` (`user.create`, `user.update`, `user.reset_password`, `user.discount.update`, `user.fixed_rate.set/reset`, `currency.rate.manual`); смена скидок/display-валюты/фикс-курса инвалидирует тег кэша `user:{id}` (§7.2). Матрица скидок — полная замена (`PUT`), `updated_by` = менеджер. |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 

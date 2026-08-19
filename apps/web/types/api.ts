@@ -291,3 +291,95 @@ export interface FileDownloadOut {
   url: string
   expires_in: number
 }
+
+// ---------- Этап 8: Менеджер-панель — клиенты, курсы, аудит ----------
+
+export type RateSource = 'NBRB' | 'MANUAL'
+
+// Курс валюты (Decimal приходит строкой).
+export interface RateOut {
+  id: string
+  currency_code: string
+  rate: string
+  scale: number
+  fetched_at: string // ISO-дата YYYY-MM-DD
+  source: RateSource
+  is_manual: boolean
+}
+
+// Клиент в панели менеджера (GET /manager/users/{id}).
+export interface UserManagerRead {
+  id: string
+  email: string
+  full_name: string
+  company: string | null
+  phone: string | null
+  role: UserRole
+  is_active: boolean
+  display_currency: string
+  price_digest_enabled: boolean
+  price_digest_sources: string[]
+  consent_accepted_at: string | null
+  created_at: string
+  fixed_rate: RateOut | null
+}
+
+// Строка списка клиентов (GET /manager/users).
+export interface UserManagerListItem {
+  id: string
+  email: string
+  full_name: string
+  company: string | null
+  phone: string | null
+  is_active: boolean
+  display_currency: string
+  created_at: string
+  fixed_rate_currency: string | null
+  avg_discount_percent: string | null
+  orders_count: number
+}
+
+export interface UserManagerPage {
+  data: UserManagerListItem[]
+  meta: MetaPage
+}
+
+// Детали клиента: профиль + матрица скидок.
+export interface DiscountOut {
+  brand_id: string
+  brand_name: string
+  percent: string
+}
+
+export interface UserManagerDetail {
+  user: UserManagerRead
+  discounts: DiscountOut[]
+}
+
+// Создание клиента: 201 + временный пароль (показ один раз).
+export interface UserManagerCreateOut {
+  user: UserManagerRead
+  temp_password: string
+}
+
+export interface TempPasswordOut {
+  temp_password: string
+}
+
+// Запись журнала аудита (GET /manager/audit).
+export interface AuditRead {
+  id: string
+  actor_id: string | null
+  actor_email: string | null
+  action: string
+  target_type: string | null
+  target_id: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface AuditPage {
+  data: AuditRead[]
+  meta: MetaPage
+}
