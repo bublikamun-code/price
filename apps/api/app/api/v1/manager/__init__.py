@@ -4,7 +4,17 @@
 """
 from fastapi import APIRouter, Depends
 
-from app.api.v1.manager import audit, currencies, files, orders, prices, users
+from app.api.v1.manager import (
+    audit,
+    brands,
+    currencies,
+    dashboard,
+    files,
+    orders,
+    prices,
+    products,
+    users,
+)
 from app.core.deps import require_role
 from app.models.enums import UserRole
 from app.models.user import User
@@ -16,6 +26,9 @@ router.include_router(files.router)
 router.include_router(users.router)
 router.include_router(currencies.router)
 router.include_router(audit.router)
+router.include_router(dashboard.router)
+router.include_router(products.router)
+router.include_router(brands.router)
 
 
 @router.get("/ping")

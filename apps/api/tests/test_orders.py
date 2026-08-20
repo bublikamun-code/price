@@ -206,6 +206,31 @@ async def test_cancel_completed_conflict(api_client, session_factory):
 
 
 # =========================================================
+# CART CLEARED AFTER ORDER CREATE
+# =========================================================
+async def test_cart_cleared_after_order_create(api_client, session_factory):
+    """После оформления заявки корзина должна быть пуста (очищается атомарно на бэке)."""
+    sf = session_factory
+    await _seed(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    # Добавляем товар в корзину
+    r = await api_client.post("/api/v1/cart/items", json={"sku": "A-1", "quantity": 2})
+    assert r.status_code == 201
+    assert r.json()["total_items"] == 1
+
+    # Оформляем заявку
+    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}]})
+    assert r.status_code == 201
+
+    # Корзина должна быть пуста
+    r = await api_client.get("/api/v1/cart")
+    assert r.status_code == 200
+    assert r.json()["total_items"] == 0
+
+
+# =========================================================
 # REPEAT (фича C)
 # =========================================================
 async def test_repeat_order_fills_cart(api_client, session_factory):

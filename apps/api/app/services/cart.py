@@ -7,7 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import StockStatus
 from app.repositories import cart as cart_repo, catalog as catalog_repo
-from app.schemas.cart import CartItemRead, CartRead
+from app.schemas.cart import (
+    CartBulkAddOut,
+    CartBulkAdded,
+    CartBulkItemIn,
+    CartBulkRejected,
+    CartItemRead,
+    CartRead,
+)
 from app.services.pricing import PricingService
 
 
@@ -66,6 +73,38 @@ class CartService:
             self.db, cart_id=cart.id, product_id=product.id, quantity=quantity, note=note
         )
         return await self.view(user)
+
+    async def add_bulk(
+        self, user, items: list[CartBulkItemIn]
+    ) -> CartBulkAddOut:
+        """Массовое добавление позиций (§16 п.20-5) — частичный успех.
+
+        Разрешает все артикулы одним batch-запросом, валидные позиции
+        аккумулирует в корзине через ``upsert_cart_item``; невалидные
+        (не найден / архив) собирает в ``rejected`` с RU-причиной.
+        Не коммитит — транзакцию закрывает роутер.
+        """
+        products = await catalog_repo.get_by_skus(
+            self.db, [item.sku for item in items]
+        )
+        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+
+        added: list[CartBulkAdded] = []
+        rejected: list[CartBulkRejected] = []
+        for item in items:
+            product = products.get(item.sku)
+            if product is None:
+                rejected.append(CartBulkRejected(sku=item.sku, reason="Товар не найден"))
+                continue
+            if product.stock_status == StockStatus.ARCHIVED:
+                rejected.append(CartBulkRejected(sku=item.sku, reason="Товар в архиве"))
+                continue
+            row = await cart_repo.upsert_cart_item(
+                self.db, cart_id=cart.id, product_id=product.id,
+                quantity=item.qty, note=None,
+            )
+            added.append(CartBulkAdded(sku=item.sku, quantity=row.quantity))
+        return CartBulkAddOut(added=added, rejected=rejected)
 
     async def update(
         self, user, sku: str, quantity: int | None, note: str | None

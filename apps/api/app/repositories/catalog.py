@@ -126,6 +126,21 @@ async def get_by_sku(db: AsyncSession, sku: str) -> Product | None:
     )
 
 
+async def get_by_skus(db: AsyncSession, skus: Sequence[str]) -> dict[str, Product]:
+    """Товары по списку артикулов одним IN-запросом (без удалённых).
+
+    Для bulk-операций (§16 п.20-5): возвращает ``{sku: Product}``. Дубликаты
+    артикулов в исходном списке схлопываются — каждая строка запроса
+    разрешается своим обращением к dict.
+    """
+    if not skus:
+        return {}
+    res = await db.scalars(
+        select(Product).where(Product.sku.in_(skus), Product.deleted_at.is_(None))
+    )
+    return {p.sku: p for p in res.all()}
+
+
 async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand | None:
     return await db.scalar(select(Brand).where(Brand.id == brand_id))
 

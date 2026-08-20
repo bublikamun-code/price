@@ -26,7 +26,9 @@ async function submit() {
   }
   try {
     const order = await request<OrderRead>('/api/v1/orders', { method: 'POST', body: payload })
-    await clear() // после оформления корзина не нужна
+    // Корзина очищается на бэке атомарно при создании заявки.
+    // Обновляем локальный стейт чтобы счётчик в хедере сбросился.
+    await refresh()
     await navigateTo(`/orders/${order.id}`)
   } catch (e) {
     error.value = getErrorMessage(e, 'Не удалось оформить заявку')

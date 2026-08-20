@@ -2,9 +2,14 @@
 // Глобальная шапка. Состав зависит от роли — см. SITEMAP.md §2.
 const auth = useAuth()
 const { count: cartCount, refresh: refreshCart } = useCart()
+const { unreadCount, refresh: refreshNotifications, startPolling } = useNotifications()
 
 onMounted(() => {
   if (auth.isClient) refreshCart()
+  if (auth.isAuthenticated) {
+    refreshNotifications()
+    startPolling() // поллинг бейджа (60 с); тики без сессии пропускаются
+  }
 })
 </script>
 
@@ -42,9 +47,11 @@ onMounted(() => {
           </button>
 
           <!-- Уведомления -->
-          <button class="btn-ghost p-2.5 relative" title="Уведомления">
+          <button class="btn-ghost p-2.5 relative" title="Уведомления" @click="navigateTo('/notifications')">
             <Icon name="heroicons:bell" class="w-5 h-5" />
-            <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-pill"/>
+            <span v-if="unreadCount" class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-danger text-white text-[10px] font-semibold rounded-pill flex items-center justify-center">
+              {{ unreadCount > 99 ? '99+' : unreadCount }}
+            </span>
           </button>
 
           <!-- Корзина (клиент) -->

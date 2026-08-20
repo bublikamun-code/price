@@ -25,12 +25,20 @@ const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
   CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
 }
 
+// Быстрые кнопки переходов статусов прямо из списка (§9 FSM)
+const QUICK_ACTIONS: Partial<Record<OrderStatus, { label: string; next: OrderStatus; cls: string }>> = {
+  NEW: { label: 'В сборку', next: 'IN_PROGRESS', cls: 'btn-primary' },
+  IN_PROGRESS: { label: 'Отгрузить', next: 'SHIPPED', cls: 'btn-primary' },
+  SHIPPED: { label: 'Завершить', next: 'COMPLETED', cls: 'btn-primary' },
+}
+
 const loading = ref(true)
 const error = ref('')
 const orders = ref<OrderRead[]>([])
 const total = ref(0)
 const page = ref(1)
 const statusFilter = ref<'' | OrderStatus>('')
+const changingId = ref<string | null>(null)
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
@@ -47,6 +55,30 @@ async function load() {
     error.value = getErrorMessage(e, 'Не удалось загрузить заявки')
   } finally {
     loading.value = false
+  }
+}
+
+async function quickChangeStatus(order: OrderRead, next: OrderStatus) {
+  if (changingId.value) return
+  changingId.value = order.id
+  error.value = ''
+  try {
+    const updated = await request<OrderRead>(`/api/v1/manager/orders/${order.id}`, {
+      method: 'PATCH',
+      body: { status: next },
+    })
+    // Обновляем карточку в списке без перезагрузки всей страницы
+    const idx = orders.value.findIndex(o => o.id === order.id)
+    if (idx !== -1) orders.value[idx] = updated
+    // Если активен фильтр по статусу — убираем карточку из текущей колонки
+    if (statusFilter.value && statusFilter.value !== updated.status) {
+      orders.value.splice(idx, 1)
+      total.value = Math.max(0, total.value - 1)
+    }
+  } catch (e) {
+    error.value = getErrorMessage(e, 'Не удалось изменить статус')
+  } finally {
+    changingId.value = null
   }
 }
 
@@ -130,9 +162,21 @@ onMounted(load)
                 <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
               </td>
               <td class="px-4 py-3 text-right">
-                <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost text-sm py-1.5">
-                  <Icon name="heroicons:eye" class="w-4 h-4" /> Открыть
-                </NuxtLink>
+                <div class="flex items-center justify-end gap-2">
+                  <!-- Быстрая кнопка перехода статуса (В сборку / Отгрузить / Завершить) -->
+                  <button
+                    v-if="QUICK_ACTIONS[o.status]"
+                    class="btn-primary text-xs py-1.5 px-3"
+                    :disabled="changingId === o.id"
+                    @click.prevent="quickChangeStatus(o, QUICK_ACTIONS[o.status]!.next)"
+                  >
+                    <span v-if="changingId === o.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                    <template v-else>{{ QUICK_ACTIONS[o.status]!.label }}</template>
+                  </button>
+                  <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost text-sm py-1.5">
+                    <Icon name="heroicons:eye" class="w-4 h-4" /> Открыть
+                  </NuxtLink>
+                </div>
               </td>
             </tr>
           </tbody>

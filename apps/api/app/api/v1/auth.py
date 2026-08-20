@@ -115,13 +115,20 @@ async def me(current_user: User = Depends(get_current_user)) -> UserPublic:
 @router.patch("/me", response_model=UserPublic)
 async def update_me(
     body: UserUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserPublic:
-    """Частичное обновление профиля (§6): display_currency, настройки дайджеста цен (§20.4).
+    """Частичное обновление профиля (§6): display_currency, настройки дайджеста цен (§20.4),
+    принятие согласия на обработку ПДн (§16 п.20-6, фиксируется в consent_log с ip/user-agent).
 
     Доступно любому авторизованному (client/manager); применяются только заданные поля.
     """
     svc = AuthService(db)
-    user = await svc.update_profile(current_user, body)
+    user = await svc.update_profile(
+        current_user,
+        body,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return UserPublic.from_user(user)

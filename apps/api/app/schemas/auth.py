@@ -64,10 +64,14 @@ class UserUpdate(BaseModel):
     Все поля Optional, но хотя бы одно должно быть задано — иначе 422 «нечего обновлять».
     Дубликаты price_digest_sources дедуплицируются (порядок сохраняется): источники —
     множество, повтор в запросе ошибки не означает.
+
+    consent_accepted (§16 п.20-6): True — принять согласие (идемпотентно, фиксируется
+    в consent_log); False — отзыв, запрещён через API (422 в сервисе).
     """
     display_currency: str | None = None
     price_digest_enabled: bool | None = None
     price_digest_sources: list[Literal["cart", "favorite", "orders"]] | None = None
+    consent_accepted: bool | None = None
 
     @field_validator("display_currency")
     @classmethod
@@ -94,6 +98,7 @@ class UserUpdate(BaseModel):
             self.display_currency is None
             and self.price_digest_enabled is None
             and self.price_digest_sources is None
+            and self.consent_accepted is None
         ):
             raise ValueError("Нечего обновлять: укажите хотя бы одно поле")
         return self

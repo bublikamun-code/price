@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.enums import OrderStatus, StockStatus
 from app.models.order import Order, OrderItem
 from app.models.system import AuditLog
-from app.repositories import catalog as catalog_repo, orders as orders_repo
+from app.repositories import cart as cart_repo, catalog as catalog_repo, orders as orders_repo
 from app.schemas.cart import CartRead
 from app.schemas.order import OrderCreate
 from app.services.cart import CartService
@@ -91,6 +91,13 @@ class OrderService:
         for item in new_items:
             item.order_id = order.id
         await orders_repo.add_order_items(self.db, items=new_items)
+
+        # 3) Очищаем корзину в той же транзакции — атомарно с созданием заявки.
+        #    Это гарантирует что корзина будет пуста даже если клиент закрыл вкладку
+        #    до того как фронт успел вызвать DELETE /cart.
+        user_cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+        await cart_repo.clear_cart(self.db, cart_id=user_cart.id)
+
         return order
 
     # --------------------------------------------------------------- lists

@@ -2,7 +2,7 @@
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.enums import StockStatus
 from app.schemas import MetaPage
@@ -68,9 +68,49 @@ class ExportStartOut(BaseModel):
 
 
 class ExportJobOut(BaseModel):
-    """Статус job экспорта каталога. ``url`` (presigned, 5 мин) — только при DONE."""
+    """Статус job экспорта. ``url`` (presigned, 5 мин) — только при DONE."""
     job_id: str
     status: Literal["QUEUED", "RUNNING", "DONE", "FAILED"]
     format: str
     error: str | None = None
     url: str | None = None
+
+
+# ----------------------------- bulk-resolve (§16 п.20-5) -----------------------------
+
+BULK_ITEMS_MAX = 500
+
+
+class BulkResolveItemIn(BaseModel):
+    """Строка bulk-запроса: артикул + опциональное количество (для предпросмотра)."""
+    sku: str = Field(min_length=1, max_length=64)
+    qty: int | None = None
+
+
+class BulkResolveIn(BaseModel):
+    items: list[BulkResolveItemIn] = Field(min_length=1, max_length=BULK_ITEMS_MAX)
+
+
+class ProductPrice(BaseModel):
+    """Цены одного товара под текущего пользователя (выдача bulk-resolve)."""
+    base_price_byn: float
+    retail_price: float
+    client_price: float
+    currency: str
+    rate_source: str
+    has_discount: bool
+
+
+class BulkResolveRow(BaseModel):
+    """Результат разрешения одной строки: найден/нет, цены, статус склада."""
+    sku: str
+    qty: int | None = None
+    found: bool
+    name: str | None = None
+    price: ProductPrice | None = None
+    stock_status: str | None = None
+    error: str | None = None
+
+
+class BulkResolveOut(BaseModel):
+    data: list[BulkResolveRow]

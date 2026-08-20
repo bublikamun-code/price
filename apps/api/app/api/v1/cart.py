@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.cart import CartItemCreate, CartItemUpdate, CartRead
+from app.schemas.cart import (
+    CartBulkAddIn,
+    CartBulkAddOut,
+    CartItemCreate,
+    CartItemUpdate,
+    CartRead,
+)
 from app.services.cart import CartService
 
 router = APIRouter(prefix="/cart", tags=["cart"])
@@ -48,6 +54,22 @@ async def add_item(
         raise _from_value_error(e)
     await db.commit()
     return cart
+
+
+@router.post("/items/bulk", response_model=CartBulkAddOut)
+async def add_items_bulk(
+    payload: CartBulkAddIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CartBulkAddOut:
+    """Массовое добавление позиций (§16 п.20-5) — частичный успех, код 200.
+
+    Валидные позиции аккумулируются с уже лежащими в корзине; отклонённые
+    (не найден / архив) возвращаются с причиной. Лимит: 1..500 позиций.
+    """
+    result = await CartService(db).add_bulk(user, payload.items)
+    await db.commit()
+    return result
 
 
 @router.put("/items/{sku}", response_model=CartRead)

@@ -108,7 +108,7 @@ make test          # тесты
 
 Реализация идёт по этапам из [`ARCHITECTURE_PLAN.md` §15/§19](./ARCHITECTURE_PLAN.md).
 
-Текущий статус: **Этапы 0–5 и часть этапов 6–8** ✅🟡 — ядро, авторизация/RBAC, каталог и персональные цены, импорт CSV, клиентские заявки и основные frontend-сценарии реализованы.
+Текущий статус: **Этапы 0–8** ✅ (кроме отложенных: PDF-экспорт §16.1 F и SSE-уведомлений §16 п.20) — ядро, авторизация/RBAC, каталог и персональные цены, импорт CSV, заявки, менеджер-панель и все экраны MVP (§16 п.20) реализованы.
 
 | Этап | Статус | Примечание |
 |---|---|---|
@@ -117,14 +117,14 @@ make test          # тесты
 | 2 — Авторизация + RBAC | ✅ | JWT/сессии, `require_role`, seed-менеджер, CSRF double-submit |
 | 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией; индексированный pg_trgm-поиск |
 | 4 — Импорт CSV (Celery) | ✅ | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI; streaming upload в S3; rollback версии прайса (§16 п.14); photo-ZIP: webp thumb/large + матчинг к сериям + `series_photo` CSV (§16 п.17) |
-| 5 — Frontend | 🟡 | login, каталог и карточка товара, корзина/checkout, заявки, избранное, профиль и основные manager-страницы готовы; остаются недостающие экраны и полировка UX |
-| 6–8 — Заявки и менеджер | 🟡 | клиентские и manager API/UI заявок реализованы; экспорт каталога CSV/XLSX (Celery + Redis-jobs + presigned) ✅, PDF отложен (§16 п.16); файловый архив `/files` + `/manager/files` (§16 п.18) ✅; клиенты и курсы Этапа 8 (§16 п.19) ✅: `/manager/users` CRUD + temp-пароли + матрица скидок + fixed-rate, `/manager/currency`, `/manager/audit`; остаются дашборд (фича G), `/manager/catalog`, `/manager/brands` |
+| 5 — Frontend | ✅ | все экраны MVP: login, каталог/карточка, корзина/checkout, заявки, избранное, профиль, consent, уведомления (pull, колокольчик), массовое добавление, файлы + manager-страницы (§16 п.20) |
+| 6–8 — Заявки и менеджер | ✅ | заявки клиента/менеджера; экспорт каталога CSV/XLSX (PDF отложен, §16 п.16); файловый архив `/files` + `/manager/files` (§16 п.18); клиенты/скидки/курсы/аудит (§16 п.19): `/manager/users` CRUD + temp-пароли + матрица скидок + fixed-rate, `/manager/currency`, `/manager/audit`; дозакрытие экранов (§16 п.20): дашборд (фича G, кэш 60 с), `/manager/catalog` + PATCH товара (аудит, инвалидация кэша), `/manager/brands` + фото серий, уведомления in-app pull, `/bulk-add` (фича B), `/consent` (п.10) |
 | 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
 
 **Ближайшие задачи / остаток:**
-- **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅; остаток — production TLS (проверяется при деплое, Этап 11);
+- **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅; остаток — production TLS (проверяется при деплое, Этап 11); известный edge (найден при GUI-тесте 2026-08-20): 403 на login/refresh, если в браузере остался `refresh_token`, а `csrf_token`-cookie потерян — требуется решение в §16 (например, чистить стейл-куки при логине);
 - **Импорт** — streaming upload в S3 ✅, rollback версии прайса ✅, photo-ZIP+миниатюры ✅;
-- **Продуктовые сценарии** — экспорт каталога (CSV/XLSX, §16 п.16) ✅, файловый архив (§16 п.18) ✅, клиенты/скидки/курсы/аудит Этапа 8 (§16 п.19) ✅; остаются (спека готова — §16 п.20): PDF-формат экспорта (weasyprint, §16.1 F), дашборд (G), `/manager/catalog`, `/manager/brands`, уведомления in-app (pull), `/bulk-add` (фича B), `/consent`;
+- **Продуктовые сценарии** — экраны §16 п.20 ✅ (дашборд, manager-каталог/бренды, уведомления pull, bulk-add, consent); остаются: PDF-формат экспорта (weasyprint, §16.1 F), SSE-стрим уведомлений (отложено, §16 п.20), статическая страница `/privacy`;
 - **Инфраструктура** — observability, production deployment и TG Mini App.
 
 ---

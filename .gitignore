@@ -53,6 +53,9 @@ gui-test-screenshots/
 # --- Postman desktop workdir (коллекции — в postman/) ---
 .postman/
 
+# --- Postman environments (содержат логины/пароли — только локально) ---
+postman/environments/
+
 # --- Docker volumes (local data) ---
 infra/data/
 infra/data/**
@@ -67,3 +70,6 @@ apps/api/alembic/versions/__pycache__/
 
 # --- Generated files (runtime) ---
 *.local
+
+# --- Celery beat runtime state (shelve-файл пишет контейнер beat) ---
+apps/api/celerybeat-schedule

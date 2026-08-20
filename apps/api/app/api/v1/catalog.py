@@ -20,6 +20,9 @@ from app.repositories import catalog as repo
 from app.schemas import MetaPage
 from app.schemas.catalog import (
     BrandRef,
+    BulkResolveIn,
+    BulkResolveOut,
+    BulkResolveRow,
     CatalogPage,
     ExportJobOut,
     ExportStartOut,
@@ -27,6 +30,7 @@ from app.schemas.catalog import (
     PriceHistoryItem,
     ProductCard,
     ProductDetail,
+    ProductPrice,
     SeriesRef,
 )
 from app.services import export as export_service
@@ -141,6 +145,49 @@ async def get_filters(
         tags=[FILTERS_TAG],
     )
     return result
+
+
+@router.post("/resolve-bulk", response_model=BulkResolveOut)
+async def resolve_bulk(
+    payload: BulkResolveIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BulkResolveOut:
+    """Проверка списка артикулов перед bulk-добавлением в корзину (§16 п.20-5).
+
+    Ничего не добавляет: по каждой строке ввода (дубликаты — отдельные строки
+    результата) возвращает товар с ценами под текущего пользователя либо
+    ошибку «Товар не найден». Лимит: 1..500 позиций в запросе.
+    """
+    products = await repo.get_by_skus(db, [item.sku for item in payload.items])
+    pricing = PricingService(db)
+
+    rows: list[BulkResolveRow] = []
+    for item in payload.items:
+        product = products.get(item.sku)
+        if product is None:
+            rows.append(
+                BulkResolveRow(
+                    sku=item.sku, qty=item.qty, found=False, error="Товар не найден"
+                )
+            )
+            continue
+        prices = await pricing.price_product(product, user, "fixed")
+        rows.append(
+            BulkResolveRow(
+                sku=item.sku,
+                qty=item.qty,
+                found=True,
+                name=product.name,
+                price=ProductPrice(**prices),
+                stock_status=(
+                    product.stock_status.value
+                    if hasattr(product.stock_status, "value")
+                    else str(product.stock_status)
+                ),
+            )
+        )
+    return BulkResolveOut(data=rows)
 
 
 @router.get("/products/{sku}", response_model=ProductDetail)

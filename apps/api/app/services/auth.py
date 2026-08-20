@@ -14,13 +14,14 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import create_access_token, verify_password
-from app.models.user import Session as SessionModel, User
+from app.models.user import ConsentLog, Session as SessionModel, User
 from app.schemas.auth import TokenPair, UserUpdate
 from app.services.cache import invalidate_tags, user_tag
 
@@ -94,20 +95,55 @@ class AuthService:
             await self.db.commit()
             log.info("auth.logout", sid=str(session.id))
 
-    # ---------- update profile (PATCH /auth/me, §6 / §20.4) ----------
-    async def update_profile(self, user: User, updates: UserUpdate) -> User:
+    # ---------- update profile (PATCH /auth/me, §6 / §20.4 / §16 п.20-6) ----------
+    async def update_profile(
+        self,
+        user: User,
+        updates: UserUpdate,
+        *,
+        ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> User:
         """Частичное обновление профиля: применяются только явно заданные поля.
 
         ``null`` в значении трактуется как «поле не задано» (все поля Optional),
         поэтому не затирает прежнее значение в БД.
+
+        Согласие (§16 п.20-6): ``consent_accepted=True`` фиксируется в consent_log
+        (ip + user-agent, идемпотентно — повторная отправка не плодит записи);
+        ``False`` (отзыв) через API запрещён → 422.
         """
-        changed = {k: v for k, v in updates.model_dump(exclude_unset=True).items() if v is not None}
+        if updates.consent_accepted is False:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Согласие нельзя отозвать через API",
+            )
+        # consent_accepted обрабатывается отдельно — на User нет такого поля
+        changed = {
+            k: v
+            for k, v in updates.model_dump(exclude_unset=True).items()
+            if v is not None and k != "consent_accepted"
+        }
+        if updates.consent_accepted is True and user.consent_accepted_at is None:
+            accepted_at = datetime.now(timezone.utc)
+            user.consent_accepted_at = accepted_at
+            self.db.add(
+                ConsentLog(
+                    user_id=user.id,
+                    policy_version="1.0",
+                    ip=ip,
+                    user_agent=(user_agent or "")[:512] or None,
+                    accepted_at=accepted_at,
+                )
+            )
+            log.info("auth.consent_accepted", user_id=str(user.id), ip=ip)
         for field, value in changed.items():
             setattr(user, field, value)
         await self.db.commit()
         if "display_currency" in changed:
             await invalidate_tags(user_tag(user.id))
-        log.info("auth.update_profile", user_id=str(user.id), fields=",".join(changed))
+        logged_fields = list(changed) + (["consent_accepted"] if updates.consent_accepted else [])
+        log.info("auth.update_profile", user_id=str(user.id), fields=",".join(logged_fields))
         return user
 
     # ---------- внутреннее: создание сессии + токенов ----------

@@ -264,6 +264,76 @@ export interface FavoriteListPage {
   meta: MetaPage
 }
 
+// ---------- Уведомления (in-app центр, SITEMAP `/notifications`) ----------
+
+export type NotificationType =
+  | 'NEW_ORDER'
+  | 'ORDER_STATUS_CHANGED'
+  | 'PRICE_CHANGED'
+  | 'PRICE_CHANGED_DIGEST'
+  | 'STOCK_CHANGED'
+  | 'IMPORT_FAILED'
+  | 'RATE_FETCH_FAILED'
+  | 'ACCOUNT_CREATED'
+
+export interface NotificationItem {
+  id: string
+  type: string // NotificationType либо произвольный код бэкенда
+  title: string
+  body: string | null
+  payload: Record<string, unknown> | null
+  is_read: boolean
+  is_broadcast: boolean
+  created_at: string
+}
+
+// meta GET /notifications (unread_count — только свои непрочитанные).
+export interface NotificationsMeta extends MetaPage {
+  unread_count: number
+}
+
+export interface NotificationsPage {
+  data: NotificationItem[]
+  meta: NotificationsMeta
+}
+
+// ---------- Массовое добавление по SKU (SITEMAP `/bulk-add`, фича B) ----------
+
+export interface BulkItemIn {
+  sku: string
+  qty: number
+}
+
+// Цена позиции из resolve-bulk (та же форма, что ProductCard).
+export interface BulkPrice {
+  base_price_byn: number
+  retail_price: number
+  client_price: number
+  currency: string
+  rate_source: string
+  has_discount: boolean
+}
+
+export interface BulkResolveItem {
+  sku: string
+  qty: number
+  found: boolean
+  name: string | null
+  price: BulkPrice | null
+  stock_status: StockStatus | null
+  error: string | null
+}
+
+export interface BulkResolveOut {
+  data: BulkResolveItem[]
+}
+
+// POST /cart/items/bulk — всегда 200: часть позиций может быть отклонена.
+export interface BulkCartAddOut {
+  added: { sku: string; quantity: number }[]
+  rejected: { sku: string; reason: string }[]
+}
+
 // ---------- Этап 7: Файловый архив (SITEMAP `/files`, `/manager/files`; §16 п.18) ----------
 
 export type FileAssetType = 'BRAND_PDF' | 'CUSTOM_CSV' | 'PHOTO_ZIP' | 'OTHER'
@@ -382,4 +452,91 @@ export interface AuditRead {
 export interface AuditPage {
   data: AuditRead[]
   meta: MetaPage
+}
+
+// ---------- Этап 8 (фича G): менеджер — дашборд, каталог, бренды/серии ----------
+// См. app/schemas/manager_catalog.py. Decimal приходит строкой (как в RateOut).
+
+// GET /manager/dashboard — агрегаты за периоды, кэш на сервере 60 с.
+export interface DashboardKpi {
+  orders_today: number
+  orders_7d: number
+  revenue_month: string // BYN
+  new_clients_7d: number
+  active_imports: number
+}
+
+export interface OrdersByDayItem {
+  date: string // YYYY-MM-DD, 30 дней по возрастанию
+  count: number
+}
+
+export interface TopProductItem {
+  product_id: string
+  sku: string
+  name: string
+  qty: number
+  revenue: string // BYN
+}
+
+export interface TopClientItem {
+  client_id: string
+  name: string
+  orders: number
+  revenue: string // BYN
+}
+
+export interface RecentOrderItem {
+  id: string
+  created_at: string
+  client_name: string
+  status: OrderStatus
+  total_amount: string // BYN
+}
+
+export interface DashboardData {
+  kpi: DashboardKpi
+  orders_by_day: OrdersByDayItem[]
+  top_products: TopProductItem[]
+  top_clients: TopClientItem[]
+  recent_orders: RecentOrderItem[]
+}
+
+// Товар в панели менеджера (GET /manager/products): виден и ARCHIVED.
+export interface ManagerProductRow {
+  id: string
+  sku: string
+  name: string
+  brand: BrandRef | null
+  series: SeriesRef | null
+  base_price: string // BYN
+  override_price: string | null // ручная цена менеджера (null — нет)
+  stock_status: StockStatus
+}
+
+export interface ManagerProductPage {
+  data: ManagerProductRow[]
+  meta: MetaPage
+}
+
+// PATCH /manager/products/{id}: override_price: null — явный сброс ручной цены;
+// передать нужно хотя бы одно поле (иначе 422).
+export interface ManagerProductPatchIn {
+  override_price?: number | null
+  stock_status?: StockStatus
+}
+
+// GET /manager/brands — плоский массив (без конверта).
+export interface ManagerBrand {
+  id: string
+  name: string
+  slug: string
+  series_count: number
+  products_count: number
+}
+
+// POST /manager/series/{id}/photo (multipart file) → ключ и URL фото серии.
+export interface SeriesPhotoOut {
+  photo_key: string
+  photo_url: string
 }

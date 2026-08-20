@@ -40,3 +40,35 @@ class CartRead(BaseModel):
     items: list[CartItemRead]
     total_amount: float
     total_items: int
+
+
+# ----------------------------- bulk-добавление (§16 п.20-5) -----------------------------
+
+BULK_ITEMS_MAX = 500
+
+
+class CartBulkItemIn(BaseModel):
+    """Строка bulk-запроса: артикул + количество (≥ 1)."""
+    sku: str = Field(min_length=1, max_length=64)
+    qty: int = Field(ge=1)
+
+
+class CartBulkAddIn(BaseModel):
+    items: list[CartBulkItemIn] = Field(min_length=1, max_length=BULK_ITEMS_MAX)
+
+
+class CartBulkAdded(BaseModel):
+    """Добавленная позиция: quantity — итоговое количество в корзине."""
+    sku: str
+    quantity: int
+
+
+class CartBulkRejected(BaseModel):
+    sku: str
+    reason: str
+
+
+class CartBulkAddOut(BaseModel):
+    """Итог bulk-добавления: частичный успех (код всегда 200)."""
+    added: list[CartBulkAdded]
+    rejected: list[CartBulkRejected]

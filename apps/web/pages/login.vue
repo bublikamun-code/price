@@ -17,6 +17,12 @@ async function onSubmit() {
   loading.value = true
   try {
     await auth.login(email.value, password.value)
+    // Непринятое согласие (клиент) → сначала /consent, redirect-запрос игнорируем:
+    // после принятия consent.global.ts всё равно не пропустит дальше без согласия.
+    if (auth.isClient && auth.user?.consent_accepted === false) {
+      await navigateTo('/consent')
+      return
+    }
     const redirect = (route.query.redirect as string) || (auth.isManager ? '/manager' : '/catalog')
     await navigateTo(redirect)
   } catch (e) {

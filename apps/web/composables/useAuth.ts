@@ -18,6 +18,8 @@ export interface AuthUser {
   // Дайджест изменения цен (in-app уведомления).
   priceDigestEnabled: boolean
   priceDigestSources: string[] // 'cart' | 'favorite' | 'orders'
+  // Согласие на обработку ПДн (SITEMAP /consent). false → клиент ведётся на /consent.
+  consent_accepted: boolean
 }
 
 /** Тело PATCH /api/v1/auth/me (минимум одно поле). */
@@ -25,6 +27,7 @@ export interface UserMePatch {
   display_currency?: string
   price_digest_enabled?: boolean
   price_digest_sources?: string[]
+  consent_accepted?: boolean
 }
 
 /** Cookie-refs, регистрируемые плагином auth.session.ts. */
@@ -95,6 +98,8 @@ export const useAuthStore = defineStore('auth', () => {
         // дефолты — на случай, если бэкенд ещё не отдаёт новые поля
         priceDigestEnabled: u.price_digest_enabled ?? false,
         priceDigestSources: u.price_digest_sources ?? [],
+        // нет поля в ответе → считаем принятым (не гоняем на /consent без причины)
+        consent_accepted: u.consent_accepted ?? true,
       }
     }
     if (cookies) cookies.userC.value = user.value
