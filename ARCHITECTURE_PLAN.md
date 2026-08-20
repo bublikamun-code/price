@@ -3,7 +3,7 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.6 — готов к передаче команде / ИИ-ассистенту.
+> **Статус:** v1.7 — готов к передаче команде / ИИ-ассистенту.
 > **Дата:** 2026-08-20
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
@@ -416,7 +416,7 @@ app/
 | POST | `/api/v1/auth/refresh` | Обновить access. |
 | POST | `/api/v1/auth/logout` | Отзыв refresh. |
 | GET | `/api/v1/auth/me` | Текущий пользователь + матрица скидок. |
-| PATCH | `/api/v1/auth/me` | Обновить свой профиль (partial update): `display_currency`, `price_digest_enabled`, `price_digest_sources` (§20.4). |
+| PATCH | `/api/v1/auth/me` | Обновить свой профиль (partial update): `display_currency`, `price_digest_enabled`, `price_digest_sources` (§20.4), `consent_accepted: true` — принятие согласия (SITEMAP `/consent`): ставит `consent_accepted_at` и пишет `consent_log` (§16 п.20). |
 
 ### Каталог и ценообразование
 | Method | Path | Описание |
@@ -425,6 +425,7 @@ app/
 | GET | `/api/v1/catalog/products/{sku}` | Детализация товара + соседи по серии. |
 | GET | `/api/v1/catalog/filters` | Доступные фильтры (бренды, серии, статусы) — используется для UI. |
 | GET | `/api/v1/catalog/pricing/calculate` | Расчёт цены под клиента (для корзины). Body: `[{sku, qty}]` → `[{sku, unit_price, total}]`. |
+| POST | `/api/v1/catalog/resolve-bulk` | Проверка списка артикулов для массового добавления (фича B, SITEMAP `/bulk-add`): `{items: [{sku, qty?}]}` (≤500) → по строке: найден/нет, наименование, цена клиента, складской статус, ошибка. Ничего не добавляет (§16 п.20). |
 | POST | `/api/v1/catalog/export` | Запуск генерации выгрузки каталога (метод приведён к POST — см. §16 п.16). Query: фильтры каталога (`q`, `brand_ids`, `series_ids`, `stock`, `price_calc_mode`) + `format=csv\|xlsx` (`pdf` → 422, отложен §16 п.16). Rate-limit: 10/час на клиента. Возвращает `{job_id}`. |
 | GET | `/api/v1/catalog/export/{job_id}` | Статус генерации (`QUEUED/RUNNING/DONE/FAILED`, только владелец job) + presigned URL (5 мин) готового файла из S3 `csv-exports/`. |
 
@@ -449,7 +450,6 @@ app/
 | POST | `/api/v1/manager/prices/versions/{id}/rollback` | Откат версии (§16 п.14): товарам, существовавшим до версии, возвращаются цены из последнего снапшота `price_history` до неё; товары, впервые появившиеся в версии, архивируются (soft-delete, `ARCHIVE`). Разрешён только для последней DONE-версии; повторный откат/не-DONE/не последняя → 409. Инвалидирует кэш каталога тегами импорта. Возвращает карточку версии + счётчики `restored`/`archived`. |
 | POST | `/api/v1/manager/prices/photo-zip` | Загрузить ZIP с фото серий (multipart, §10/§16 п.17): валидация (zip, magic-bytes, лимиты) → S3 tmp-uploads → Celery-обработка (webp thumb/large + матчинг к сериям). Возвращает `{job_id}` (202). |
 | GET | `/api/v1/manager/prices/photo-zip/{job_id}` | Статус обработки ZIP (только владелец): `QUEUED/RUNNING/DONE/FAILED` + счётчики `files/matched/unmatched` и список ошибок. |
-| POST | `/api/v1/manager/brands` \| `/series` | CRUD брендов/серий. |
 | GET \| PATCH | `/api/v1/manager/orders` | Все заявки, смена статусов. |
 | POST | `/api/v1/manager/files` | Загрузить файл (PDF/CSV/ZIP). |
 | GET | `/api/v1/manager/files` | Список. |
@@ -457,6 +457,14 @@ app/
 | POST | `/api/v1/manager/currencies/rate` | Установить курс валюты вручную (source=MANUAL): `{currency_code, rate, fetched_at?}` (§16 п.19). |
 | GET | `/api/v1/manager/currencies/rates` | Курсы USD/EUR/RUB за последние 7 дней (все источники), для страницы «Курсы валют» (§16 п.19). |
 | POST | `/api/v1/manager/currencies/refresh` | Форс-запрос курсов НБ РБ (постановка Celery-таски `fetch_nbrb_rates`), 202 (§16 п.19). |
+| GET | `/api/v1/manager/dashboard` | Дашборд (фича G, §16 п.20): KPI (заявок сегодня/за 7 дней, выручка за месяц, новых клиентов за 7 дней, активные импорты), заявки по дням за 30 дней, топ-5 товаров и топ-5 клиентов по выручке за месяц, последние 5 заявок. Кэш Redis TTL 60 с. |
+| GET | `/api/v1/manager/products` | Каталог для управления (SITEMAP `/manager/catalog`): как `/catalog/products` + колонки `base_price`, `override_price`, `stock_status`, бренд, серия; фильтры `q`, `brand_id`, `stock`, пагинация (§16 п.20). |
+| PATCH | `/api/v1/manager/products/{id}` | Ручное редактирование товара (§16 п.20): `override_price` (число ≥0 или null — сброс) и/или `stock_status`. Аудит `product.update`, инвалидация кэша каталога. |
+| GET \| POST | `/api/v1/manager/brands` | Список брендов (с числом серий и товаров) / создать `{name}` — slug генерируется автоматически (§16 п.20). |
+| PATCH \| DELETE | `/api/v1/manager/brands/{id}` | Переименовать `{name}` / удалить — 409, если есть серии или товары (§16 п.20). |
+| GET \| POST | `/api/v1/manager/series` | Список серий (фильтр `brand_id`) / создать `{brand_id, name}`. |
+| PATCH \| DELETE | `/api/v1/manager/series/{id}` | Переименовать / удалить — 409, если есть товары. |
+| POST | `/api/v1/manager/series/{id}/photo` | Замена фото серии: multipart JPG/PNG/WebP ≤10 МБ → `photos-series/{slug}.webp` + `_thumb.webp` (конвенция §16 п.17), обновляет `series.photo_key`. |
 | GET | `/api/v1/manager/audit` | Журнал аудита с фильтрами (`action`, `actor_id`, `target_type`), стандартная пагинация §6. |
 
 ### Файлы (общедоступные/авторизованные)
@@ -466,10 +474,23 @@ app/
 | GET | `/api/v1/files/{id}/download` | Presigned URL (время жизни — 5 мин). |
 | GET | `/api/v1/files/photo` | Фото серии: `?key=photos-series/...` → 307-редирект на presigned URL (5 мин, §16 п.17). |
 
-### Realtime-уведомления (для менеджера)
+### Уведомления (in-app, pull)
 | Method | Path | Описание |
 |---|---|---|
-| GET | `/api/v1/notifications/stream` | SSE-stream: новые заказы, ошибки импорта. Авторизация по JWT в query (`?token=`). |
+| GET | `/api/v1/notifications` | Лента уведомлений текущего пользователя: фильтры `type`, `unread_only`, стандартная пагинация §6; в `meta` — `unread_count` (колокольчик). Pull-модель (§16 п.20). |
+| PATCH | `/api/v1/notifications/{id}/read` | Пометить прочитанным (только своё, иначе 404). |
+| PATCH | `/api/v1/notifications/read-all` | Пометить все свои прочитанными → 204. |
+| GET | `/api/v1/notifications/stream` | SSE-stream: новые заказы, ошибки импорта. Авторизация по JWT в query (`?token=`). **Отложено** (§16 п.20): колокольчик работает на pull. |
+
+### Корзина (клиент, persist в БД — §19)
+| Method | Path | Описание |
+|---|---|---|
+| GET | `/api/v1/cart` | Корзина с позициями и расчётом. |
+| POST | `/api/v1/cart/items` | Добавить `{sku, qty}`. |
+| PUT | `/api/v1/cart/items/{sku}` | Изменить количество. |
+| DELETE | `/api/v1/cart/items/{sku}` | Удалить позицию. |
+| DELETE | `/api/v1/cart` | Очистить корзину. |
+| POST | `/api/v1/cart/items/bulk` | Массовое добавление (фича B, §16 п.20): `{items: [{sku, qty}]}` (≤500) → `added` + `rejected` с причиной (не найден/архив/нет в наличии); частичный успех. |
 
 ### Telegram Mini App
 | Method | Path | Описание |
@@ -856,6 +877,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 17 | Photo-ZIP: эндпоинты, конвенции ключей и матчинг | **Согласовано 2026-08-17** | Эндпоинты: `POST /manager/prices/photo-zip` (202 + job) и `GET .../photo-zip/{job_id}` (статус, владелец-only) — job-стейт в Redis по паттерну экспорта (§16 п.16); выдача фото — `GET /files/photo?key=` → 307 на presigned (5 мин). Ключи: large `photos-series/{slug}.webp` (1200×1200 fit), thumb `photos-series/{slug}_thumb.webp` (400×400 fit), суффикс `_thumb` — конвенция. Матчинг к серии: нормализованный stem файла == series.slug; приоритет — имя, заявленное в CSV `series_photo` (при импорте сохраняется в series.photo_key до появления webp). Лимиты: ZIP ≤100 МБ, распакованный объём ≤500 МБ, ≤2000 файлов, входные форматы JPG/PNG/WebP. Импорт CSV: `series_photo` → `series.photo_key` (§7, закрывает нереализованное ранее связывание). |
 | 18 | Файловый архив: детали контракта | **Согласовано 2026-08-17** | `GET /files` — только авторизованные: CLIENT видит `visibility IN (PUBLIC, AUTHED)`, MANAGER — все записи; фильтры `type`, `brand_id`, стандартная пагинация §6. `GET /files/{id}/download` → `{"data": {"url", "expires_in": 300}}` (presigned, TTL 5 мин; 404 при отсутствии/недоступности по visibility). `POST /manager/files`: multipart `file` + Form: `type` (BRAND_PDF/CUSTOM_CSV/OTHER; PHOTO_ZIP — системный → 422), `visibility` (default AUTHED), `brand_id` (опц.); валидация: расширение .pdf/.csv/.zip + content-type + magic-bytes (%PDF/PK), лимит 200 МБ (`FILES_MAX_MB`), стриминг в S3 без буферизации (паттерн CSV-импорта); статусы 201/415/413/502. Хранение: бакет `pdf-catalogs` (§10), ключ `{type}/{uuid}{ext}`, `filename_display` — оригинальное имя. `GET /manager/files` — все записи, те же фильтры; `DELETE /manager/files/{id}` → 204 (сначала объект S3, затем запись БД). Страницы `/files` и `/manager/files` — по SITEMAP. |
 | 19 | Этап 8 «Менеджер-панель: клиенты и курсы»: детализация контрактов | **Согласовано 2026-08-20** | Дополнен §6 (расхождения §6 ↔ SITEMAP устранены в пользу SITEMAP): `GET /manager/users` (список с поиском `q` и агрегатами avg-скидки/заказов), `PUT /manager/users/{id}/fixed-rate` (фиксация display-курса: `{currency_code, rate?}` manual-строкой source=MANUAL либо копией курса НБ РБ; `{reset: true}` — снять), `GET /manager/currencies/rates` (7 дней), `POST /manager/currencies/refresh` (202, Celery). Temp-пароль: `secrets.token_urlsafe(12)`, показ ровно 1 раз в теле ответа `POST /manager/users` и `POST .../reset-password` (в БД — только хэш); сброс пароля отзывает все refresh-сессии пользователя. In-app уведомление `ACCOUNT_CREATED` создаётся **без** plaintext-пароля (пароль передаётся клиенту вне системы). Все мутации пишут `audit_log` (`user.create`, `user.update`, `user.reset_password`, `user.discount.update`, `user.fixed_rate.set/reset`, `currency.rate.manual`); смена скидок/display-валюты/фикс-курса инвалидирует тег кэша `user:{id}` (§7.2). Матрица скидок — полная замена (`PUT`), `updated_by` = менеджер. |
+| 20 | Дозакрытие экранов MVP: дашборд, manager-каталог/бренды, уведомления, bulk-add, consent | **Согласовано 2026-08-20** | Закрывает «мёртвые» пункты навигации (SITEMAP ↔ код). (1) **Дашборд (фича G)**: `GET /manager/dashboard`, кэш Redis TTL 60 с; выручка = Σ `order_items.unit_price×qty` заказов месяца без `CANCELLED`; «активные импорты» = версии в QUEUED/PROCESSING. (2) **Manager-каталог**: `GET /manager/products` (как каталог + base/override/статус), `PATCH /manager/products/{id}` (`override_price` или null-сброс, `stock_status`) с аудитом `product.update` и инвалидацией `catalog`+`filters`. (3) **Бренды/серии**: CRUD с guard 409 на удаление при наличии дочерних; slug генерируется из имени (нормализация §16 п.17), переименование slug не меняет (стабильные ключи фото); фото серии — `POST /manager/series/{id}/photo` (webp large+thumb по конвенции п.17). (4) **Уведомления**: pull-модель — `GET /notifications` (фильтры, `meta.unread_count`), `PATCH .../{id}/read`, `PATCH .../read-all`; **SSE-stream отложен** (колокольчик на pull + счётчике). (5) **Bulk-add (фича B)**: разбор текста (`SKU`, `SKU=qty`, `SKU\tqty`) — на клиенте; API: `POST /catalog/resolve-bulk` (проверка, ≤500 строк) + `POST /cart/items/bulk` (частичный успех, причины отказов). (6) **Consent (п.10)**: `PATCH /auth/me {consent_accepted: true}` → `consent_accepted_at` + запись `consent_log` (policy_version, ip, user-agent); `/consent` middleware-редирект после логина при NULL. |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 

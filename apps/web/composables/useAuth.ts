@@ -130,6 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
       baseURL,
       method: 'POST',
       body: { email, password },
+      headers: csrfHeaders(),
       credentials: 'include',
     })
     applyTokens(pair)
