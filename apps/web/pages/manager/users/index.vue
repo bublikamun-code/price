@@ -3,10 +3,12 @@
 // См. SITEMAP.md /manager/users, ARCHITECTURE_PLAN.md §6 (manager/users), §11 (RBAC).
 import type { UserManagerCreateOut, UserManagerListItem, UserManagerPage } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Клиенты — Менеджер' })
 
 const { request } = useApi()
+/* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
+const overlayDown = ref(false)
 const PER_PAGE = 20
 
 const loading = ref(true)
@@ -141,7 +143,7 @@ onMounted(load)
           class="input pl-10"
         >
       </div>
-      <button type="submit" class="btn-outline shrink-0">Найти</button>
+      <button type="submit" class="btn-primary shrink-0">Найти</button>
     </form>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
@@ -162,7 +164,7 @@ onMounted(load)
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Клиент</th>
               <th class="px-4 py-3 font-medium">Email</th>
               <th class="px-4 py-3 font-medium">Телефон</th>
@@ -187,7 +189,7 @@ onMounted(load)
               <td class="px-4 py-3 text-ink-muted">{{ u.email }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ u.phone || '—' }}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
-                <template v-if="u.avg_discount_percent !== null">{{ u.avg_discount_percent }}%</template>
+                <template v-if="u.avg_discount_percent !== null">{{ formatPercent(u.avg_discount_percent) }}</template>
                 <template v-else><span class="text-ink-faint">—</span></template>
               </td>
               <td class="px-4 py-3 text-ink-muted">{{ u.fixed_rate_currency || '—' }}</td>
@@ -223,7 +225,7 @@ onMounted(load)
     <div
       v-if="showCreate"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      @click.self="closeCreate"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeCreate(); overlayDown = false"
     >
       <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">

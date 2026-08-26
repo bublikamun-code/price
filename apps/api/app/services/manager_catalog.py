@@ -121,6 +121,10 @@ class ManagerCatalogService:
             before["stock_status"] = product.stock_status.value
             after["stock_status"] = data["stock_status"].value
             product.stock_status = data["stock_status"]
+        if "stock_qty" in data and product.stock_qty != data["stock_qty"]:  # null = сброс остатка
+            before["stock_qty"] = product.stock_qty
+            after["stock_qty"] = data["stock_qty"]
+            product.stock_qty = data["stock_qty"]
 
         if after:
             await audit_repo.create_audit(
@@ -150,6 +154,7 @@ class ManagerCatalogService:
                 Decimal(str(row.override_price)) if row.override_price is not None else None
             ),
             stock_status=row.stock_status,
+            stock_qty=row.stock_qty,
             brand=ManagerBrandRef(id=row.brand_id, name=row.brand_name)
             if row.brand_id is not None
             else None,

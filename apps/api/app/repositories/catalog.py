@@ -27,10 +27,15 @@ class CatalogFilters:
         return any([self.q, self.brand_ids, self.series_ids, self.stock])
 
 
+def _like_escape(s: str) -> str:
+    """Экранирует спецсимволы LIKE (\\, %, _), чтобы ввод искался буквально (M7)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _apply_catalog_filters(stmt, filters: CatalogFilters):
     """Общая WHERE-логика каталога (список / счётчик / экспорт)."""
     if filters.q:
-        pat = f"%{filters.q}%"
+        pat = f"%{_like_escape(filters.q)}%"
         stmt = stmt.where(or_(Product.sku.ilike(pat), Product.name.ilike(pat)))
     if filters.brand_ids:
         stmt = stmt.where(Product.brand_id.in_(filters.brand_ids))
@@ -267,6 +272,8 @@ async def upsert_product(
     price_list_version_id: uuid.UUID | None = None,
     override_price: Decimal | None = None,
     update_override: bool = False,
+    stock_qty: int | None = None,
+    update_stock_qty: bool = False,
 ) -> tuple[Product, bool]:
     """Создать или обновить товар по ``sku`` (среди не удалённых).
 
@@ -290,6 +297,8 @@ async def upsert_product(
         product.price_list_version_id = price_list_version_id
         if update_override:
             product.override_price = override_price
+        if update_stock_qty:
+            product.stock_qty = stock_qty
         await db.flush()
         return product, False
     product = Product(
@@ -302,6 +311,7 @@ async def upsert_product(
         stock_status=stock_status,
         price_list_version_id=price_list_version_id,
         override_price=override_price if update_override else None,
+        stock_qty=stock_qty if update_stock_qty else None,
     )
     db.add(product)
     await db.flush()

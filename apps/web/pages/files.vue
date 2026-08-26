@@ -37,6 +37,17 @@ const typeFilter = ref<'' | FileAssetType>('')
 const brandFilter = ref('')
 const brands = ref<BrandRef[]>([])
 
+const typeOptions = [
+  { value: '', label: 'Все файлы' },
+  { value: 'BRAND_PDF', label: 'PDF-каталог бренда' },
+  { value: 'CUSTOM_CSV', label: 'Спец-выгрузка CSV' },
+  { value: 'OTHER', label: 'Прочее' },
+]
+const brandOptions = computed(() => [
+  { value: '', label: 'Все бренды' },
+  ...brands.value.map((b) => ({ value: b.id, label: b.name })),
+])
+
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
 async function load() {
@@ -132,19 +143,11 @@ onMounted(() => {
     <div class="flex flex-col sm:flex-row gap-4 mb-6">
       <div class="sm:w-64">
         <label class="label" for="type">Тип</label>
-        <select id="type" v-model="typeFilter" class="input py-2.5" @change="applyFilters">
-          <option value="">Все файлы</option>
-          <option value="BRAND_PDF">PDF-каталог бренда</option>
-          <option value="CUSTOM_CSV">Спец-выгрузка CSV</option>
-          <option value="OTHER">Прочее</option>
-        </select>
+        <BaseSelect id="type" v-model="typeFilter" :options="typeOptions" class="min-w-[180px]" @change="applyFilters" />
       </div>
       <div v-if="brands.length" class="sm:w-64">
         <label class="label" for="brand">Бренд</label>
-        <select id="brand" v-model="brandFilter" class="input py-2.5" @change="applyFilters">
-          <option value="">Все бренды</option>
-          <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
-        </select>
+        <BaseSelect id="brand" v-model="brandFilter" :options="brandOptions" class="min-w-[180px]" @change="applyFilters" />
       </div>
     </div>
 
@@ -172,7 +175,7 @@ onMounted(() => {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Имя</th>
               <th class="px-4 py-3 font-medium">Тип</th>
               <th class="px-4 py-3 font-medium">Бренд</th>

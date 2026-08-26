@@ -74,6 +74,8 @@ class ManagerProductRead(BaseModel):
     base_price: Decimal
     override_price: Decimal | None = None
     stock_status: StockStatus
+    # Остаток на складе, шт (None — не заведён). Клиентские/catalog-схемы это поле не отдают.
+    stock_qty: int | None = None
 
 
 class ManagerProductPage(BaseModel):
@@ -82,17 +84,18 @@ class ManagerProductPage(BaseModel):
 
 
 class ManagerProductPatchIn(BaseModel):
-    """Патч товара: override_price (null — сброс) и/или stock_status."""
+    """Патч товара: override_price (null — сброс), stock_status и/или stock_qty."""
 
     override_price: Decimal | None = Field(default=None, ge=0)
     stock_status: StockStatus | None = None
+    stock_qty: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _at_least_one(self):
         # Проверяем именно факт передачи поля (model_fields_set), а не значение:
         # {"override_price": null} — валидный запрос на сброс ручной цены.
-        if not self.model_fields_set & {"override_price", "stock_status"}:
-            raise ValueError("Укажите override_price и/или stock_status")
+        if not self.model_fields_set & {"override_price", "stock_status", "stock_qty"}:
+            raise ValueError("Укажите override_price, stock_status или stock_qty")
         return self
 
 

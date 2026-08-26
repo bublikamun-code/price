@@ -14,15 +14,16 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.repositories.notifications import create_notification
-from app.repositories.price_changes import (
+from app.services.notification_events import notification_payload, publish_notification
+from app.services.notifications import (
+    build_client_digest_text,
+    build_manager_price_changed_text,
+)
+from app.services.price_changes import (
     DigestRecipient,
     VersionDiff,
     compute_version_diff,
     find_digest_recipients,
-)
-from app.services.notifications import (
-    build_client_digest_text,
-    build_manager_price_changed_text,
 )
 from app.workers import celery_app
 
@@ -136,7 +137,7 @@ async def _notify(
     # Менеджер: PRICE_CHANGED (всем менеджерам, user_id=None).
     if diff.changed:
         text = build_manager_price_changed_text(diff)
-        await create_notification(
+        notif = await create_notification(
             db,
             type="PRICE_CHANGED",
             title="Прайс-лист обновлён",
@@ -152,6 +153,8 @@ async def _notify(
                 "count_unchanged": diff.count_unchanged,
             },
         )
+        # SSE-событие менеджерам (§16 п.26): broadcast, fail-open.
+        publish_notification(notification_payload(notif), user_id=None)
         # TG менеджеру (§20.1): отдельной Celery-задачей, чтобы не блокировать БД.
         # send_telegram определён в этом же модуле — обращение по глобальному имени.
         if settings.telegram_manager_chat_id:
@@ -160,7 +163,7 @@ async def _notify(
     # Клиенты opt-in: PRICE_CHANGED_DIGEST (in-app, персонально).
     for recipient in recipients:
         digest_text = build_client_digest_text(recipient)
-        await create_notification(
+        notif = await create_notification(
             db,
             type="PRICE_CHANGED_DIGEST",
             title="Изменились цены",
@@ -174,3 +177,5 @@ async def _notify(
                 ],
             },
         )
+        # SSE-событие клиенту (§16 п.26): персональный канал, fail-open.
+        publish_notification(notification_payload(notif), user_id=recipient.user_id)

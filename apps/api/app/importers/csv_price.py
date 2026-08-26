@@ -32,6 +32,8 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "base_price": ["base_price", "price", "цена", "цена розница", "розница"],
     "discount_price": ["discount_price", "discount", "скидка", "цена скидка", "цена со скидкой"],
     "stock_status": ["stock_status", "stock", "наличие", "склад"],
+    # Опциональная колонка остатка: если её нет — stock_qty = NULL.
+    "stock_qty": ["stock_qty", "остаток", "остатки", "qty"],
     "series_photo": ["series_photo", "photo", "фото", "фото серии"],
 }
 
@@ -65,6 +67,8 @@ class NormalizedRow:
     discount_price: Decimal | None
     stock_status: StockStatus
     series_photo: str | None
+    # Остаток на складе, шт. None — колонки нет в файле или значение не число.
+    stock_qty: int | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +152,14 @@ def normalize_row(row: dict[str, Any], row_num: int) -> NormalizedRow | RowError
     stock_status = _parse_stock(row.get("stock_status"))
     series_photo = _clean(row.get("series_photo"))
 
+    # Остаток — опциональное поле: пусто/нечислово → None (не ошибка строки).
+    stock_qty_raw = row.get("stock_qty")
+    stock_qty: int | None = None
+    if _clean(stock_qty_raw) is not None:
+        qty_dec = _to_decimal(stock_qty_raw)
+        if qty_dec is not None and qty_dec >= 0:
+            stock_qty = int(qty_dec)
+
     return NormalizedRow(
         row_num=row_num,
         sku=sku,
@@ -158,6 +170,7 @@ def normalize_row(row: dict[str, Any], row_num: int) -> NormalizedRow | RowError
         discount_price=discount_price,
         stock_status=stock_status,
         series_photo=series_photo,
+        stock_qty=stock_qty,
     )
 
 

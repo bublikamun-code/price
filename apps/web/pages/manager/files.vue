@@ -12,7 +12,7 @@ import type {
   FiltersOut,
 } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Файлы — Менеджер' })
 
 const { request } = useApi()
@@ -394,7 +394,7 @@ onUnmounted(() => {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Имя</th>
               <th class="px-4 py-3 font-medium">Тип</th>
               <th class="px-4 py-3 font-medium">Бренд</th>

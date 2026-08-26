@@ -35,14 +35,20 @@ class MemoryRedis:
         self.sets = {}
 
     async def get(self, key): return self.values.get(key)
-    async def set(self, key, value, ex=None): self.values[key] = value; return True
-    async def sadd(self, key, value): self.sets.setdefault(key, set()).add(value); return 1
+    async def set(self, key, value, ex=None):
+        self.values[key] = value
+        return True
+
+    async def sadd(self, key, value):
+        self.sets.setdefault(key, set()).add(value)
+        return 1
     async def sunion(self, *keys): return set().union(*(self.sets.get(k, set()) for k in keys))
     async def delete(self, *keys):
         count = 0
         for key in keys:
             count += int(key in self.values) + int(key in self.sets)
-            self.values.pop(key, None); self.sets.pop(key, None)
+            self.values.pop(key, None)
+            self.sets.pop(key, None)
         return count
     def pipeline(self, transaction=True): return MemoryPipeline(self)
 

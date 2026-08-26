@@ -1,11 +1,27 @@
 """Celery app + конфигурация beat-расписания.
 
-См. ARCHITECTURE_PLAN.md §7 (импорт CSV), §17 (курсы НБ РБ), §20 (уведомления).
+См. ARCHITECTURE_PLAN.md §7 (импорт CSV), §17 (курсы НБ РБ), §20 (уведомления),
+§12 + §16 п.23 (метрики задач через Pushgateway).
 """
+import time
+
+import redis as redis_lib
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import task_postrun, task_prerun
 
 from app.core.config import settings
+from app.core.logging import get_logger
+from app.core.metrics import (
+    DEFAULT_QUEUE,
+    push_beat_metrics,
+    push_worker_metrics,
+    record_task_duration,
+    record_task_failure,
+    set_queue_depth,
+)
+
+log = get_logger("app.workers")
 
 celery_app = Celery(
     "price_portal",
@@ -16,6 +32,7 @@ celery_app = Celery(
         "app.tasks.fetch_nbrb_rates",
         "app.tasks.notifications",
         "app.tasks.export_catalog",
+        "app.tasks.export_order_pdf",
         "app.tasks.photo_zip",
     ],
 )
@@ -48,6 +65,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.fetch_nbrb_rates.fetch_rates",
         "schedule": crontab(minute=5, hour=0),  # 00:05 Europe/Minsk
     },
+    # Глубина очереди → Pushgateway каждые 30 с (§12, §16 п.23)
+    "metrics-push-queue-depth": {
+        "task": "app.workers.metrics_push_queue_depth",
+        "schedule": 30.0,
+    },
 }
 
 
@@ -55,3 +77,58 @@ celery_app.conf.beat_schedule = {
 def ping(self) -> str:
     """Служебная задача для проверки живости воркера."""
     return "pong"
+
+
+# ---------- Celery-метрики (§12, §16 п.23, Pushgateway-паттерн) ----------
+_task_started: dict[str, float] = {}  # task_id → time.monotonic() старта
+
+# Ленивый redis-клиент к broker-БД: глубина очереди читается через LLEN.
+# Module-level для подмены в тестах (fakeredis).
+_broker_redis: redis_lib.Redis | None = None
+
+
+def _get_broker_redis() -> redis_lib.Redis:
+    global _broker_redis
+    if _broker_redis is None:
+        _broker_redis = redis_lib.Redis.from_url(settings.celery_broker_url)
+    return _broker_redis
+
+
+@task_prerun.connect
+def _on_task_prerun(task_id: str | None = None, **_kwargs) -> None:
+    """Фиксируем старт задачи — длительность считаем в task_postrun."""
+    if task_id is not None:
+        _task_started[task_id] = time.monotonic()
+
+
+@task_postrun.connect
+def _on_task_postrun(
+    task_id: str | None = None,
+    task=None,
+    state: str | None = None,
+    **_kwargs,
+) -> None:
+    """После задачи: histogram длительности, counter окончательных провалов,
+    push в Pushgateway (fail-open — см. app/core/metrics.py)."""
+    started = _task_started.pop(task_id, None)
+    task_name = getattr(task, "name", None) or "unknown"
+    if started is not None:
+        record_task_duration(task_name, time.monotonic() - started)
+    if state == "FAILURE":  # окончательный провал (после всех ретраев)
+        record_task_failure(task_name)
+        log.warning("celery.task.failed", task=task_name)
+    push_worker_metrics()
+
+
+@celery_app.task(name="app.workers.metrics_push_queue_depth")
+def metrics_push_queue_depth() -> dict:
+    """Beat каждые 30 с: глубина дефолтной очереди (LLEN) → Pushgateway."""
+    try:
+        depth = int(_get_broker_redis().llen(DEFAULT_QUEUE))
+    except Exception as exc:  # noqa: BLE001 — Redis недоступен: не роняем beat
+        log.warning("celery.queue_depth.failed", queue=DEFAULT_QUEUE, error=str(exc))
+        return {"status": "error", "error": str(exc)}
+    set_queue_depth(DEFAULT_QUEUE, depth)
+    push_beat_metrics()  # fail-open
+    log.debug("celery.queue_depth", queue=DEFAULT_QUEUE, depth=depth)
+    return {"status": "ok", "queue": DEFAULT_QUEUE, "depth": depth}

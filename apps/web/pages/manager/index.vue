@@ -4,7 +4,7 @@
 // поэтому кнопка «Обновить» (данные могут отставать ≤60 с).
 import type { DashboardData, OrderStatus } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Дашборд' })
 
 const { request } = useApi()
@@ -69,8 +69,8 @@ const kpiTiles = computed(() => {
   return [
     { label: 'Заявки сегодня', value: String(k.orders_today), icon: 'heroicons:clipboard-document-list', tone: 'info' },
     { label: 'Заявки за 7 дней', value: String(k.orders_7d), icon: 'heroicons:inbox-stack', tone: 'info' },
-    { label: 'Выручка за месяц, BYN', value: fmtMoney(k.revenue_month), icon: 'heroicons:banknotes', tone: 'success' },
-    { label: 'Новых клиентов за 7 дней', value: String(k.new_clients_7d), icon: 'heroicons:user-plus', tone: 'warning' },
+    { label: 'Выручка за месяц', value: fmtMoney(k.revenue_month), icon: 'heroicons:banknotes', tone: 'success' },
+    { label: 'Новых клиентов за неделю', value: String(k.new_clients_7d), icon: 'heroicons:user-plus', tone: 'warning' },
   ]
 })
 
@@ -81,12 +81,13 @@ const chart = computed(() => {
   const W = 720
   const H = 160 // высота зоны столбцов
   const GAP = 4
+  const PAD_LEFT = 12 // левый отступ области построения, чтобы первая подпись оси X не резалась
   const max = Math.max(...items.map((i) => i.count), 1) // all-zero → пустая шкала
-  const barW = (W - GAP * (items.length - 1)) / items.length
+  const barW = (W - PAD_LEFT - GAP * (items.length - 1)) / items.length
   const bars = items.map((it, idx) => {
     const h = Math.round((it.count / max) * H)
     return {
-      x: +(idx * (barW + GAP)).toFixed(2),
+      x: +(PAD_LEFT + idx * (barW + GAP)).toFixed(2),
       y: H - h,
       w: +barW.toFixed(2),
       h,
@@ -96,9 +97,9 @@ const chart = computed(() => {
   })
   // Разреженные подписи оси X — каждая 5-я дата, формат DD.MM.
   const ticks = items
-    .map((it, idx) => (idx % 5 === 0 ? { x: +(idx * (barW + GAP) + barW / 2).toFixed(2), text: `${it.date.slice(8, 10)}.${it.date.slice(5, 7)}` } : null))
+    .map((it, idx) => (idx % 5 === 0 ? { x: +(PAD_LEFT + idx * (barW + GAP) + barW / 2).toFixed(2), text: `${it.date.slice(8, 10)}.${it.date.slice(5, 7)}` } : null))
     .filter((t): t is { x: number; text: string } => t !== null)
-  return { W, H, bars, ticks, total: items.reduce((s, i) => s + i.count, 0) }
+  return { W, H, padLeft: PAD_LEFT, bars, ticks, total: items.reduce((s, i) => s + i.count, 0) }
 })
 
 function plural(n: number): string {
@@ -150,7 +151,7 @@ onMounted(load)
         <template v-else-if="data">
           <div v-for="k in kpiTiles" :key="k.label" class="card p-5">
             <div class="flex items-center justify-between gap-2 mb-3">
-              <span class="text-xs text-ink-muted truncate">{{ k.label }}</span>
+              <span class="text-xs text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
               <span :class="`badge-${k.tone} shrink-0`"><Icon :name="k.icon" class="w-3.5 h-3.5" /></span>
             </div>
             <p class="text-2xl font-bold whitespace-nowrap" :title="k.value">{{ k.value }}</p>
@@ -172,7 +173,7 @@ onMounted(load)
         <div v-else-if="chart">
           <svg :viewBox="`0 0 ${chart.W} 184`" class="w-full" role="img" aria-label="Заявки за 30 дней">
             <!-- Базовая линия -->
-            <line x1="0" :y1="chart.H" :x2="chart.W" :y2="chart.H" class="stroke-border" stroke-width="1" />
+            <line :x1="chart.padLeft" :y1="chart.H" :x2="chart.W" :y2="chart.H" class="stroke-border" stroke-width="1" />
             <g class="fill-primary fill-opacity-80">
               <rect v-for="(b, i) in chart.bars" :key="i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2">
                 <title>{{ b.label }}</title>
@@ -200,15 +201,15 @@ onMounted(load)
           <div v-else class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
-                <tr class="text-ink-muted text-left bg-canvas">
+                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                   <th class="px-6 py-2.5 font-medium">Артикул</th>
                   <th class="px-4 py-2.5 font-medium">Наименование</th>
-                  <th class="px-4 py-2.5 font-medium text-right">Кол-во</th>
-                  <th class="px-6 py-2.5 font-medium text-right">Выручка, BYN</th>
+                  <th class="px-4 py-2.5 font-medium text-right whitespace-nowrap">Кол-во</th>
+                  <th class="px-6 py-2.5 font-medium text-right whitespace-nowrap">Выручка, BYN</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="p in data.top_products.slice(0, 5)" :key="p.product_id" class="border-t border-border">
+                <tr v-for="p in data.top_products.slice(0, 5)" :key="p.product_id" class="border-t border-border hover:bg-canvas/60">
                   <td class="px-6 py-2.5 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
                   <td class="px-4 py-2.5 max-w-56 truncate" :title="p.name">{{ p.name }}</td>
                   <td class="px-4 py-2.5 text-right">{{ p.qty }}</td>
@@ -230,14 +231,14 @@ onMounted(load)
           <div v-else class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
-                <tr class="text-ink-muted text-left bg-canvas">
+                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                   <th class="px-6 py-2.5 font-medium">Клиент</th>
                   <th class="px-4 py-2.5 font-medium text-right">Заявок</th>
-                  <th class="px-6 py-2.5 font-medium text-right">Выручка, BYN</th>
+                  <th class="px-6 py-2.5 font-medium text-right whitespace-nowrap">Выручка, BYN</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="c in data.top_clients.slice(0, 5)" :key="c.client_id" class="border-t border-border">
+                <tr v-for="c in data.top_clients.slice(0, 5)" :key="c.client_id" class="border-t border-border hover:bg-canvas/60">
                   <td class="px-6 py-2.5 max-w-72 truncate" :title="c.name">{{ c.name }}</td>
                   <td class="px-4 py-2.5 text-right">{{ c.orders }}</td>
                   <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ fmtMoney(c.revenue) }}</td>
@@ -260,7 +261,7 @@ onMounted(load)
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-6 py-2.5 font-medium">№</th>
                 <th class="px-4 py-2.5 font-medium">Дата</th>
                 <th class="px-4 py-2.5 font-medium">Клиент</th>

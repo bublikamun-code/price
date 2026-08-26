@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from app.core.templates import render_notification
-from app.repositories.price_changes import DigestRecipient, VersionDiff
+from app.services.price_changes import DigestRecipient, VersionDiff
 
 # Подписи категорий для клиентского дайджеста (§20.3).
 _CATEGORY_LABELS = {

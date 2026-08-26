@@ -1,6 +1,9 @@
-"""DTO аутентификации. См. ARCHITECTURE_PLAN.md §6 (auth endpoints), §20.4 (дайджест цен)."""
+"""DTO аутентификации. См. ARCHITECTURE_PLAN.md §6 (auth endpoints), §20.4 (дайджест цен),
+§16 п.22 (2FA фича H + журнал сессий фича I).
+"""
 import re
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
@@ -37,6 +40,8 @@ class UserPublic(BaseModel):
     is_active: bool
     display_currency: str
     consent_accepted: bool
+    # 2FA менеджера (фича H, §16 п.22) — для экрана /profile/security
+    totp_enabled: bool
     # Дайджест изменения цен (§20.4)
     price_digest_enabled: bool
     price_digest_sources: list[str]
@@ -53,6 +58,7 @@ class UserPublic(BaseModel):
             is_active=user.is_active,
             display_currency=user.display_currency,
             consent_accepted=user.consent_accepted_at is not None,
+            totp_enabled=user.totp_secret is not None,
             price_digest_enabled=user.price_digest_enabled,
             price_digest_sources=list(user.price_digest_sources or []),
         )
@@ -102,3 +108,123 @@ class UserUpdate(BaseModel):
         ):
             raise ValueError("Нечего обновлять: укажите хотя бы одно поле")
         return self
+
+
+# =========================================================
+# 2FA (фича H, §16 п.22)
+# =========================================================
+class TwoFASetupOut(BaseModel):
+    """Сгенерированный на лету TOTP-секрет. НЕ сохраняется до POST /2fa/enable."""
+
+    secret: str
+    otpauth_uri: str
+    qr_png_data_url: str
+
+
+class TwoFASetupResponse(BaseModel):
+    """Envelope §6: ``{"data": {secret, otpauth_uri, qr_png_data_url}}``."""
+
+    data: TwoFASetupOut
+
+
+class TwoFAEnableRequest(BaseModel):
+    """Включение 2FA: секрет из setup + текущий TOTP-код для подтверждения."""
+
+    secret: str = Field(min_length=16, max_length=64)
+    code: str = Field(min_length=6, max_length=10)
+
+
+class TwoFAEnableOut(BaseModel):
+    """Recovery-коды в plaintext — показываются ровно 1 раз (паттерн §16 п.19)."""
+
+    recovery_codes: list[str]
+
+
+class TwoFAEnableResponse(BaseModel):
+    """Envelope §6: ``{"data": {"recovery_codes": [...]}}``."""
+
+    data: TwoFAEnableOut
+
+
+class TwoFAVerifyRequest(BaseModel):
+    """Второй шаг логина: ticket из login + TOTP-код или recovery-код."""
+
+    ticket: str = Field(min_length=1)
+    code: str = Field(min_length=6, max_length=10)
+
+
+class TelegramAuthRequest(BaseModel):
+    """Mini App auth (§16 п.27): подписанные initData (+код связки при первом входе)."""
+
+    init_data: str = Field(min_length=1)
+    link_code: str | None = Field(default=None, min_length=6, max_length=6)
+
+
+class MiniAppAuthOut(TokenPair):
+    """Ответ m-auth: токены (куки ставит роутер) + факт связки + пользователь."""
+
+    linked: bool = False
+    user: "UserPublic"
+
+
+class TelegramLinkCodeOut(BaseModel):
+    """Одноразовый код связки Telegram из веб-кабинета (§16 п.27)."""
+
+    code: str
+    expires_in: int
+
+
+class TwoFALoginRequired(BaseModel):
+    """Ответ login при включённой 2FA: без токенов и кук (§16 п.22)."""
+
+    two_fa_required: bool = True
+    ticket: str
+
+
+class TwoFADisableRequest(BaseModel):
+    """Отключение 2FA: подтвердить TOTP/recovery-кодом ИЛИ паролём.
+
+    Хотя бы одно поле обязательно; оба можно — проверяется по очереди.
+    """
+
+    code: str | None = Field(default=None, min_length=6, max_length=10)
+    password: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def _at_least_one(self):
+        if self.code is None and self.password is None:
+            raise ValueError("Укажите code или password")
+        return self
+
+
+# =========================================================
+# Журнал сессий (фича I, §16 п.22)
+# =========================================================
+class SessionOut(BaseModel):
+    """Активная сессия пользователя. ``current`` — сессия текущей refresh-куки."""
+
+    id: uuid.UUID
+    user_agent: str | None = None
+    ip: str | None = None
+    created_at: datetime
+    expires_at: datetime
+    current: bool
+
+
+class SessionListResponse(BaseModel):
+    """Envelope §6 списка активных сессий (без пагинации — их немного)."""
+
+    data: list[SessionOut]
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Запрос сброса пароля. Ответ всегда 202 — существование аккаунта не раскрываем."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Сброс пароля по токену из письма (длина пароля — как у login: 1..128)."""
+
+    token: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)

@@ -13,9 +13,11 @@ from app.core.deps import require_role
 from app.db.session import get_db
 from app.models.enums import OrderStatus, UserRole
 from app.models.user import User
+from app.repositories import orders as orders_repo
 from app.schemas import MetaPage
 from app.schemas.order import OrderListPage, OrderRead, OrderStatusUpdate
 from app.services.order import OrderService
+from app.services import email as email_service
 
 router = APIRouter(prefix="/orders", tags=["manager:orders"])
 
@@ -34,7 +36,8 @@ async def list_orders(
         client_id=client, status=status_filter, manager_id=manager,
         page=page, per_page=per_page,
     )
-    data = [await _to_read(db, o, with_items=False) for o in rows]
+    clients = await orders_repo.fetch_users_by_ids(db, [o.client_id for o in rows])
+    data = [await _to_read(db, o, with_items=False, clients=clients) for o in rows]
     return OrderListPage(data=data, meta=MetaPage(page=page, per_page=per_page, total=total))
 
 
@@ -48,7 +51,8 @@ async def get_order(
         order = await OrderService(db).get(manager, order_id, as_manager=True)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return await _to_read(db, order, with_items=True)
+    clients = await orders_repo.fetch_users_by_ids(db, [order.client_id])
+    return await _to_read(db, order, with_items=True, clients=clients)
 
 
 @router.patch("/{order_id}", response_model=OrderRead)
@@ -73,4 +77,15 @@ async def update_order(
         raise HTTPException(status_code=code, detail=msg)
     await db.commit()
     await db.refresh(order)
+    # Email-уведомление клиенту о новом статусе (fire-and-forget, ошибки — в лог).
+    clients = await orders_repo.fetch_users_by_ids(db, [order.client_id])
+    client = clients.get(order.client_id)
+    if client is not None:
+        subject, html_body = email_service.build_order_status_changed_email(
+            order_no=email_service.format_order_no(order.seq),
+            status_ru=email_service.ORDER_STATUS_RU.get(
+                order.status.value, order.status.value
+            ),
+        )
+        email_service.queue_email(to=client.email, subject=subject, html_body=html_body)
     return await _to_read(db, order, with_items=True)

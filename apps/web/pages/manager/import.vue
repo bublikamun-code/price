@@ -12,10 +12,12 @@ import type {
   RollbackOut,
 } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Импорт прайс-листа' })
 
 const { request } = useApi()
+/* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
+const overlayDown = ref(false)
 
 const PER_PAGE = 10
 const MAX_SIZE = 100 * 1024 * 1024 // settings.import_max_file_mb = 100
@@ -552,7 +554,7 @@ onUnmounted(() => {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Файл</th>
               <th class="px-4 py-3 font-medium">Дата</th>
               <th class="px-4 py-3 font-medium">Режим</th>
@@ -646,7 +648,7 @@ onUnmounted(() => {
     <div
       v-if="showModal"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      @click.self="closeModal"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeModal(); overlayDown = false"
     >
       <div class="card max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
         <div class="flex items-start justify-between gap-4 mb-5">

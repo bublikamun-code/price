@@ -25,9 +25,22 @@ const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
   CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
 }
 
+// Способ получения (приходит опционально — рендерим по наличию).
+type DeliveryMethod = 'pickup' | 'delivery'
+// types/api.ts пока без поля — расширяем локально.
+type OrderRow = OrderRead & { delivery_method?: DeliveryMethod | null }
+const DELIVERY_LABEL: Record<DeliveryMethod, string> = {
+  pickup: 'Самовывоз',
+  delivery: 'Доставка',
+}
+function deliveryLabel(m?: string | null): string | null {
+  if (!m || !(m in DELIVERY_LABEL)) return null
+  return DELIVERY_LABEL[m as DeliveryMethod]
+}
+
 const loading = ref(true)
 const error = ref('')
-const orders = ref<OrderRead[]>([])
+const orders = ref<OrderRow[]>([])
 const total = ref(0)
 const page = ref(1)
 const statusFilter = ref<'' | OrderStatus>('')
@@ -70,18 +83,17 @@ async function repeatOrder(o: OrderRead) {
   }
 }
 
+// PDF-экспорт заявки (§16 п.25): job-паттерн, поллинг в composables/usePdfExport.ts.
+// Один активный job за раз: activeId — id заявки этой строки во время подготовки.
+const { activeId: pdfActiveId, error: pdfError, exportOrderPdf } = usePdfExport()
+
 function goPage(p: number) {
   if (p < 1 || p > totalPages.value || p === page.value) return
   page.value = p
   load()
 }
 
-function shortId(id: string): string {
-  return id.slice(0, 8)
-}
-function formatDate(s: string): string {
-  return new Date(s).toLocaleDateString('ru-RU')
-}
+// formatMoney/formatDate/pluralize/formatOrderNumber — автоимпорт из utils/format.ts
 
 onMounted(load)
 </script>
@@ -91,7 +103,7 @@ onMounted(load)
     <div class="mb-6">
       <h1 class="text-2xl font-bold">Мои заявки</h1>
       <p class="text-sm text-ink-muted mt-1">
-        <template v-if="!loading">{{ total }} заявок</template>
+        <template v-if="!loading">{{ total }} {{ pluralize(total, 'заявка', 'заявки', 'заявок') }}</template>
         <template v-else>Загрузка…</template>
       </p>
     </div>
@@ -111,6 +123,9 @@ onMounted(load)
       <div class="badge-danger">{{ error }}</div>
       <button class="btn-ghost text-sm" @click="load">Повторить</button>
     </div>
+    <div v-if="pdfError" class="mb-4">
+      <div class="badge-warning">{{ pdfError }}</div>
+    </div>
 
     <div v-if="loading" class="card p-5">
       <div v-for="i in 4" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0"/>
@@ -122,44 +137,106 @@ onMounted(load)
       <NuxtLink to="/catalog" class="btn-primary">Перейти в каталог</NuxtLink>
     </div>
 
-    <div v-else class="card overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
-              <th class="px-4 py-3 font-medium">№</th>
-              <th class="px-4 py-3 font-medium">Дата</th>
-              <th class="px-4 py-3 font-medium text-right">Сумма</th>
-              <th class="px-4 py-3 font-medium">Статус</th>
-              <th class="px-4 py-3 font-medium text-right">Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="o in orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
-              <td class="px-4 py-3 font-mono text-xs" :title="o.id">№{{ shortId(o.id) }}</td>
-              <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatDate(o.created_at) }}</td>
-              <td class="px-4 py-3 text-right font-semibold">{{ o.total_amount }} {{ o.currency_code }}</td>
-              <td class="px-4 py-3">
-                <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
-              </td>
-              <td class="px-4 py-3 text-right whitespace-nowrap">
-                <NuxtLink :to="`/orders/${o.id}`" class="btn-ghost text-sm py-1.5">
-                  <Icon name="heroicons:eye" class="w-4 h-4" /> Открыть
-                </NuxtLink>
-                <button
-                  class="btn-ghost text-sm py-1.5"
-                  :disabled="repeatingId === o.id"
-                  @click="repeatOrder(o)"
-                >
-                  <span v-if="repeatingId === o.id" class="w-3.5 h-3.5 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
-                  <Icon v-else name="heroicons:arrow-path" class="w-4 h-4" /> Повторить
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <template v-else>
+      <!-- Таблица: планшет/десктоп -->
+      <div class="card overflow-hidden hidden md:block">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
+                <th class="px-4 py-3 font-medium">Заявка</th>
+                <th class="px-4 py-3 font-medium text-right">Сумма</th>
+                <th class="px-4 py-3 font-medium">Статус</th>
+                <th class="px-4 py-3 font-medium text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="o in orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <div class="font-semibold text-sm" :title="o.id">{{ formatOrderNumber(o.seq, o.id) }} <span class="text-ink-faint">·</span> <span class="text-ink-muted font-normal">{{ formatDate(o.created_at) }}</span></div>
+                  <div v-if="deliveryLabel(o.delivery_method)" class="text-xs text-ink-faint mt-0.5">
+                    {{ deliveryLabel(o.delivery_method) }}<template v-if="o.delivery_method === 'pickup'"> · склад</template>
+                  </div>
+                </td>
+                <td class="px-4 py-3.5 text-right font-bold">{{ formatMoney(o.total_amount, o.currency_code) }}</td>
+                <td class="px-4 py-3.5">
+                  <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
+                </td>
+                <td class="px-4 py-3 text-right whitespace-nowrap">
+                  <NuxtLink :to="`/orders/${o.id}`" class="btn-ghost text-sm py-1.5">
+                    <Icon name="heroicons:eye" class="w-4 h-4" /> Открыть
+                  </NuxtLink>
+                  <button
+                    class="btn-ghost text-sm py-1.5"
+                    :disabled="repeatingId === o.id"
+                    @click="repeatOrder(o)"
+                  >
+                    <span v-if="repeatingId === o.id" class="w-3.5 h-3.5 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+                    <Icon v-else name="heroicons:arrow-path" class="w-4 h-4" /> Повторить
+                  </button>
+                  <button
+                    class="btn-ghost text-sm py-1.5"
+                    :disabled="pdfActiveId !== null"
+                    @click="exportOrderPdf(o.id)"
+                  >
+                    <span v-if="pdfActiveId === o.id" class="w-3.5 h-3.5 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+                    <Icon v-else name="heroicons:document-arrow-down" class="w-4 h-4" /> PDF
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      <!-- Карточки: мобильные (таблица на 390px не влезает) -->
+      <div class="md:hidden flex flex-col gap-3">
+        <article v-for="o in orders" :key="o.id" class="card p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-semibold text-sm" :title="o.id">{{ formatOrderNumber(o.seq, o.id) }}</p>
+              <p class="text-sm text-ink-muted mt-0.5">
+                {{ formatDate(o.created_at) }}<template v-if="deliveryLabel(o.delivery_method)"> · {{ deliveryLabel(o.delivery_method) }}</template>
+              </p>
+            </div>
+            <p class="font-bold whitespace-nowrap shrink-0">{{ formatMoney(o.total_amount, o.currency_code) }}</p>
+          </div>
+          <div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
+            <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
+            <div class="flex items-center gap-1 -mr-2">
+              <NuxtLink
+                :to="`/orders/${o.id}`"
+                class="btn-ghost p-2"
+                aria-label="Открыть"
+                title="Открыть"
+              >
+                <Icon name="heroicons:eye" class="w-4 h-4" />
+              </NuxtLink>
+              <button
+                class="btn-ghost p-2"
+                :disabled="repeatingId === o.id"
+                aria-label="Повторить"
+                title="Повторить"
+                @click="repeatOrder(o)"
+              >
+                <span v-if="repeatingId === o.id" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+                <Icon v-else name="heroicons:arrow-path" class="w-4 h-4" />
+              </button>
+              <button
+                class="btn-ghost p-2"
+                :disabled="pdfActiveId !== null"
+                aria-label="Скачать PDF"
+                title="Скачать PDF"
+                @click="exportOrderPdf(o.id)"
+              >
+                <span v-if="pdfActiveId === o.id" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+                <Icon v-else name="heroicons:document-arrow-down" class="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </template>
 
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
       <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">

@@ -67,6 +67,10 @@ class Product(Base, TimestampMixin, UUIDPrimaryKey):
         default=StockStatus.IN_STOCK,
     )
 
+    # Остаток на складе, шт. Nullable: NULL — остаток не заведён
+    # (колонка в CSV отсутствовала / менеджер не заполнял).
+    stock_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     price_list_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("price_list_versions.id"), nullable=True
     )

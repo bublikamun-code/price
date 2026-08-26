@@ -1,7 +1,10 @@
 <script setup lang="ts">
 // Layout менеджера: расширенный sidebar (управление).
 // Навигация — см. SITEMAP.md §2.
+// Приватная зона не индексируется (публичная SEO-витрина только на /brands).
+useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 const route = useRoute()
+const auth = useAuth()
 const navItems = [
   { to: '/manager', label: 'Дашборд', icon: 'heroicons:chart-bar' },
   { to: '/manager/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
@@ -13,6 +16,8 @@ const navItems = [
   { to: '/manager/currency', label: 'Курсы валют', icon: 'heroicons:banknotes' },
   { to: '/manager/audit', label: 'Аудит', icon: 'heroicons:shield-check' },
 ]
+// Пункт только для роли ADMIN (§11 RBAC).
+const adminNavItem = { to: '/manager/admin', label: 'Администрирование', icon: 'heroicons:shield-check' }
 
 function isActive(to: string) {
   if (to === '/manager') return route.path === '/manager'
@@ -36,6 +41,16 @@ function isActive(to: string) {
           >
             <Icon :name="item.icon" class="w-5 h-5" />
             <span>{{ item.label }}</span>
+          </NuxtLink>
+          <NuxtLink
+            v-if="auth.isAdmin"
+            :key="adminNavItem.to"
+            :to="adminNavItem.to"
+            class="nav-link"
+            :class="{ 'nav-link-active': isActive(adminNavItem.to) }"
+          >
+            <Icon :name="adminNavItem.icon" class="w-5 h-5" />
+            <span>{{ adminNavItem.label }}</span>
           </NuxtLink>
         </nav>
       </aside>

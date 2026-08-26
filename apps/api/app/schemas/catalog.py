@@ -28,6 +28,8 @@ class ProductCard(BaseModel):
     brand: BrandRef | None = None
     series: SeriesRef | None = None
     stock_status: StockStatus
+    # Остаток (шт): NULL — остаток не отслеживается. Для фронта («доступно N шт»).
+    stock_qty: int | None = None
     photo_key: str | None = None
     attributes: dict = {}  # характеристики товара (§5): цвет, модули, IP-рейтинг…
 

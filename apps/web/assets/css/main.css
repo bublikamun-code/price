@@ -19,6 +19,11 @@
     @apply bg-canvas text-ink font-sans antialiased;
   }
 
+  /* Нативные чекбоксы — в палитре акцента, а не системный синий Chrome */
+  input[type='checkbox'] {
+    @apply accent-primary;
+  }
+
   h1, h2, h3, h4 {
     @apply font-display font-semibold text-ink;
   }
@@ -49,12 +54,14 @@
   /* Кнопки */
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2.5
-           rounded-pill font-medium text-sm transition-all duration-200 ease-soft
+           rounded-pill font-semibold text-sm transition-all duration-200 ease-soft
            focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-primary text-white hover:bg-primary-hover active:scale-[.98];
+    @apply btn bg-primary text-white px-5 shadow-[0_4px_12px_rgba(91,141,239,0.25)]
+           hover:bg-primary-hover hover:shadow-[0_6px_16px_rgba(91,141,239,0.32)]
+           active:scale-[.98] active:shadow-none;
   }
   .btn-secondary {
     @apply btn bg-secondary-soft text-secondary hover:bg-secondary/15;
@@ -85,6 +92,34 @@
            focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15
            transition-all duration-200;
   }
+  /* Селекты: единый стиль вместо системного (каталог/файлы/профиль) */
+  select.input {
+    @apply pr-10 cursor-pointer bg-surface rounded-pill;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236B7280'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+  }
+  select.input::-ms-expand {
+    display: none;
+  }
+  select.input:hover {
+    @apply border-primary/40;
+  }
+
+  /* Числовые input: убираем нативные стрелки +/- */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
   .label {
     @apply block text-sm font-medium text-ink mb-1.5;
   }

@@ -1,64 +1,46 @@
 <script setup lang="ts">
-// Профиль: личные данные (readonly) + валюта отображения цен.
-// Сохранение: PATCH /api/v1/auth/me (через auth.updateMe). См. SITEMAP.md §5.
+// Профиль: личные данные, безопасность, Telegram, уведомления, согласие на ПДн.
+// Валюта отображения — только BYN, определяется менеджером (клиент не меняет).
+// Telegram-код связки: Этап 12, §16 п.27. См. SITEMAP.md §5.
+import type { TelegramLinkCode } from '~/types/api'
+
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Профиль' })
 
 const auth = useAuth()
+const { request } = useApi()
 
-const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB']
+// --- Telegram Mini App: код связки (§16 п.27, SITEMAP §8). Только CLIENT. ---
+const tgCode = ref('')
+const tgGenerating = ref(false)
+const tgError = ref('')
 
-// Локальная копия для формы; init из стора (hydrate из cookie + fetchMe).
-// '??' — на случай устаревшей cookie без новых полей.
-const savedCurrency = () => auth.user?.displayCurrency || 'BYN'
-const currency = ref(savedCurrency())
-const loading = ref(false)
-const errorMsg = ref('')
-const saved = ref(false)
-
-// Кнопка активна только при реальном изменении.
-const dirty = computed(() => currency.value !== savedCurrency())
-
-// Изменили селектор — убираем прошлые сообщения.
-watch(currency, () => {
-  saved.value = false
-  errorMsg.value = ''
-})
-
-// fetchMe после загрузки обновил стор → подтягиваем, если форму не трогали.
-watch(() => auth.user, () => {
-  if (!dirty.value) currency.value = savedCurrency()
-})
-
-async function onSave() {
-  if (loading.value || !dirty.value) return
-  loading.value = true
-  errorMsg.value = ''
+async function generateLinkCode() {
+  if (tgGenerating.value) return
+  tgGenerating.value = true
+  tgError.value = ''
   try {
-    await auth.updateMe({ display_currency: currency.value })
-    saved.value = true
+    const res = await request<TelegramLinkCode>('/api/v1/auth/telegram/link-code', { method: 'POST' })
+    tgCode.value = res.code
   } catch (e) {
-    errorMsg.value = getErrorMessage(e, 'Не удалось сохранить настройки')
+    tgCode.value = ''
+    tgError.value = getErrorMessage(e, 'Не удалось сгенерировать код связки')
   } finally {
-    loading.value = false
+    tgGenerating.value = false
   }
 }
 </script>
 
 <template>
   <div>
-    <!-- Заголовок + ссылка на уведомления -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <!-- Заголовок -->
+    <div class="mb-6">
       <h1 class="text-2xl font-bold">Профиль</h1>
-      <NuxtLink to="/profile/notifications" class="btn-ghost">
-        <Icon name="heroicons:bell" class="w-4 h-4" />
-        Настройки уведомлений
-      </NuxtLink>
     </div>
 
-    <div class="grid gap-6 lg:grid-cols-2 items-start">
+    <div class="grid gap-6 lg:grid-cols-2 items-stretch">
       <!-- Личные данные (readonly) -->
-      <div class="card p-5">
+      <div class="card p-5 h-full">
         <h3 class="font-semibold mb-3">Личные данные</h3>
         <div class="flex justify-between text-sm py-1.5">
           <span class="text-ink-muted">ФИО</span>
@@ -76,36 +58,121 @@ async function onSave() {
           <span class="text-ink-muted">Email</span>
           <span class="font-medium">{{ auth.user?.email || '—' }}</span>
         </div>
+        <div class="flex justify-between items-center text-sm py-1.5">
+          <span class="text-ink-muted">Валюта отображения</span>
+          <span class="font-medium">BYN</span>
+        </div>
         <p class="text-xs text-ink-faint mt-3">
-          Для изменения данных обратитесь к менеджеру.
+          Для изменения данных обратитесь к менеджеру. Валюта определяется менеджером.
         </p>
       </div>
 
-      <!-- Отображение цен -->
-      <div class="card p-5">
-        <h3 class="font-semibold mb-3">Отображение цен</h3>
-        <form class="flex flex-col gap-4" @submit.prevent="onSave">
-          <div>
-            <label class="label" for="display_currency">Валюта отображения</label>
-            <select id="display_currency" v-model="currency" class="input">
-              <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
-            </select>
-            <p class="text-xs text-ink-faint mt-1.5">
-              Цены в каталоге пересчитываются по курсу Нацбанка.
+      <!-- Безопасность (2FA — менеджер; сессии — все роли). Фичи H/I, §16 п.22 -->
+      <div class="card p-5 h-full">
+        <h3 class="font-semibold mb-3">Безопасность</h3>
+        <div class="flex flex-col gap-1">
+          <NuxtLink
+            v-if="auth.isManager"
+            to="/profile/security"
+            class="flex items-center gap-3 px-3 py-2.5 -mx-3 rounded-card hover:bg-canvas/60 transition-colors"
+          >
+            <Icon name="heroicons:shield-check" class="w-5 h-5 shrink-0 text-primary" />
+            <span class="flex-1 text-sm font-medium">Безопасность (2FA)</span>
+            <span :class="auth.user?.totpEnabled ? 'text-xs text-success font-medium' : 'text-xs text-ink-faint'">
+              {{ auth.user?.totpEnabled ? 'включена' : 'выключена' }}
+            </span>
+            <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" />
+          </NuxtLink>
+          <NuxtLink
+            to="/profile/sessions"
+            class="flex items-center gap-3 px-3 py-2.5 -mx-3 rounded-card hover:bg-canvas/60 transition-colors"
+          >
+            <Icon name="heroicons:device-phone-mobile" class="w-5 h-5 shrink-0 text-primary" />
+            <span class="flex-1 text-sm font-medium">Активные сессии</span>
+            <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" />
+          </NuxtLink>
+        </div>
+        <p class="text-xs text-ink-faint mt-3">
+          Завершайте сессии на чужих устройствах{{ auth.isManager ? ' и управляйте двухфакторной аутентификацией' : '' }}.
+        </p>
+      </div>
+
+      <!-- Telegram Mini App: код связки (только CLIENT, §16 п.27). -->
+      <div v-if="auth.isClient" class="card p-5 h-full">
+        <h3 class="font-semibold mb-3">Telegram</h3>
+        <p class="text-sm text-ink-muted mb-4">
+          Свяжите аккаунт, чтобы открывать каталог и оформлять заявки прямо в Telegram.
+        </p>
+
+        <button
+          class="btn-primary"
+          :disabled="tgGenerating"
+          @click="generateLinkCode"
+        >
+          <span v-if="tgGenerating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          <Icon v-else name="heroicons:paper-airplane" class="w-4 h-4" />
+          {{ tgGenerating ? 'Генерация…' : 'Сгенерировать код связки' }}
+        </button>
+
+        <div v-if="tgCode" class="mt-4 text-center bg-primary-soft/40 border border-primary/20 rounded-card p-4">
+          <div class="text-3xl font-display font-bold tracking-[0.3em] text-primary">{{ tgCode }}</div>
+          <p class="text-xs text-ink-faint mt-2">
+            Действует 10 минут. Откройте Mini App в Telegram и введите код.
+          </p>
+        </div>
+
+        <div v-if="tgError" class="badge-danger w-full justify-center py-2 mt-3">{{ tgError }}</div>
+      </div>
+
+      <!-- Уведомления -->
+      <NuxtLink to="/profile/notifications" class="card p-5 h-full group hover:border-primary/50 transition-colors">
+        <div class="flex items-start gap-3">
+          <Icon name="heroicons:bell-alert" class="w-5 h-5 shrink-0 text-primary mt-0.5" />
+          <div class="flex-1">
+            <h3 class="font-semibold mb-1 flex items-center gap-2">
+              Уведомления
+              <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint group-hover:text-primary transition-colors" />
+            </h3>
+            <p class="text-sm text-ink-muted">
+              Настройте, о каких событиях сообщать: изменения цен в корзине и избранном, статусы заявок.
             </p>
           </div>
+        </div>
+      </NuxtLink>
 
-          <div v-if="errorMsg" class="badge-danger w-full justify-center py-2">{{ errorMsg }}</div>
-
+      <!-- Согласие и данные (на всю ширину) -->
+      <div class="card p-5 h-full lg:col-span-2">
+        <h3 class="font-semibold mb-3">Согласие и данные</h3>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div class="flex items-center gap-3">
-            <button type="submit" class="btn-primary" :disabled="loading || !dirty">
-              <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-              {{ loading ? 'Сохранение...' : 'Сохранить' }}
-            </button>
-            <span v-if="saved" class="text-sm font-medium text-success">Сохранено</span>
+            <span class="text-sm text-ink-muted">Согласие на обработку персональных данных:</span>
+            <span v-if="auth.user?.consent_accepted" class="badge-success">Принято</span>
+            <template v-else>
+              <span class="badge-warning">Не оформлено</span>
+            </template>
           </div>
-        </form>
+          <p v-if="!auth.user?.consent_accepted" class="text-xs text-ink-faint">
+            Отозвать согласие можно через менеджера.
+          </p>
+        </div>
       </div>
+
+      <!-- Файлы и документы (на всю ширину) -->
+      <NuxtLink to="/files" class="card p-5 h-full lg:col-span-2 group hover:border-primary/50 transition-colors">
+        <div class="flex items-start gap-3">
+          <Icon name="heroicons:folder-open" class="w-5 h-5 shrink-0 text-primary mt-0.5" />
+          <div class="flex-1">
+            <h3 class="font-semibold mb-1 flex items-center gap-2">
+              Файлы и документы
+              <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint group-hover:text-primary transition-colors" />
+            </h3>
+            <p class="text-sm text-ink-muted">
+              Прайс-листы, сертификаты и другие документы от вашего менеджера — в одном месте.
+            </p>
+          </div>
+        </div>
+      </NuxtLink>
+
     </div>
   </div>
 </template>

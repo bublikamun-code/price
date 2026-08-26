@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
 
 from app.core.config import settings
 
@@ -64,8 +64,22 @@ def create_refresh_token(subject: str) -> str:
     )
 
 
+def create_2fa_ticket(subject: str) -> str:
+    """Ticket второго шага логина при 2FA (§16 п.22).
+
+    Короткоживущий JWT с type="2fa": только sub (без ролей/sid), TTL 5 мин.
+    Не принимается get_current_user (ждёт type="access"), а verify-эндпоинт
+    2FA не принимает access-токены — типы токенов строго разделены.
+    """
+    return _create_token(
+        subject,
+        "2fa",
+        timedelta(minutes=settings.totp_ticket_ttl_min),
+    )
+
+
 def decode_token(token: str) -> dict[str, Any]:
-    """Декодирует и проверяет срок. Бросает JWTError при невалидном токене."""
+    """Декодирует и проверяет срок. Бросает jwt.PyJWTError при невалидном токене."""
     return jwt.decode(token, settings.jwt_verify_key, algorithms=[settings.jwt_algorithm])
 
 
@@ -74,6 +88,6 @@ __all__ = [
     "verify_password",
     "create_access_token",
     "create_refresh_token",
+    "create_2fa_ticket",
     "decode_token",
-    "JWTError",
 ]

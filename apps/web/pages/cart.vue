@@ -19,7 +19,10 @@ async function changeQty(item: CartItemRead, delta: number) {
   try {
     await update(item.sku, { quantity: qty })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось изменить количество')
+    // 422 по остаткам: показываем детали бэка, а не общий текст.
+    error.value = getErrorStatus(e) === 422
+      ? getDetailedErrorMessage(e, 'Не удалось изменить количество')
+      : getErrorMessage(e, 'Не удалось изменить количество')
   } finally {
     updatingSku.value = null
   }
@@ -65,7 +68,7 @@ onMounted(refresh)
       <div>
         <h1 class="text-2xl font-bold">Корзина</h1>
         <p class="text-sm text-ink-muted mt-1">
-          <template v-if="cart">{{ cart.total_items }} позиций</template>
+          <template v-if="cart">{{ cart.total_items }} {{ pluralize(cart.total_items, 'позиция', 'позиции', 'позиций') }}</template>
           <template v-else>Загрузка…</template>
         </p>
       </div>
@@ -146,8 +149,8 @@ onMounted(refresh)
                 </button>
               </div>
               <div class="text-right">
-                <p class="text-sm text-ink-muted">{{ item.unit_price }} {{ item.currency }} / шт</p>
-                <p class="font-bold">{{ item.line_total }} {{ item.currency }}</p>
+                <p class="text-sm text-ink-muted">{{ formatMoney(item.unit_price, item.currency) }} / шт</p>
+                <p class="font-bold">{{ formatMoney(item.line_total, item.currency) }}</p>
               </div>
             </div>
           </div>
@@ -164,7 +167,7 @@ onMounted(refresh)
           </div>
           <div class="flex justify-between text-lg font-bold py-2 border-t border-border mt-2">
             <span>Сумма</span>
-            <span>{{ cart.total_amount }} <span class="text-sm font-normal text-ink-muted">{{ cart.items[0]?.currency }}</span></span>
+            <span>{{ formatMoney(cart.total_amount, cart.items[0]?.currency) }}</span>
           </div>
           <NuxtLink to="/checkout" class="btn-primary w-full justify-center py-3 mt-4">
             <Icon name="heroicons:document-check" class="w-4 h-4" /> Оформить заявку

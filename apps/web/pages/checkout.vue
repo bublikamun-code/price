@@ -7,7 +7,21 @@ useHead({ title: 'Оформление заявки' })
 
 const { request } = useApi()
 const { thumbOf } = useProductPhoto()
-const { data: cartData, loading, refresh, clear } = useCart()
+const { data: cartData, loading, refresh } = useCart()
+
+// Способы получения (список пунктов самовывоза расширится позже).
+type DeliveryMethod = 'pickup' | 'delivery'
+const PICKUP_POINTS: { id: string; label: string }[] = [
+  { id: 'main', label: 'г. Минск, пр. Дзержинского, 104 (склад)' },
+]
+
+const deliveryMethod = ref<DeliveryMethod>('pickup')
+const pickupPointId = ref<string>(PICKUP_POINTS[0]!.id)
+
+const deliveryPoint = computed(() => {
+  if (deliveryMethod.value !== 'pickup') return null
+  return PICKUP_POINTS.find((p) => p.id === pickupPointId.value)?.label ?? null
+})
 
 const notes = ref('')
 const submitting = ref(false)
@@ -23,7 +37,10 @@ async function submit() {
     items: cartData.value.items.map((i) => ({ sku: i.sku, quantity: i.quantity, note: i.note })),
     notes: notes.value || null,
     price_calc_mode: 'fixed',
-  }
+    // Поля получения: бэкенд примет их параллельно с этой правкой.
+    delivery_method: deliveryMethod.value,
+    delivery_point: deliveryPoint.value,
+  } as OrderCreate
   try {
     const order = await request<OrderRead>('/api/v1/orders', { method: 'POST', body: payload })
     // Корзина очищается на бэке атомарно при создании заявки.
@@ -31,7 +48,10 @@ async function submit() {
     await refresh()
     await navigateTo(`/orders/${order.id}`)
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось оформить заявку')
+    // 422 по остаткам: показываем детали бэка («По позиции <sku> доступно только N шт»).
+    error.value = getErrorStatus(e) === 422
+      ? getDetailedErrorMessage(e, 'Не удалось оформить заявку')
+      : getErrorMessage(e, 'Не удалось оформить заявку')
   } finally {
     submitting.value = false
   }
@@ -66,7 +86,7 @@ onMounted(refresh)
         <div class="card overflow-hidden">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-4 py-3 font-medium">Товар</th>
                 <th class="px-4 py-3 font-medium text-center">Кол-во</th>
                 <th class="px-4 py-3 font-medium text-right">Цена</th>
@@ -88,15 +108,49 @@ onMounted(refresh)
                   </div>
                 </td>
                 <td class="px-4 py-3 text-center">{{ item.quantity }}</td>
-                <td class="px-4 py-3 text-right">{{ item.unit_price }} {{ item.currency }}</td>
-                <td class="px-4 py-3 text-right font-medium">{{ item.line_total }} {{ item.currency }}</td>
+                <td class="px-4 py-3 text-right">{{ formatMoney(item.unit_price, item.currency) }}</td>
+                <td class="px-4 py-3 text-right font-medium">{{ formatMoney(item.line_total, item.currency) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-      </div>
 
-      <!-- Форма -->
+        <!-- Способ получения -->
+        <fieldset class="card p-5">
+        <legend class="sr-only">Способ получения</legend>
+        <h3 class="font-semibold mb-4">Получение</h3>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <!-- Самовывоз -->
+          <label
+            class="flex gap-3 p-4 rounded-card border cursor-pointer transition-colors"
+            :class="deliveryMethod === 'pickup' ? 'border-primary bg-primary-soft/30' : 'border-border hover:border-primary/50'"
+          >
+            <input v-model="deliveryMethod" type="radio" value="pickup" name="delivery_method" class="mt-0.5 accent-primary">
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold">Самовывоз</span>
+              <span class="block text-xs text-ink-muted mt-0.5">Бесплатно.</span>
+              <template v-if="deliveryMethod === 'pickup'">
+                <select v-model="pickupPointId" class="input mt-2 text-sm py-1.5" @click.stop>
+                  <option v-for="p in PICKUP_POINTS" :key="p.id" :value="p.id">{{ p.label }}</option>
+                </select>
+              </template>
+            </span>
+          </label>
+
+          <!-- Доставка -->
+          <label
+            class="flex gap-3 p-4 rounded-card border cursor-pointer transition-colors"
+            :class="deliveryMethod === 'delivery' ? 'border-primary bg-primary-soft/30' : 'border-border hover:border-primary/50'"
+          >
+            <input v-model="deliveryMethod" type="radio" value="delivery" name="delivery_method" class="mt-0.5 accent-primary">
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold">Доставка</span>
+              <span class="block text-xs text-ink-muted mt-0.5">Условия и стоимость согласует менеджер.</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+    </div>
       <aside class="lg:sticky lg:top-[88px]">
         <div class="card p-6">
           <h3 class="font-semibold mb-4">Параметры заявки</h3>
@@ -117,7 +171,7 @@ onMounted(refresh)
 
           <div class="flex justify-between text-lg font-bold py-3 border-t border-border mt-4">
             <span>Итого</span>
-            <span>{{ cartData.total_amount }} <span class="text-sm font-normal text-ink-muted">{{ currency }}</span></span>
+            <span>{{ formatMoney(cartData.total_amount, currency) }}</span>
           </div>
 
           <div v-if="error" class="badge-danger w-full justify-center py-2 mt-2">{{ error }}</div>

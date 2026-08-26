@@ -5,7 +5,14 @@
 // прямой wpis — без гонки таймингов watcher'ов).
 // См. ARCHITECTURE_PLAN.md §6, §11.
 import { defineStore } from 'pinia'
-import type { TokenPair, UserPublic, UserRole } from '~/types/api'
+import type { TokenPair, TwoFALoginEnvelope, UserPublic, UserRole } from '~/types/api'
+
+/** Результат login(): обычный вход ИЛИ требование второго шага 2FA (§16 п.22). */
+export interface LoginResult {
+  twoFARequired: boolean
+  /** Одноразовый ticket для POST /auth/2fa/verify; только при twoFARequired. */
+  ticket?: string
+}
 
 export interface AuthUser {
   id: string
@@ -15,6 +22,8 @@ export interface AuthUser {
   displayCurrency: string
   company?: string | null
   phone?: string | null
+  // 2FA менеджера (фича H, §16 п.22): экран /profile/security.
+  totpEnabled: boolean
   // Дайджест изменения цен (in-app уведомления).
   priceDigestEnabled: boolean
   priceDigestSources: string[] // 'cart' | 'favorite' | 'orders'
@@ -76,7 +85,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!user.value && !!token.value)
   const isClient = computed(() => user.value?.role === 'CLIENT')
-  const isManager = computed(() => user.value?.role === 'MANAGER')
+  const isManager = computed(() => ['MANAGER', 'ADMIN'].includes(user.value?.role as string))
+  const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
   /** Вызывается из plugins/auth.session.ts один раз при старте. */
   function registerCookies(c: CookieStore) {
@@ -95,6 +105,8 @@ export const useAuthStore = defineStore('auth', () => {
         displayCurrency: u.display_currency,
         company: u.company,
         phone: u.phone,
+        // 2FA (фича H, §16 п.22); дефолт — на случай устаревшего бэкенда без поля
+        totpEnabled: u.totp_enabled ?? false,
         // дефолты — на случай, если бэкенд ещё не отдаёт новые поля
         priceDigestEnabled: u.price_digest_enabled ?? false,
         priceDigestSources: u.price_digest_sources ?? [],
@@ -129,12 +141,33 @@ export const useAuthStore = defineStore('auth', () => {
     return token.value ? { Authorization: `Bearer ${token.value}` } : {}
   }
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string): Promise<LoginResult> {
     const baseURL = apiBaseURL()
-    const pair = await $fetch<TokenPair>('/api/v1/auth/login', {
+    // При включённой 2FA (§16 п.22) login отвечает 200 {"data": {two_fa_required, ticket}}
+    // без токенов и кук — это НЕ ошибка: пользователь идёт на второй шаг (verify2fa).
+    // Успешный логин — плоский TokenPair без «data», других форм у login нет.
+    const res = await $fetch<TokenPair | TwoFALoginEnvelope>('/api/v1/auth/login', {
       baseURL,
       method: 'POST',
       body: { email, password },
+      headers: csrfHeaders(),
+      credentials: 'include',
+    })
+    if ('data' in res) {
+      return { twoFARequired: true, ticket: res.data.ticket }
+    }
+    applyTokens(res)
+    await fetchMe()
+    return { twoFARequired: false }
+  }
+
+  /** Второй шаг логина при 2FA: ticket + код приложения/recovery → токены+куки+сессия. */
+  async function verify2fa(ticket: string, code: string) {
+    const baseURL = apiBaseURL()
+    const pair = await $fetch<TokenPair>('/api/v1/auth/2fa/verify', {
+      baseURL,
+      method: 'POST',
+      body: { ticket, code },
       headers: csrfHeaders(),
       credentials: 'include',
     })
@@ -200,9 +233,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     user, token,
-    isAuthenticated, isClient, isManager,
+    isAuthenticated, isClient, isManager, isAdmin,
     registerCookies,
-    login, fetchMe, updateMe, refresh, logout, clear, applyUser, applyTokens,
+    login, verify2fa, fetchMe, updateMe, refresh, logout, clear, applyUser, applyTokens,
   }
 })
 

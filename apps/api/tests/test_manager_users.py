@@ -148,7 +148,7 @@ async def test_list_users_with_aggregates(api_client, session_factory):
     await set_discount(sf, user=client1, brand=brand_b, percent=20)
 
     await _login(api_client, "one@example.by")
-    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}]})
+    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"})
     assert r.status_code in (200, 201), r.text
 
     await _login(api_client, MANAGER_EMAIL)

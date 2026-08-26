@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -53,6 +54,13 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     # 2FA для менеджера (фича H)
     totp_secret: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Telegram Mini App (§16 п.27): id пользователя TG, связывается одноразовым
+    # кодом. chat_id отдельно не хранится (приватный чат: chat_id == user.id);
+    # поле используется и для будущих клиентских TG-уведомлений (§20.3).
+    telegram_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, nullable=True
+    )
+
     # Opt-in на дайджест изменения цен (§20.4): включён + источники отслеживания.
     # Источники: 'cart', 'favorite', 'orders'. По умолчанию все три.
     price_digest_enabled: Mapped[bool] = mapped_column(
@@ -83,6 +91,25 @@ class Session(Base, UUIDPrimaryKey):
     )
 
 
+class TotpRecoveryCode(Base, UUIDPrimaryKey):
+    """Одноразовые recovery-коды 2FA менеджера (фича H, §16 п.22).
+
+    В БД хранится только bcrypt-хэш кода; plaintext показывается пользователю
+    ровно один раз — при включении 2FA (паттерн temp-пароля §16 п.19).
+    Использованный код не удаляется, а помечается ``used_at``.
+    """
+    __tablename__ = "totp_recovery_codes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    code_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ConsentLog(Base, UUIDPrimaryKey):
     """Журнал принятия согласия на обработку ПДн (§16 п.10)."""
     __tablename__ = "consent_log"
@@ -95,6 +122,26 @@ class ConsentLog(Base, UUIDPrimaryKey):
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     accepted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+
+class PasswordResetToken(Base, UUIDPrimaryKey):
+    """Токен сброса пароля (email forgot/reset). Хранится только SHA-256 хэш.
+
+    Одноразовый: после успешного сброса помечается ``used_at``. TTL — 30 мин
+    (см. settings.password_reset_ttl_min).
+    """
+    __tablename__ = "password_reset_tokens"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 

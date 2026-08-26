@@ -6,10 +6,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import OrderStatus
 from app.models.order import Order, OrderItem
+from app.models.user import User
 
 
 async def get_order(db: AsyncSession, *, order_id: uuid.UUID) -> Order | None:
     return await db.scalar(select(Order).where(Order.id == order_id))
+
+
+async def next_order_seq(db: AsyncSession) -> int:
+    """Следующий сквозной номер заявки: MAX(seq)+1.
+
+    Масштаб портала небольшой — гонка некритична; уникальный индекс
+    ``uq_orders_seq`` страховка от дублей.
+    """
+    current = await db.scalar(select(func.coalesce(func.max(Order.seq), 0)))
+    return int(current or 0) + 1
+
+
+async def fetch_users_by_ids(
+    db: AsyncSession, user_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, User]:
+    """Map id → User одним запросом (для показа имён клиентов в списке заявок)."""
+    ids = {uid for uid in user_ids if uid is not None}
+    if not ids:
+        return {}
+    res = await db.execute(select(User).where(User.id.in_(ids)))
+    return {u.id: u for u in res.scalars().all()}
 
 
 async def fetch_orders(

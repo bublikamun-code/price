@@ -1,4 +1,4 @@
-"""Экспорт каталога в CSV/XLSX (Celery). См. ARCHITECTURE_PLAN.md §16 п.16.
+"""Экспорт каталога в CSV/XLSX/PDF (Celery). См. ARCHITECTURE_PLAN.md §16 п.16, п.25.
 
 Контракт:
   Вход:  ``job_id`` — стейт в Redis ``export:job:{job_id}`` (QUEUED),
@@ -8,8 +8,9 @@
     1. статусы в Redis: RUNNING → DONE (s3_key) / FAILED (error);
     2. ``fetch_catalog_all`` — весь каталог под фильтры (без пагинации);
     3. цены через ``PricingService.price_product`` (§8/§17) для каждой строки;
-    4. файл (CSV ``utf-8-sig`` + ``;`` либо XLSX/openpyxl) → S3 ``csv-exports``,
-       ключ ``export/{job_id}.{csv|xlsx}`` (presigned-ссылку отдаёт API).
+    4. файл (CSV ``utf-8-sig`` + ``;`` | XLSX/openpyxl | PDF/weasyprint,
+       §16 п.25 — шаблон ``app/templates/pdf/catalog.j2``) → S3 ``csv-exports``,
+       ключ ``export/{job_id}.{csv|xlsx|pdf}`` (presigned-ссылку отдаёт API).
 
 Идемпотентность/надёжность — по образцу ``tasks/import_price_list.py``:
 слепой авто-ретрай отключён (``autoretry_for=()``), критическая ошибка
@@ -22,10 +23,9 @@ import csv
 import io
 import json
 import uuid
+from datetime import datetime
 
 from openpyxl import Workbook
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -35,6 +35,7 @@ from app.repositories import catalog as catalog_repo
 from app.repositories.catalog import CatalogFilters
 from app.services import storage
 from app.services.pricing import PricingService
+from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
 
 log = get_logger("app.tasks.export_catalog")
@@ -47,15 +48,13 @@ COLUMNS = ["sku", "name", "brand", "series", "stock_status",
 _CONTENT_TYPES = {
     "csv": "text/csv",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
 }
 
 # Отдельный движок для Celery-задач (по образцу import_price_list): NullPool,
 # т.к. каждая задача крутится в своём asyncio.run. Тесты подменяют
 # ``_worker_session`` на свой sessionmaker (тестовый движок).
-_worker_engine = create_async_engine(settings.database_url, poolclass=NullPool)
-_worker_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
-    bind=_worker_engine, expire_on_commit=False
-)
+_worker_engine, _worker_session = create_worker_db()
 
 
 @celery_app.task(bind=True, name="export_catalog", autoretry_for=())
@@ -118,9 +117,12 @@ async def _run_export(
             ])
 
         key = f"export/{job_id}.{format}"
-        body = (
-            _to_csv_bytes(records) if format == "csv" else _to_xlsx_bytes(records)
-        )
+        if format == "csv":
+            body = _to_csv_bytes(records)
+        elif format == "pdf":
+            body = _to_pdf_bytes(records, user=user, price_calc_mode=price_calc_mode)
+        else:
+            body = _to_xlsx_bytes(records)
         storage.upload_fileobj(
             settings.s3_bucket_exports, key, io.BytesIO(body),
             content_type=_CONTENT_TYPES[format],
@@ -166,8 +168,32 @@ def _to_xlsx_bytes(records: list[list]) -> bytes:
     return buf.getvalue()
 
 
+# Человекочитаемые подписи режима цен для шапки PDF (§8).
+_PRICE_MODE_LABELS = {"fixed": "по договору (фикс. курс)",
+                      "nbrb_current": "по текущему курсу НБ РБ"}
+
+
+def _to_pdf_bytes(records: list[list], *, user, price_calc_mode: str) -> bytes:
+    """PDF через weasyprint (§16 п.25): catalog.j2 → HTML → A4.
+
+    weasyprint импортируется лениво: рендер выполняется только в Celery-воркере,
+    API-процессу библиотека не нужна в рантайме (хотя и установлена).
+    """
+    from weasyprint import HTML
+
+    from app.core.templates import render_pdf
+
+    html = render_pdf(
+        "catalog.j2",
+        client_name=user.full_name,
+        client_company=user.company,
+        date=datetime.now().strftime("%d.%m.%Y"),
+        price_mode=_PRICE_MODE_LABELS.get(price_calc_mode, price_calc_mode),
+        rows=records,
+    )
+    return HTML(string=html).write_pdf()
+
+
 async def _mark_failed(job_id: uuid.UUID, message: str) -> None:
     """Пометить job FAILED при критической ошибке (storage/неожиданное)."""
-    from app.services.export import STATUS_FAILED, set_job_state
-
-    await set_job_state(job_id, status=STATUS_FAILED, error=message[:500])
+    await mark_redis_job_failed("app.services.export", job_id, message)

@@ -6,6 +6,7 @@
   - PATCH /me: display_currency (нормализация/422), дайджест цен (§20.4), дедупликация источников, пустое тело (422), без токена (401)
   - refresh: rotation, повторное использование старого refresh (401)
   - logout: отзыв сессии, /me после logout (401)
+  - cookie Secure-флаг из COOKIE_SECURE (§16 п.30): dev false / prod true
   - RBAC: клиент → /manager/ping (403), менеджер → 200
   - rate-limit: 6-я попытка login → 429
 """
@@ -51,6 +52,34 @@ async def test_login_success(api_client, session_factory):
     csrf_header = next(h for h in r.headers.get_list("set-cookie") if h.startswith("csrf_token="))
     assert "HttpOnly" not in csrf_header
     assert "SameSite=lax" in csrf_header
+
+
+async def test_login_cookies_not_secure_by_default(api_client, session_factory, monkeypatch):
+    """Dev (COOKIE_SECURE=false, §16 п.30): куки без Secure, остальное как раньше."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "cookie_secure", False)  # детерминизм вне .env
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    r = await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    assert r.status_code == 200, r.text
+    set_cookies = r.headers.get_list("set-cookie")
+    names = {h.split("=", 1)[0] for h in set_cookies}
+    assert {"access_token", "refresh_token", "csrf_token"} <= names
+    assert all("secure" not in h.lower() for h in set_cookies)
+
+
+async def test_login_cookies_secure_when_configured(api_client, session_factory, monkeypatch):
+    """§16 п.30: при COOKIE_SECURE=true все три куки получают флаг Secure."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "cookie_secure", True)
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    r = await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    assert r.status_code == 200, r.text
+    set_cookies = r.headers.get_list("set-cookie")
+    names = {h.split("=", 1)[0] for h in set_cookies}
+    assert {"access_token", "refresh_token", "csrf_token"} <= names
+    assert all("secure" in h.lower() for h in set_cookies)
 
 
 async def test_login_wrong_password(api_client, session_factory):
@@ -145,8 +174,8 @@ async def test_patch_me_updates_digest(api_client, session_factory):
         assert db_user.price_digest_sources == ["cart", "orders"]
 
 
-async def test_patch_me_display_currency_ok(api_client, session_factory):
-    """Валюта нормализуется (strip + upper, как в manager/prices.py): 'usd' → 'USD'.
+async def test_patch_me_display_currency_client_forced_byn(api_client, session_factory):
+    """CLIENT видит цены только в BYN: присланное display_currency игнорируется.
 
     Прочие поля профиля (дайджест) не затрагиваются — применяются только заданные поля.
     """
@@ -155,8 +184,17 @@ async def test_patch_me_display_currency_ok(api_client, session_factory):
     r = await api_client.patch("/api/v1/auth/me", json={"display_currency": " usd "})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["display_currency"] == "USD"
+    assert body["display_currency"] == "BYN"
     assert body["price_digest_enabled"] is False  # не задано — не изменилось
+
+
+async def test_patch_me_display_currency_manager_can_change(api_client, session_factory):
+    """MANAGER может менять валюту отображения как раньше ('usd' → 'USD')."""
+    await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
+    await _login(api_client, MANAGER_EMAIL, PASSWORD)
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": " usd "})
+    assert r.status_code == 200, r.text
+    assert r.json()["display_currency"] == "USD"
 
 
 async def test_patch_me_display_currency_invalid(api_client, session_factory):
@@ -248,6 +286,44 @@ async def test_bearer_only_mutation_does_not_require_csrf(api_client, session_fa
         headers={"Authorization": f"Bearer {access}"},
     )
     assert r.status_code == 200, r.text
+
+
+async def test_login_with_stale_cookies_without_csrf_passes(api_client, session_factory):
+    """§16 п.21: login освобождён от CSRF — остаточные токен-куки без csrf-куки
+    не ломают перезайти; успешный ответ перезаписывает все три куки."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    api_client.cookies.set("access_token", "stale-access")
+    api_client.cookies.set("refresh_token", "stale-refresh")
+    # csrf-куки нет, заголовка нет — без exemption был бы 403
+    r = await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    assert r.status_code == 200, r.text
+    assert "access_token" in r.cookies
+    assert "refresh_token" in r.cookies
+    assert "csrf_token" in r.cookies
+
+
+async def test_login_wrong_password_clears_stale_cookies(api_client, session_factory):
+    """§16 п.21: неуспешный логин (401) чистит остаточные access/refresh/csrf куки."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    api_client.cookies.set("access_token", "stale-access")
+    api_client.cookies.set("refresh_token", "stale-refresh")
+    r = await _login(api_client, CLIENT_EMAIL, "wrong")
+    assert r.status_code == 401
+    set_cookies = r.headers.get_list("set-cookie")
+    names = {h.split("=", 1)[0] for h in set_cookies}
+    assert {"access_token", "refresh_token", "csrf_token"} <= names
+    assert all("max-age=0" in h.lower() for h in set_cookies)  # удаление, а не установка
+
+
+async def test_refresh_and_logout_still_require_csrf(api_client, session_factory):
+    """Exemption только для login (§16 п.21): refresh/logout с токен-куками
+    без совпадающего csrf → 403."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    api_client.cookies.set("access_token", "stale-access")
+    api_client.cookies.set("refresh_token", "stale-refresh")
+    # csrf-куки нет → автоподстановка заголовка из фикстуры не сработает
+    assert (await api_client.post("/api/v1/auth/refresh")).status_code == 403
+    assert (await api_client.post("/api/v1/auth/logout")).status_code == 403
 
 
 # =========================================================

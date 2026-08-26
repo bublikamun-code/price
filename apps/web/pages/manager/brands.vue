@@ -4,10 +4,12 @@
 // GET /api/v1/catalog/filters + POST /api/v1/manager/series/{id}/photo.
 import type { FiltersOut, ManagerBrand, SeriesPhotoOut, SeriesRef } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Бренды и серии — Менеджер' })
 
 const { request } = useApi()
+/* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
+const overlayDown = ref(false)
 const { thumbOf } = useProductPhoto()
 
 const SERIES_COLLAPSE_AT = 6 // больше — сворачиваем с «Показать все»
@@ -306,7 +308,7 @@ onMounted(load)
     <div
       v-if="showCreate"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      @click.self="showCreate = false"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) showCreate = false; overlayDown = false"
     >
       <form class="card max-w-lg w-full p-6" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">
@@ -343,7 +345,7 @@ onMounted(load)
     <div
       v-if="renaming"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      @click.self="renaming = null"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) renaming = null; overlayDown = false"
     >
       <form class="card max-w-lg w-full p-6" @submit.prevent="submitRename">
         <div class="flex items-start justify-between gap-4 mb-5">

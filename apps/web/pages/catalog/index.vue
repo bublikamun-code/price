@@ -13,6 +13,19 @@ const route = useRoute()
 type Sort = 'name' | '-name' | 'price' | '-price' | 'sku'
 const PER_PAGE = 12
 
+const sortOptions = [
+  { value: 'name', label: 'Название А→Я' },
+  { value: '-name', label: 'Название Я→А' },
+  { value: 'price', label: 'Цена ↑' },
+  { value: '-price', label: 'Цена ↓' },
+  { value: 'sku', label: 'Артикул' },
+]
+const stockOptions = [
+  { value: '', label: 'Любое' },
+  { value: 'IN_STOCK', label: 'В наличии' },
+  { value: 'PREORDER', label: 'Под заказ' },
+]
+
 const loading = ref(true)
 const error = ref('')
 const products = ref<ProductCard[]>([])
@@ -50,10 +63,20 @@ async function addToCart(p: ProductCard) {
 const q = ref((route.query.q as string) || '')
 const selectedBrands = ref<string[]>([])
 const selectedSeries = ref<string[]>([])
+// Инициализация бренда/серии из URL (/catalog?brand=<id> / ?series=<id>,
+// ссылки из хлебных крошек и чипов карточки товара)
+function idsFromQuery(key: string): string[] {
+  const v = route.query[key]
+  if (!v) return []
+  return Array.isArray(v) ? v.map(String) : [String(v)]
+}
+selectedBrands.value = idsFromQuery('brand')
+selectedSeries.value = idsFromQuery('series')
 const selectedStock = ref<string>('') // '' | IN_STOCK | PREORDER
 const sort = ref<Sort>('name')
 const page = ref(1)
 const priceMode = ref<'discount' | 'retail'>('discount')
+const viewMode = ref<'grid' | 'list'>('grid')
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
@@ -201,28 +224,22 @@ onMounted(load)
           <template v-else>Загрузка…</template>
         </p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2 justify-end">
         <!-- Переключатель цены -->
-        <div class="flex bg-surface border border-border rounded-pill p-1">
+        <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
           <button
-            class="px-3 py-1.5 rounded-pill text-sm font-medium transition-colors"
+            class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
             :class="priceMode === 'discount' ? 'bg-primary text-white' : 'text-ink-muted'"
             @click="priceMode = 'discount'"
           >Со скидкой</button>
           <button
-            class="px-3 py-1.5 rounded-pill text-sm font-medium transition-colors"
+            class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
             :class="priceMode === 'retail' ? 'bg-primary text-white' : 'text-ink-muted'"
             @click="priceMode = 'retail'"
           >Розница</button>
         </div>
         <!-- Сортировка -->
-        <select v-model="sort" class="input py-2" @change="applyFilters">
-          <option value="name">Название А→Я</option>
-          <option value="-name">Название Я→А</option>
-          <option value="price">Цена ↑</option>
-          <option value="-price">Цена ↓</option>
-          <option value="sku">Артикул</option>
-        </select>
+        <BaseSelect v-model="sort" :options="sortOptions" class="min-w-[180px]" @change="applyFilters" />
         <!-- Экспорт каталога под текущие фильтры -->
         <div class="relative">
           <button
@@ -250,7 +267,33 @@ onMounted(load)
             >
               XLSX
             </button>
+            <button
+              class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+              @click="startExport('pdf')"
+            >
+              PDF
+            </button>
           </div>
+        </div>
+
+        <!-- Переключатель вида -->
+        <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
+          <button
+            class="p-1.5 rounded-pill transition-colors"
+            :class="viewMode === 'grid' ? 'bg-primary text-white' : 'text-ink-muted'"
+            title="Плитка"
+            @click="viewMode = 'grid'"
+          >
+            <Icon name="heroicons:squares-2x2" class="w-4 h-4" />
+          </button>
+          <button
+            class="p-1.5 rounded-pill transition-colors"
+            :class="viewMode === 'list' ? 'bg-primary text-white' : 'text-ink-muted'"
+            title="Список"
+            @click="viewMode = 'list'"
+          >
+            <Icon name="heroicons:list-bullet" class="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>
@@ -295,29 +338,30 @@ onMounted(load)
 
           <div class="mb-5">
             <label class="label">Наличие</label>
-            <select v-model="selectedStock" class="input py-2" @change="applyFilters">
-              <option value="">Любое</option>
-              <option value="IN_STOCK">В наличии</option>
-              <option value="PREORDER">Под заказ</option>
-            </select>
+            <BaseSelect v-model="selectedStock" :options="stockOptions" class="min-w-[150px]" @change="applyFilters" />
           </div>
 
           <button class="btn-ghost w-full justify-center" @click="resetFilters">Сбросить</button>
         </div>
       </aside>
 
-      <!-- Сетка -->
+      <!-- Сетка / Список -->
       <div class="flex-1 min-w-0">
         <!-- Skeletons -->
-        <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-          <div v-for="i in 6" :key="i" class="card p-5">
-            <div class="skeleton aspect-square mb-4 rounded-card"/>
-            <div class="skeleton h-4 w-1/3 mb-3"/>
-            <div class="skeleton h-5 w-3/4 mb-2"/>
-            <div class="skeleton h-4 w-1/2 mb-4"/>
-            <div class="skeleton h-9 w-full"/>
+        <template v-if="loading">
+          <div v-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div v-for="i in 6" :key="i" class="card p-5">
+              <div class="skeleton aspect-square mb-4 rounded-card"/>
+              <div class="skeleton h-4 w-1/3 mb-3"/>
+              <div class="skeleton h-5 w-3/4 mb-2"/>
+              <div class="skeleton h-4 w-1/2 mb-4"/>
+              <div class="skeleton h-9 w-full"/>
+            </div>
           </div>
-        </div>
+          <div v-else class="card p-5">
+            <div v-for="i in 8" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
+          </div>
+        </template>
 
         <!-- Пусто -->
         <div v-else-if="!products.length" class="card p-12 text-center text-ink-muted">
@@ -325,11 +369,11 @@ onMounted(load)
           <p>Ничего не найдено. Измените условия поиска или сбросьте фильтры.</p>
         </div>
 
-        <!-- Карточки -->
-        <div v-else class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+        <!-- Плитка -->
+        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           <article v-for="p in products" :key="p.id" class="card card-hover p-5 flex flex-col">
             <!-- Фото -->
-            <div class="aspect-square bg-canvas rounded-card mb-4 flex items-center justify-center overflow-hidden">
+            <div class="aspect-[4/3] md:aspect-square bg-canvas rounded-card mb-4 flex items-center justify-center overflow-hidden">
               <img
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key)!"
@@ -342,8 +386,12 @@ onMounted(load)
 
             <div class="flex items-start justify-between gap-2 mb-1">
               <span v-if="p.brand" class="badge-info">{{ p.brand.name }}</span>
-              <span :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
+              <span class="shrink-0 whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
                 {{ stockLabel[p.stock_status] || p.stock_status }}
+              </span>
+              <!-- Мало на складе: точный остаток известен и мал (0 < qty <= 5) -->
+              <span v-if="p.stock_qty != null && p.stock_qty > 0 && p.stock_qty <= 5" class="badge-warning whitespace-nowrap">
+                Осталось {{ p.stock_qty }} шт
               </span>
             </div>
             <NuxtLink :to="`/catalog/${p.sku}`" class="block font-semibold text-base mb-1 line-clamp-2 hover:text-primary transition-colors">
@@ -351,31 +399,32 @@ onMounted(load)
             </NuxtLink>
             <p class="text-xs text-ink-faint mb-3">Артикул: {{ p.sku }}<span v-if="p.series"> · {{ p.series.name }}</span></p>
 
-            <!-- Характеристики -->
-            <div v-if="attrChips(p).length" class="flex flex-wrap gap-1.5 mb-3">
-              <span v-for="c in attrChips(p)" :key="c.label" class="chip">
-                {{ c.label }}: <span class="font-medium">{{ c.value }}</span>
-              </span>
+            <!-- Характеристики: стабильная сетка 2 колонки, фиксированный порядок полей -->
+            <div v-if="attrChips(p).length" class="grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
+              <div v-for="c in attrChips(p)" :key="c.label" class="flex items-baseline gap-1 text-xs min-w-0">
+                <span class="text-ink-faint shrink-0">{{ c.label }}:</span>
+                <span class="font-medium truncate">{{ c.value }}</span>
+              </div>
             </div>
 
             <div class="mt-auto">
               <div v-if="priceMode === 'discount' && p.has_discount" class="flex items-baseline gap-2 mb-3">
-                <span class="text-xl font-bold text-primary">{{ p.client_price }} {{ p.currency }}</span>
-                <span class="text-sm text-ink-faint line-through">{{ p.retail_price }} {{ p.currency }}</span>
+                <span class="text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
+                <span class="text-sm text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
               </div>
               <div v-else class="mb-3">
-                <span class="text-xl font-bold">{{ p.retail_price }} {{ p.currency }}</span>
+                <span class="text-xl font-bold">{{ formatMoney(p.retail_price, p.currency) }}</span>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-stretch gap-2">
                 <input
                   type="number"
                   min="1"
                   :value="getQty(p.sku)"
-                  class="input py-2 w-20 text-center"
+                  class="input py-2 w-20 text-center shrink-0"
                   @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
                 >
                 <button
-                  class="btn-primary flex-1 py-2"
+                  class="btn-primary flex-1 min-w-0 whitespace-nowrap px-4 py-2 text-sm"
                   :disabled="addingSku === p.sku"
                   @click="addToCart(p)"
                 >
@@ -387,6 +436,73 @@ onMounted(load)
               </div>
             </div>
           </article>
+        </div>
+
+        <!-- Список -->
+        <div v-else class="card overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm table-fixed">
+              <thead>
+                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
+                  <th class="px-2 py-2 font-medium w-[11%]">Артикул</th>
+                  <th class="px-2 py-2 font-medium w-[30%]">Наименование</th>
+                  <th class="px-2 py-2 font-medium w-[11%]">Бренд</th>
+                  <th class="px-2 py-2 font-medium w-[10%]">Серия</th>
+                  <th class="px-2 py-2 font-medium w-[10%]">Наличие</th>
+                  <th class="px-2 py-2 font-medium text-right w-[11%]">Цена</th>
+                  <th class="px-2 py-2 font-medium text-center w-[9%] whitespace-nowrap">Кол-во</th>
+                  <th class="px-2 py-2 font-medium text-right w-[5%]" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60">
+                  <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
+                  <td class="px-2 py-2 truncate" :title="p.name">
+                    <NuxtLink :to="`/catalog/${p.sku}`" class="font-medium hover:text-primary transition-colors">
+                      {{ p.name }}
+                    </NuxtLink>
+                  </td>
+                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate">{{ p.brand?.name || '—' }}</td>
+                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate">{{ p.series?.name || '—' }}</td>
+                  <td class="px-2 py-2">
+                    <span class="badge whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
+                      {{ stockLabel[p.stock_status] || p.stock_status }}
+                    </span>
+                    <span v-if="p.stock_qty != null && p.stock_qty > 0 && p.stock_qty <= 5" class="badge-warning block w-fit mt-1">
+                      Осталось {{ p.stock_qty }} шт
+                    </span>
+                  </td>
+                  <td class="px-2 py-2 text-right whitespace-nowrap">
+                    <template v-if="priceMode === 'discount' && p.has_discount">
+                      <span class="font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
+                      <span class="block text-xs text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                    </template>
+                    <span v-else class="font-bold">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-center">
+                    <input
+                      type="number"
+                      min="1"
+                      :value="getQty(p.sku)"
+                      class="input py-1.5 w-14 text-center"
+                      @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
+                    >
+                  </td>
+                  <td class="px-2 py-2 text-right">
+                    <button
+                      class="btn-primary p-1.5"
+                      :disabled="addingSku === p.sku"
+                      @click="addToCart(p)"
+                    >
+                      <span v-if="addingSku === p.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                      <Icon v-else-if="addedSku === p.sku" name="heroicons:check" class="w-4 h-4" />
+                      <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Пагинация -->

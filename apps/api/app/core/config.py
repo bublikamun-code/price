@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     env: Literal["dev", "staging", "prod"] = "dev"
     app_name: str = "price-portal"
     log_level: str = "INFO"
-    secret_key: str = Field(default="change-me", min_length=16)
+    secret_key: str = Field(min_length=16)
     jwt_algorithm: str = "HS256"
     # RS256 (prod, §16 п.15): пути к PEM-файлам, смонтированным read-only
     # (пару ключей создаёт `make gen-jwt-keys` → infra/jwt-keys/)
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     postgres_host: str = "db"
     postgres_port: int = 5432
     postgres_user: str = "price"
-    postgres_password: str = "price_secret"
+    postgres_password: str = Field(min_length=1)
     postgres_db: str = "price_portal"
     db_echo: bool = False  # логировать SQL (dev)
 
@@ -102,11 +102,16 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://redis:6379/1"
     celery_result_backend: str = "redis://redis:6379/2"
 
+    # --- Observability (§12, §16 п.23) ---
+    # Pushgateway для Celery-метрик. Пусто = push выключен (fail-open, только debug-лог).
+    # В overlay infra/docker-compose.observability.yml: PUSHGATEWAY_URL=http://pushgateway:9091
+    pushgateway_url: str = ""
+
     # --- S3 / MinIO ---
     s3_endpoint: str = "http://minio:9000"
     s3_external_endpoint: str = "http://localhost:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str = Field(min_length=1)
+    s3_secret_key: str = Field(min_length=1)
     s3_region: str = "us-east-1"
     s3_bucket_photos: str = "photos-series"
     s3_bucket_pdfs: str = "pdf-catalogs"
@@ -122,6 +127,9 @@ class Settings(BaseSettings):
     # --- Файловый архив (§16 п.18) ---
     files_max_mb: int = 200  # лимит загрузки файла в архив (pdf-catalogs)
 
+    # --- PDF-выгрузки (§16 п.25) ---
+    pdf_supplier_name: str = "ООО «Поставщик»"  # шапка PDF-заявки (блок «Поставщик»)
+
     @property
     def import_allowed_ext_list(self) -> list[str]:
         return [e.strip().lower() for e in self.import_allowed_extensions.split(",") if e.strip()]
@@ -136,6 +144,21 @@ class Settings(BaseSettings):
     def display_currency_list(self) -> list[str]:
         return [c.strip().upper() for c in self.display_currencies.split(",") if c.strip()]
 
+    # --- Email / SMTP ---
+    # Пустой SMTP_HOST → сервис письма не отправляет (no-op: рендерится текст и
+    # пишется в лог INFO). Ссылка сброса пароля строится от WEB_APP_URL.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    web_app_url: str = ""                # напр. https://portal.example.by
+    manager_notify_email: str = ""       # пусто → письмо о новой заявке не шлём
+
+    @property
+    def password_reset_ttl_min(self) -> int:
+        return 30
+
     # --- Telegram ---
     telegram_bot_token: str = ""
     telegram_manager_chat_id: str = ""
@@ -147,8 +170,28 @@ class Settings(BaseSettings):
 
     # --- Security / CORS ---
     rate_limit_login: str = "5/15minutes"
+    # Лимит на запрос сброса пароля (forgot-password) — по IP.
+    rate_limit_forgot_password: str = "5/15minutes"
+    # Блокировка аккаунта после N неудачных входов (§16 п.21, H4):
+    # попыток до блокировки и длительность блокировки (минуты).
+    login_max_attempts: int = 5
+    login_lockout_minutes: int = 30
+    # Второй шаг логина при 2FA — тот же лимит, что у login (§16 п.22)
+    rate_limit_2fa_verify: str = "5/15minutes"
+    # Ticket второго шага логина при 2FA: JWT type=2fa, TTL 5 мин (§16 п.22)
+    totp_ticket_ttl_min: int = 5
     csrf_cookie_name: str = "csrf_token"
     csrf_header_name: str = "X-CSRF-Token"
+    # Флаг Secure у кук аутентификации (access/refresh/csrf): prod — true,
+    # куки уходят только по HTTPS (COOKIE_SECURE=true в prod-compose, §16 п.30)
+    cookie_secure: bool = False
+    # CSP в режиме Report-Only (§16 п.30): браузер не блокирует, только репортит;
+    # enforcing — после анализа отчётов на проде. Пустая строка = заголовок выключен.
+    content_security_policy: str = (
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'"
+    )
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
 
     @property

@@ -2,7 +2,7 @@
 // Детали заявки для менеджера. См. SITEMAP.md §7, §9 (FSM), §11 (audit).
 import type { OrderRead, OrderStatus } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 
 const route = useRoute()
 const { request } = useApi()
@@ -36,6 +36,15 @@ function snapName(item: { product_snapshot?: Record<string, unknown> | null }): 
 }
 function shortId(id: string): string {
   return id.slice(0, 8)
+}
+
+// XLSX-экспорт заявки (для 1С): синхронный GET + blob в composables/useXlsxExport.ts.
+const { activeId: xlsxActiveId, error: xlsxError, exportOrderXlsx } = useXlsxExport()
+const xlsxBusy = computed(() => xlsxActiveId.value !== null)
+
+function xlsxFileName(): string {
+  const no = order.value?.seq ? `-${String(order.value.seq).padStart(3, '0')}` : ''
+  return `order${no}-${shortId(String(route.params.id))}.xlsx`
 }
 
 async function load() {
@@ -111,9 +120,16 @@ onMounted(load)
             от {{ formatDate(order.created_at) }} · клиент №{{ shortId(order.client_id) }}
           </p>
         </div>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-secondary" :disabled="xlsxBusy" @click="exportOrderXlsx(order.id, xlsxFileName())">
+            <span v-if="xlsxBusy" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+            <Icon v-else name="heroicons:table-cells" class="w-4 h-4" />
+            {{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}
+          </button>
+        </div>
       </div>
 
-      <div v-if="error" class="badge-danger w-full justify-center py-2 mb-4">{{ error }}</div>
+      <div v-if="error || xlsxError" class="badge-danger w-full justify-center py-2 mb-4">{{ error || xlsxError }}</div>
 
       <!-- Управление статусом -->
       <div class="card p-5 mb-6">
@@ -146,7 +162,7 @@ onMounted(load)
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-5 py-3 font-medium">Товар</th>
                 <th class="px-5 py-3 font-medium text-center">Кол-во</th>
                 <th class="px-5 py-3 font-medium text-right">Цена</th>

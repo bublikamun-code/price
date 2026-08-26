@@ -17,7 +17,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${DEV_DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-price} -d ${POSTGRES_DB:-price_portal}"]
       interval: 10s
@@ -34,7 +34,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"
+      - "${DEV_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -107,6 +107,12 @@ services:
       - "8000:8000"
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:                # наследуется prod-overlay'ем (gunicorn на том же порту)
+      test: ["CMD", "python", "-c", "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://localhost:8000/healthz', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks: [pp-net]
 
   # ---------- Celery worker (импорт CSV, экспорты, уведомления) ----------
@@ -183,6 +189,12 @@ services:
     ports:
       - "3000:3000"
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    healthcheck:                # node-fetch есть и в dev-, и в runtime-образе (Node >=18)
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 90s         # dev: npm install при старте
     networks: [pp-net]
 
   # ---------- Nginx (единый вход, reverse proxy) ----------
@@ -194,9 +206,15 @@ services:
       - api
       - web
     ports:
-      - "8080:80"
+      - "${DEV_NGINX_PORT:-8080}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:                # end-to-end: nginx → proxy → api /healthz
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
     networks: [pp-net]
 
 volumes:

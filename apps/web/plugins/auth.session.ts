@@ -22,8 +22,9 @@ export default defineNuxtPlugin(() => {
   auth.token = tokenC.value ?? null
   auth.user = userC.value ?? null
 
-  // на клиенте тихо обновляем профиль, если сессия есть (не блокируя UI)
-  if (import.meta.client && auth.token && auth.user) {
+  // на клиенте тихо обновляем профиль, если есть токен (в т.ч. когда кука
+  // auth_user потерялась — иначе залогиненный увидит гостевой лендинг на /)
+  if (import.meta.client && auth.token) {
     auth.fetchMe().catch(() => {})
   }
 })

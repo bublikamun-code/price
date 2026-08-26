@@ -10,6 +10,11 @@
 export default defineNuxtRouteMiddleware((to) => {
   const SKIP_PATHS = ['/consent', '/login', '/privacy']
   if (SKIP_PATHS.includes(to.path)) return
+  // Mini App /m/** (§16 п.27): consent принимается в веб-кабинете,
+  // повторно в Telegram webview не запрашивается.
+  if (to.path === '/m' || to.path.startsWith('/m/')) return
+  // Публичная SEO-витрина /brands** (§16 п.29): доступна гостям, consent-gate не применяется.
+  if (to.path === '/brands' || to.path.startsWith('/brands/')) return
 
   const auth = useAuth()
   if (!auth.user) return

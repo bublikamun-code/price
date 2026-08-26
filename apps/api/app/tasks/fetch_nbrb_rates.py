@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.pricing import ExchangeRate
 from app.repositories.notifications import create_notification
+from app.services.notification_events import notification_payload, publish_notification
 from app.workers import celery_app
 
 log = get_logger("app.tasks.fetch_nbrb_rates")
@@ -120,7 +121,7 @@ async def _fallback_alert() -> None:
 
     text = build_rate_fetch_failed_text(last)
     async with _worker_session() as db:
-        await create_notification(
+        notif = await create_notification(
             db,
             type="RATE_FETCH_FAILED",
             title="Курс НБ РБ недоступен",
@@ -128,6 +129,8 @@ async def _fallback_alert() -> None:
             user_id=None,
             channel=["inapp", "telegram"],
         )
+        # SSE-событие менеджерам (§16 п.26): broadcast, fail-open.
+        publish_notification(notification_payload(notif), user_id=None)
         await db.commit()
     if settings.telegram_manager_chat_id:
         # lazy-import, чтобы избежать циклического импорта между tasks-модулями.

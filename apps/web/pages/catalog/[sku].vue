@@ -2,7 +2,7 @@
 // Детальная карточка товара. См. SITEMAP.md §6.
 // Реальные данные: GET /catalog/products/{sku}, /catalog/products/{sku}/price-history,
 // соседи по серии — GET /catalog/products?series=<id>.
-// Корзина/избранное скрыты — бэкенд появится на Этапе 6.
+// Покупка: qty + «В корзину» через useCart (паритет с карточками каталога).
 import type {
   CatalogPage,
   PriceHistoryItem,
@@ -13,6 +13,7 @@ import type {
 definePageMeta({ layout: 'client', middleware: 'auth' })
 
 const route = useRoute()
+const overlayDown = ref(false)
 const { request } = useApi()
 // карточка/лайтбокс — large; миниатюры — thumb (§16 п.17)
 const { photoOf, thumbOf } = useProductPhoto()
@@ -26,6 +27,62 @@ const product = ref<ProductDetail | null>(null)
 const history = ref<PriceHistoryItem[]>([])
 const siblings = ref<ProductCard[]>([])
 const lightbox = ref(false)
+
+// Добавление в корзину прямо со страницы товара
+// (то же поведение, что в каталоге: спиннер → «Добавлено» на 1.5 с).
+const cart = useCart()
+const qty = ref(1)
+const adding = ref(false)
+const added = ref(false)
+const cartError = ref('')
+let addedTimer: ReturnType<typeof setTimeout> | null = null
+
+// Остаток товара: если известен — ограничиваем qty и показываем подсказку.
+const maxQty = computed(() =>
+  product.value?.stock_qty != null ? Math.max(0, product.value.stock_qty) : null,
+)
+const qtyHint = ref('')
+
+function setQty(v: number) {
+  let n = Math.max(1, Math.floor(v) || 1)
+  if (maxQty.value != null && n > maxQty.value) {
+    n = Math.max(1, maxQty.value)
+    qtyHint.value = maxQty.value === 0
+      ? 'Товара нет в наличии.'
+      : `Доступно только ${maxQty.value} шт.`
+  } else {
+    qtyHint.value = ''
+  }
+  qty.value = n
+}
+
+async function addToCart() {
+  if (adding.value || !product.value) return
+  if (maxQty.value != null) {
+    if (maxQty.value === 0) {
+      qtyHint.value = 'Товара нет в наличии.'
+      return
+    }
+    if (qty.value > maxQty.value) {
+      setQty(qty.value)
+      return
+    }
+  }
+  adding.value = true
+  cartError.value = ''
+  try {
+    await cart.add({ sku: product.value.sku, quantity: qty.value })
+    added.value = true
+    if (addedTimer) clearTimeout(addedTimer)
+    addedTimer = setTimeout(() => {
+      added.value = false
+    }, 1500)
+  } catch (e) {
+    cartError.value = getErrorMessage(e, 'Не удалось добавить в корзину')
+  } finally {
+    adding.value = false
+  }
+}
 
 useHead({ title: computed(() => product.value?.name || 'Товар') })
 
@@ -49,11 +106,47 @@ function formatDate(s: string): string {
 }
 
 // Характеристики без служебного photo_url
+const LABEL_RU: Record<string, string> = {
+  material: 'Материал',
+  color: 'Цвет',
+  ip: 'Класс защиты (IP)',
+  modules: 'Модулей',
+  width: 'Ширина',
+  height: 'Высота',
+  depth: 'Глубина',
+  size: 'Размер',
+  power: 'Мощность',
+  unit: 'Ед. измерения',
+  purpose: 'Назначение',
+  din_rail: 'DIN-рейка',
+  weight_g: 'Вес, г',
+  weight: 'Вес',
+  ik_rating: 'Класс защиты (IK)',
+  ip_rating: 'Класс защиты (IP)',
+  dimensions_mm: 'Габариты, мм',
+  dimensions: 'Габариты',
+  mounting_type: 'Тип монтажа',
+  mounting: 'Монтаж',
+  type: 'Тип',
+  brand_country: 'Страна бренда',
+  country: 'Страна',
+  warranty_months: 'Гарантия, мес',
+  warranty: 'Гарантия',
+  package_qty: 'Упаковка, шт',
+  certificate: 'Сертификат',
+}
+
+function humanizeLabel(k: string): string {
+  if (LABEL_RU[k]) return LABEL_RU[k]
+  const s = k.replaceAll('_', ' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 const attrEntries = computed<{ label: string; value: string }[]>(() => {
   const a = product.value?.attributes || {}
   return Object.entries(a)
     .filter(([k]) => k !== 'photo_url')
-    .map(([k, v]) => ({ label: k, value: String(v) }))
+    .map(([k, v]) => ({ label: humanizeLabel(k), value: String(v) }))
 })
 
 async function loadProduct() {
@@ -103,6 +196,8 @@ async function load() {
   history.value = []
   siblings.value = []
   lightbox.value = false
+  qty.value = 1
+  qtyHint.value = ''
   try {
     await loadProduct()
     if (product.value) await Promise.allSettled([loadHistory(), loadSiblings()])
@@ -165,6 +260,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  if (addedTimer) clearTimeout(addedTimer)
 })
 </script>
 
@@ -176,11 +272,11 @@ onUnmounted(() => {
       <template v-if="product">
         <template v-if="product.brand">
           <Icon name="heroicons:chevron-right" class="w-3.5 h-3.5 text-ink-faint" />
-          <span>{{ product.brand.name }}</span>
+          <NuxtLink :to="`/catalog?brand=${product.brand.id}`" class="hover:text-primary">{{ product.brand.name }}</NuxtLink>
         </template>
         <template v-if="product.series">
           <Icon name="heroicons:chevron-right" class="w-3.5 h-3.5 text-ink-faint" />
-          <span>{{ product.series.name }}</span>
+          <NuxtLink :to="`/catalog?series=${product.series.id}`" class="hover:text-primary">{{ product.series.name }}</NuxtLink>
         </template>
         <Icon name="heroicons:chevron-right" class="w-3.5 h-3.5 text-ink-faint" />
         <span class="text-ink">{{ product.name }}</span>
@@ -240,14 +336,20 @@ onUnmounted(() => {
 
         <!-- Инфо -->
         <div>
-          <p class="text-sm text-ink-muted mb-1">Артикул: {{ product.sku }}</p>
-          <h1 class="text-2xl font-display font-bold mb-3">{{ product.name }}</h1>
+          <h1 class="text-3xl font-display font-bold mb-1">{{ product.name }}</h1>
+          <p class="text-sm text-ink-muted mt-1 mb-4">Артикул: {{ product.sku }}</p>
 
           <div class="flex flex-wrap items-center gap-2 mb-5">
-            <span v-if="product.brand" class="badge-info">{{ product.brand.name }}</span>
-            <span v-if="product.series" class="chip bg-surface border border-border">
-              {{ product.series.name }}
-            </span>
+            <NuxtLink
+              v-if="product.brand"
+              :to="`/catalog?brand=${product.brand.id}`"
+              class="chip bg-canvas text-ink-muted hover:text-primary transition-colors"
+            >{{ product.brand.name }}</NuxtLink>
+            <NuxtLink
+              v-if="product.series"
+              :to="`/catalog?series=${product.series.id}`"
+              class="chip bg-canvas text-ink-muted hover:text-primary transition-colors"
+            >{{ product.series.name }}</NuxtLink>
             <span :class="STOCK_META[product.stock_status]?.cls || 'badge-info'">
               {{ STOCK_META[product.stock_status]?.label || product.stock_status }}
             </span>
@@ -257,34 +359,62 @@ onUnmounted(() => {
           <div class="card p-5 mb-5">
             <div class="flex items-baseline gap-2 flex-wrap">
               <template v-if="product.has_discount">
-                <span class="text-3xl font-bold text-primary">{{ product.client_price }} {{ product.currency }}</span>
-                <span class="text-ink-muted line-through">{{ product.retail_price }} {{ product.currency }}</span>
+                <span class="text-3xl font-bold text-primary">{{ formatMoney(product.client_price, product.currency) }}</span>
+                <span class="text-ink-muted line-through">{{ formatMoney(product.retail_price, product.currency) }}</span>
               </template>
               <template v-else>
-                <span class="text-3xl font-bold">{{ product.retail_price }} {{ product.currency }}</span>
+                <span class="text-3xl font-bold">{{ formatMoney(product.retail_price, product.currency) }}</span>
               </template>
             </div>
             <p class="text-xs text-ink-faint mt-2">
               Источник курса: {{ rateSourceLabel(product.rate_source) }}
             </p>
             <div v-if="product.override_price != null" class="mt-3">
+              <!-- override_price приходит из API как сырое значение прайса в BYN (§17),
+                   в отличие от client_price/retail_price, сконвертированных в display-валюту -->
               <span class="badge-info">
-                Фиксированная цена: {{ product.override_price }} {{ product.currency }}
+                Фиксированная цена: {{ formatMoney(product.override_price, 'BYN') }}
               </span>
             </div>
+          </div>
+
+          <!-- Покупка: количество + добавление в корзину (как в карточках каталога) -->
+          <div class="mb-5">
+            <p v-if="maxQty != null" class="text-xs text-ink-muted mb-2">
+              В наличии: {{ maxQty }} шт
+            </p>
+            <div class="flex items-center gap-3">
+              <input
+                type="number"
+                min="1"
+                :max="maxQty ?? undefined"
+                :value="qty"
+                aria-label="Количество"
+                class="input py-2 w-20 text-center"
+                @input="setQty(+($event.target as HTMLInputElement).value)"
+              >
+              <button class="btn-primary flex-1" :disabled="adding" @click="addToCart">
+                <span v-if="adding" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                <Icon v-else-if="added" name="heroicons:check" class="w-4 h-4" />
+                <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
+                {{ added ? 'Добавлено' : 'В корзину' }}
+              </button>
+            </div>
+            <p v-if="qtyHint" class="text-xs text-warning mt-1.5">{{ qtyHint }}</p>
+            <div v-if="cartError" class="badge-danger justify-center py-2 mt-2">{{ cartError }}</div>
           </div>
 
           <!-- Характеристики -->
           <div v-if="attrEntries.length">
             <h3 class="font-semibold mb-3">Характеристики</h3>
-            <dl class="card divide-y divide-border">
+            <dl class="card p-5">
               <div
                 v-for="row in attrEntries"
                 :key="row.label"
-                class="flex justify-between gap-4 px-4 py-2.5 text-sm"
+                class="flex justify-between gap-4 py-2 border-b border-border last:border-b-0"
               >
-                <dt class="text-ink-muted capitalize">{{ row.label }}</dt>
-                <dd class="font-medium text-right break-all">{{ row.value }}</dd>
+                <dt class="text-sm text-ink-muted shrink-0">{{ row.label }}</dt>
+                <dd class="text-sm font-medium text-right break-all">{{ row.value }}</dd>
               </div>
             </dl>
           </div>
@@ -359,7 +489,7 @@ onUnmounted(() => {
             <p class="text-xs text-ink-faint mb-2">{{ s.sku }}</p>
             <div class="mt-auto">
               <span class="text-base font-bold text-primary">
-                {{ s.has_discount ? s.client_price : s.retail_price }} {{ s.currency }}
+                {{ formatMoney(s.has_discount ? s.client_price : s.retail_price, s.currency) }}
               </span>
             </div>
           </NuxtLink>
@@ -371,7 +501,7 @@ onUnmounted(() => {
     <div
       v-if="lightbox && product && photoOf(product)"
       class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8"
-      @click.self="lightbox = false"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) lightbox = false; overlayDown = false"
     >
       <img
         :src="photoOf(product)!"

@@ -7,13 +7,11 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
-from app.core.limiter import limiter
-from app.core.security import JWTError, decode_token
+from app.core.limiter import EXPORT_RATE_LIMIT, export_rate_key, limiter
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories import catalog as repo
@@ -47,9 +45,6 @@ from app.services.cache import (
 from app.services.pricing import PricingService
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
-
-# Лимит запуска экспорта: 10/час на пользователя (§16 п.16).
-EXPORT_RATE_LIMIT = "10/hour"
 
 
 @router.get("/products", response_model=CatalogPage)
@@ -111,6 +106,7 @@ async def list_products(
                     else None
                 ),
                 stock_status=product.stock_status,
+                stock_qty=product.stock_qty,
                 photo_key=row.photo_key,
                 attributes=product.attributes or {},
                 **prices,
@@ -228,6 +224,7 @@ async def get_product(
         brand=brand,
         series=series,
         stock_status=product.stock_status,
+        stock_qty=product.stock_qty,
         photo_key=series.photo_key if series else None,
         attributes=product.attributes or {},
         override_price=float(product.override_price) if product.override_price is not None else None,
@@ -262,33 +259,12 @@ async def get_price_history(
     ]
 
 
-def _export_rate_key(request: Request) -> str:
-    """Ключ лимита экспорта — id пользователя из access-JWT (без похода в БД).
-
-    slowapi резолвит key_func до тела эндпоинта; неавторизованные попытки
-    (нет/битый токен) считаются по IP — как у login.
-    """
-    auth = request.headers.get("Authorization")
-    token = None
-    if auth and auth.lower().startswith("bearer "):
-        token = auth.split(" ", 1)[1].strip()
-    token = token or request.cookies.get("access_token")
-    if token:
-        try:
-            payload = decode_token(token)
-            if payload.get("type") == "access" and payload.get("sub"):
-                return f"user:{payload['sub']}"
-        except JWTError:
-            pass
-    return get_remote_address(request)
-
-
 @router.post(
     "/export",
     response_model=ExportStartOut,
     status_code=status.HTTP_202_ACCEPTED,
 )
-@limiter.limit(EXPORT_RATE_LIMIT, key_func=_export_rate_key)
+@limiter.limit(EXPORT_RATE_LIMIT, key_func=export_rate_key)
 async def start_catalog_export(
     request: Request,
     format: Literal["csv", "xlsx", "pdf"] = Query(description="Формат выгрузки"),
@@ -301,17 +277,12 @@ async def start_catalog_export(
     ),
     user: User = Depends(get_current_user),
 ) -> ExportStartOut:
-    """Запустить экспорт каталога под текущие фильтры (CSV/XLSX, §16 п.16).
+    """Запустить экспорт каталога под текущие фильтры (CSV/XLSX/PDF, §16 п.16, п.25).
 
     Фильтры идентичны ``GET /catalog/products``; в файле — персональные цены
     пользователя. Файл собирает Celery-задача: статус опрашивается через
     ``GET /catalog/export/{job_id}``. Лимит: 10 запусков/час на пользователя.
     """
-    if format == "pdf":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="PDF-экспорт отложен (§16 п.16)",
-        )
     filters = repo.CatalogFilters(q=q, brand_ids=brand, series_ids=series, stock=stock)
     job_id = await export_service.start_export(
         user=user, filters=filters, format=format, price_calc_mode=price_calc_mode

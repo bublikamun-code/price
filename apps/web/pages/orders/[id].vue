@@ -21,7 +21,7 @@ const notFound = ref(false)
 const order = ref<OrderRead | null>(null)
 const acting = ref(false) // повтор/отмена в процессе
 
-useHead({ title: computed(() => `Заявка №${order.value ? order.value.id.slice(0, 8) : ''}`) })
+useHead({ title: computed(() => order.value ? `Заявка ${formatOrderNumber(order.value.seq, order.value.id)}` : 'Заявка') })
 
 function rateSourceLabel(s: string | null | undefined): string {
   switch (s) {
@@ -31,9 +31,7 @@ function rateSourceLabel(s: string | null | undefined): string {
     default: return s || '—'
   }
 }
-function formatDate(s: string): string {
-  return new Date(s).toLocaleString('ru-RU')
-}
+// formatMoney/formatDateTime/formatOrderNumber — автоимпорт из utils/format.ts
 function snapName(item: { product_snapshot?: Record<string, unknown> | null }): string {
   const name = item.product_snapshot?.name
   const sku = item.product_snapshot?.sku
@@ -92,6 +90,18 @@ const canCancel = computed(
   () => order.value && (order.value.status === 'NEW' || order.value.status === 'IN_PROGRESS')
 )
 
+// PDF-экспорт заявки (§16 п.25): job-паттерн, поллинг в composables/usePdfExport.ts.
+const { activeId: pdfActiveId, error: pdfError, exportOrderPdf } = usePdfExport()
+const pdfBusy = computed(() => pdfActiveId.value !== null)
+// XLSX-экспорт заявки (для 1С): синхронный GET + blob в composables/useXlsxExport.ts.
+const { activeId: xlsxActiveId, error: xlsxError, exportOrderXlsx } = useXlsxExport()
+const xlsxBusy = computed(() => xlsxActiveId.value !== null)
+
+function xlsxFileName(): string {
+  const no = order.value?.seq ? `-${String(order.value.seq).padStart(3, '0')}` : ''
+  return `order${no}-${route.params.id}.xlsx`
+}
+
 onMounted(load)
 </script>
 
@@ -124,19 +134,29 @@ onMounted(load)
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-2xl font-bold">Заявка №{{ order.id.slice(0, 8) }}</h1>
+            <h1 class="text-2xl font-bold">Заявка {{ formatOrderNumber(order.seq, order.id) }}</h1>
             <span :class="STATUS_META[order.status]?.cls || 'badge-info'">
               {{ STATUS_META[order.status]?.label || order.status }}
             </span>
           </div>
           <p class="text-sm text-ink-muted">
-            от {{ formatDate(order.created_at) }}
+            от {{ formatDateTime(order.created_at) }}
             <span v-if="order.manager_id"> · менеджер назначен</span>
           </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
           <button class="btn-secondary" :disabled="acting" @click="repeatOrder">
             <Icon name="heroicons:arrow-path" class="w-4 h-4" /> Повторить
+          </button>
+          <button class="btn-secondary" :disabled="pdfBusy" @click="exportOrderPdf(order.id)">
+            <span v-if="pdfBusy" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+            <Icon v-else name="heroicons:document-arrow-down" class="w-4 h-4" />
+            {{ pdfBusy ? 'Готовим PDF…' : 'Скачать PDF' }}
+          </button>
+          <button class="btn-secondary" :disabled="xlsxBusy" @click="exportOrderXlsx(order.id, xlsxFileName())">
+            <span v-if="xlsxBusy" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+            <Icon v-else name="heroicons:table-cells" class="w-4 h-4" />
+            {{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}
           </button>
           <button v-if="canCancel" class="btn-outline text-danger" :disabled="acting" @click="cancelOrder">
             <Icon name="heroicons:x-circle" class="w-4 h-4" /> Отменить
@@ -145,16 +165,18 @@ onMounted(load)
       </div>
 
       <div v-if="error" class="badge-danger w-full justify-center py-2 mb-4">{{ error }}</div>
+      <div v-if="pdfError || xlsxError" class="badge-warning w-full justify-center py-2 mb-4">{{ pdfError || xlsxError }}</div>
 
       <!-- Позиции -->
       <div class="card overflow-hidden mb-6">
         <div class="px-5 py-4 border-b border-border">
           <h3 class="font-semibold">Позиции ({{ order.items?.length || 0 }})</h3>
         </div>
-        <div class="overflow-x-auto">
+        <!-- Таблица: планшет/десктоп -->
+        <div class="overflow-x-auto hidden md:block">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-5 py-3 font-medium">Товар</th>
                 <th class="px-5 py-3 font-medium text-center">Кол-во</th>
                 <th class="px-5 py-3 font-medium text-right">Цена</th>
@@ -172,11 +194,27 @@ onMounted(load)
                   <p v-if="item.note" class="text-xs text-ink-muted mt-1">📝 {{ item.note }}</p>
                 </td>
                 <td class="px-5 py-3 text-center">{{ item.quantity }}</td>
-                <td class="px-5 py-3 text-right">{{ item.unit_price }} {{ item.currency_code }}</td>
-                <td class="px-5 py-3 text-right font-medium">{{ (item.unit_price * item.quantity).toFixed(2) }} {{ item.currency_code }}</td>
+                <td class="px-5 py-3 text-right">{{ formatMoney(item.unit_price, item.currency_code) }}</td>
+                <td class="px-5 py-3 text-right font-medium">{{ formatMoney(item.unit_price * item.quantity, item.currency_code) }}</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Строки-блоки: мобильные (таблица на 390px не влезает) -->
+        <div class="md:hidden px-5 py-1.5 divide-y divide-border">
+          <article v-for="item in order.items" :key="item.id" class="py-3.5">
+            <p class="font-medium leading-snug">{{ snapName(item) }}</p>
+            <p class="text-xs text-ink-faint mt-0.5">
+              Артикул: {{ snapSku(item) }}
+              <NuxtLink v-if="snapSku(item)" :to="`/catalog/${snapSku(item)}`" class="text-primary hover:underline ml-1">→ каталог</NuxtLink>
+            </p>
+            <p v-if="item.note" class="text-xs text-ink-muted mt-1">📝 {{ item.note }}</p>
+            <div class="flex items-center justify-between gap-3 mt-2">
+              <span class="text-sm text-ink-muted">{{ item.quantity }} × {{ formatMoney(item.unit_price, item.currency_code) }}</span>
+              <span class="font-bold whitespace-nowrap">{{ formatMoney(item.unit_price * item.quantity, item.currency_code) }}</span>
+            </div>
+          </article>
         </div>
       </div>
 
@@ -207,7 +245,7 @@ onMounted(load)
           </div>
           <div class="flex justify-between text-xl font-bold pt-2 border-t border-border mt-2">
             <span>Сумма</span>
-            <span>{{ order.total_amount }} {{ order.currency_code }}</span>
+            <span>{{ formatMoney(order.total_amount, order.currency_code) }}</span>
           </div>
         </div>
       </div>

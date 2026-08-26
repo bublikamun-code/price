@@ -4,10 +4,16 @@
 // См. ARCHITECTURE_PLAN.md §6, SITEMAP.md /manager/catalog.
 import type { ManagerBrand, ManagerProductPage, ManagerProductRow, StockStatus } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+// stock_qty приходит с бэка позже — расширяем локально (types/api.ts пока без поля).
+type ProductRow = ManagerProductRow & { stock_qty?: number | null }
+type ProductPage = Omit<ManagerProductPage, 'data'> & { data: ProductRow[] }
+
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Управление каталогом — Менеджер' })
 
 const { request } = useApi()
+/* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
+const overlayDown = ref(false)
 
 const STOCK_META: Record<StockStatus, { label: string; cls: string }> = {
   IN_STOCK: { label: 'В наличии', cls: 'badge-success' },
@@ -17,7 +23,7 @@ const STOCK_META: Record<StockStatus, { label: string; cls: string }> = {
 
 const loading = ref(true)
 const error = ref('')
-const rows = ref<ManagerProductRow[]>([])
+const rows = ref<ProductRow[]>([])
 const total = ref(0)
 const page = ref(1)
 const perPage = ref(20)
@@ -30,13 +36,6 @@ const stock = ref<'' | StockStatus>('')
 
 const brands = ref<ManagerBrand[]>([])
 
-const money = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-function fmtMoney(v: string | number): string {
-  const n = typeof v === 'number' ? v : Number(v)
-  return Number.isFinite(n) ? money.format(n) : '—'
-}
-
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / perPage.value)))
 const shownFrom = computed(() => (total.value === 0 ? 0 : (page.value - 1) * perPage.value + 1))
 const shownTo = computed(() => Math.min(page.value * perPage.value, total.value))
@@ -45,7 +44,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await request<ManagerProductPage>('/api/v1/manager/products', {
+    const res = await request<ProductPage>('/api/v1/manager/products', {
       query: {
         q: appliedQ.value || undefined,
         brand_id: brandId.value || undefined,
@@ -98,20 +97,22 @@ async function loadBrands() {
 }
 
 // --- Редактирование товара (override_price + stock_status) ---
-const editing = ref<ManagerProductRow | null>(null)
+const editing = ref<ProductRow | null>(null)
 const editPrice = ref('')
 const editResetPrice = ref(false)
 const editStock = ref<StockStatus>('IN_STOCK')
+const editStockQty = ref('')
 const saving = ref(false)
 const editError = ref('')
 const editSuccess = ref(false)
 let successTimer: ReturnType<typeof setTimeout> | null = null
 
-function openEdit(p: ManagerProductRow) {
+function openEdit(p: ProductRow) {
   editing.value = p
   editPrice.value = p.override_price !== null ? String(p.override_price) : ''
   editResetPrice.value = false
   editStock.value = p.stock_status
+  editStockQty.value = p.stock_qty !== null && p.stock_qty !== undefined ? String(p.stock_qty) : ''
   editError.value = ''
   editSuccess.value = false
   if (successTimer) clearTimeout(successTimer)
@@ -130,7 +131,7 @@ async function submitEdit() {
   editError.value = ''
   editSuccess.value = false
 
-  const body: { stock_status: StockStatus; override_price?: number | null } = { stock_status: editStock.value }
+  const body: { stock_status: StockStatus; override_price?: number | null; stock_qty?: number } = { stock_status: editStock.value }
   if (editResetPrice.value) {
     body.override_price = null // явный сброс ручной цены
   } else {
@@ -145,9 +146,20 @@ async function submitEdit() {
     }
   }
 
+  // Остаток: пусто = не менять.
+  const qtyRaw = editStockQty.value.trim()
+  if (qtyRaw !== '') {
+    const qty = Number(qtyRaw.replace(',', '.'))
+    if (!Number.isInteger(qty) || qty < 0) {
+      editError.value = 'Остаток должен быть целым числом ≥ 0'
+      return
+    }
+    body.stock_qty = qty
+  }
+
   saving.value = true
   try {
-    const res = await request<ManagerProductRow>(`/api/v1/manager/products/${editing.value.id}`, {
+    const res = await request<ProductRow>(`/api/v1/manager/products/${editing.value.id}`, {
       method: 'PATCH',
       body,
     })
@@ -215,7 +227,7 @@ onMounted(() => {
         </select>
         <div class="flex gap-2 shrink-0">
           <button type="submit" class="btn-primary flex-1 lg:flex-none">Найти</button>
-          <button type="button" class="btn-ghost" @click="resetFilters">Сброс</button>
+          <button type="button" class="btn-ghost" @click="resetFilters">Сбросить</button>
         </div>
       </div>
     </form>
@@ -238,13 +250,14 @@ onMounted(() => {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Артикул</th>
               <th class="px-4 py-3 font-medium">Наименование</th>
               <th class="px-4 py-3 font-medium">Бренд</th>
               <th class="px-4 py-3 font-medium">Серия</th>
               <th class="px-4 py-3 font-medium text-right">Базовая цена</th>
               <th class="px-4 py-3 font-medium text-right">Цена менеджера</th>
+              <th class="px-4 py-3 font-medium text-right">Остатки</th>
               <th class="px-4 py-3 font-medium">Статус</th>
               <th class="px-4 py-3 font-medium text-right" />
             </tr>
@@ -255,9 +268,13 @@ onMounted(() => {
               <td class="px-4 py-3 max-w-64 truncate" :title="p.name">{{ p.name }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ p.brand?.name || '—' }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ p.series?.name || '—' }}</td>
-              <td class="px-4 py-3 text-right whitespace-nowrap">{{ fmtMoney(p.base_price) }}</td>
+              <td class="px-4 py-3 text-right whitespace-nowrap">{{ formatMoney(p.base_price) }}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
-                <span v-if="p.override_price !== null" class="font-semibold text-primary">{{ fmtMoney(p.override_price) }}</span>
+                <span v-if="p.override_price !== null" class="font-semibold text-primary">{{ formatMoney(p.override_price) }}</span>
+                <span v-else class="text-ink-faint">—</span>
+              </td>
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                <span v-if="p.stock_qty !== null && p.stock_qty !== undefined">{{ p.stock_qty }} шт</span>
                 <span v-else class="text-ink-faint">—</span>
               </td>
               <td class="px-4 py-3">
@@ -298,7 +315,7 @@ onMounted(() => {
     <div
       v-if="editing"
       class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      @click.self="closeEdit"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeEdit(); overlayDown = false"
     >
       <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" @submit.prevent="submitEdit">
         <div class="flex items-start justify-between gap-4 mb-5">
@@ -325,7 +342,7 @@ onMounted(() => {
               :disabled="editResetPrice"
             >
             <p class="text-xs text-ink-faint mt-1.5">
-              Базовая цена: {{ fmtMoney(editing.base_price) }} BYN. Переопределяет базовую для всех клиентов.
+              Базовая цена: {{ formatMoney(editing.base_price) }} BYN. Переопределяет базовую для всех клиентов.
             </p>
           </div>
           <label class="flex items-center gap-2.5 text-sm cursor-pointer select-none">
@@ -343,6 +360,18 @@ onMounted(() => {
               <option value="PREORDER">Под заказ</option>
               <option value="ARCHIVED">Архив</option>
             </select>
+          </div>
+          <div>
+            <label class="label" for="pc-stock-qty">Остаток, шт</label>
+            <input
+              id="pc-stock-qty"
+              v-model="editStockQty"
+              type="number"
+              min="0"
+              step="1"
+              class="input"
+              placeholder="Напр. 12 (пусто — не менять)"
+            >
           </div>
         </div>
 

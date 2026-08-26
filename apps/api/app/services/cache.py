@@ -99,6 +99,88 @@ def user_tag(user_id: Any) -> str:
     return f"user:{user_id}"
 
 
+# ---------- Валидация сессий (§11, §16 п.15: access-токен проверяет sid) ----------
+# Короткий TTL: кэш — лишь оптимизация «горячего» пути (активные сессии);
+# отзыв сессии немедленно удаляет ключ через invalidate_session(), поэтому
+# протухшее «1» живёт не дольше TTL и не переживает logout/revoke.
+SESSION_CACHE_TTL = 60
+
+
+def session_cache_key(sid: Any) -> str:
+    return f"{settings.cache_key_prefix}:session:{sid}"
+
+
+async def get_session_cached(sid: Any) -> str | None:
+    """«1» активна / «0» отозвана / None — мимо кэша (Redis down или нет ключа)."""
+    try:
+        raw = await cache.redis.get(session_cache_key(sid))
+    except Exception as exc:
+        log.warning("cache.session_get_failed", sid=str(sid), error=str(exc))
+        return None
+    if raw is None:
+        return None
+    return raw.decode("utf-8") if isinstance(raw, bytes) else raw
+
+
+async def set_session_cached(sid: Any, active: bool) -> None:
+    try:
+        await cache.redis.setex(session_cache_key(sid), SESSION_CACHE_TTL, "1" if active else "0")
+    except Exception as exc:
+        log.warning("cache.session_set_failed", sid=str(sid), error=str(exc))
+
+
+async def invalidate_session(sid: Any) -> None:
+    """Вызывается при отзыве сессии (logout/refresh/revoke) — fail-open."""
+    try:
+        await cache.redis.delete(session_cache_key(sid))
+    except Exception as exc:
+        log.warning("cache.session_del_failed", sid=str(sid), error=str(exc))
+
+
+# ---------- Блокировка аккаунта после N неудачных входов (H4) ----------
+# Счётчик неудач по email в Redis; при достижении лимита аккаунт блокируется
+# на login_lockout_minutes. Redis down → fail-open (не блокируем вход: иначе
+# авария Redis превратилась бы в DoS всех логинов; IP rate-limit остаётся).
+def login_fail_key(email: str) -> str:
+    return f"{settings.cache_key_prefix}:login_fail:{email.strip().lower()}"
+
+
+async def is_account_locked(email: str, max_attempts: int) -> bool:
+    try:
+        raw = await cache.redis.get(login_fail_key(email))
+    except Exception as exc:
+        log.warning("cache.lockout_get_failed", email=email, error=str(exc))
+        return False
+    if raw is None:
+        return False
+    try:
+        return int(raw) >= max_attempts
+    except (ValueError, TypeError):
+        return False
+
+
+async def record_login_failure(
+    email: str, max_attempts: int, lockout_minutes: int
+) -> int:
+    """Инкрементирует счётчик неудач; TTL = окно блокировки. Возвращает новый счётчик."""
+    key = login_fail_key(email)
+    try:
+        count = int(await cache.redis.incr(key))
+        await cache.redis.expire(key, lockout_minutes * 60)
+        return count
+    except Exception as exc:
+        log.warning("cache.lockout_incr_failed", email=email, error=str(exc))
+        return 0
+
+
+async def clear_login_failures(email: str) -> None:
+    """Успешный вход сбрасывает счётчик неудач."""
+    try:
+        await cache.redis.delete(login_fail_key(email))
+    except Exception as exc:
+        log.warning("cache.lockout_del_failed", email=email, error=str(exc))
+
+
 async def invalidate_tags(*tags: str) -> int:
     """Best-effort invalidation: Redis outage must not break committed mutations."""
     try:

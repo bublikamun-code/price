@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-import app.repositories.price_changes as pc
+import app.services.price_changes as pc
 import app.tasks.notifications as notif_task
 from app.core.security import hash_password
 from app.models.catalog import PriceHistory, PriceListVersion

@@ -28,6 +28,7 @@ from app.schemas.manager_users import (
     UserManagerRead,
 )
 from app.services.cache import invalidate_tags, user_tag
+from app.services.notification_events import notification_payload, publish_notification
 
 
 class NotFoundError(ValueError):
@@ -97,7 +98,7 @@ class ManagerUsersService:
                 ),
             },
         )
-        await notif_repo.create_notification(
+        notif = await notif_repo.create_notification(
             self.db,
             type="ACCOUNT_CREATED",
             user_id=user.id,
@@ -105,6 +106,9 @@ class ManagerUsersService:
             title="Аккаунт создан",
             body="Доступ к порталу создан. Временный пароль выдал менеджер.",
         )
+        # SSE-событие клиенту (§16 п.26): короткий sync-publish из async-контекста
+        # (локальный Redis), fail-open.
+        publish_notification(notification_payload(notif), user_id=user.id)
         await self.db.commit()
         await self.db.refresh(user)
         return user, temp_password

@@ -48,7 +48,8 @@ async def test_create_order(api_client, session_factory):
     await _login(api_client, CLIENT_EMAIL)
 
     r = await api_client.post("/api/v1/orders", json={
-        "items": [{"sku": "A-1", "quantity": 3}], "notes": "срочно"
+        "items": [{"sku": "A-1", "quantity": 3}], "notes": "срочно",
+        "delivery_point": "Склад Минск"
     })
     assert r.status_code == 201, r.text
     o = r.json()
@@ -68,7 +69,7 @@ async def test_create_archived_forbidden(api_client, session_factory):
     await _seed(sf)
     await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
-    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-2", "quantity": 1}]})
+    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-2", "quantity": 1}], "delivery_point": "Склад Минск"})
     assert r.status_code == 400
 
 
@@ -76,7 +77,7 @@ async def test_create_unknown_sku(api_client, session_factory):
     sf = session_factory
     await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
-    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "NOPE", "quantity": 1}]})
+    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "NOPE", "quantity": 1}], "delivery_point": "Склад Минск"})
     assert r.status_code == 404
 
 
@@ -90,7 +91,7 @@ async def test_price_snapshot_freezes_after_price_change(api_client, session_fac
     await set_discount(sf, user=user, brand=brand, percent=10)  # клиентская цена = 90
     await _login(api_client, CLIENT_EMAIL)
 
-    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}]})
+    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"})
     assert r.status_code == 201
     order_id = r.json()["id"]
     frozen_unit_price = r.json()["items"][0]["unit_price"]
@@ -126,7 +127,8 @@ async def test_exchange_rate_snapshot(api_client, session_factory):
     await _login(api_client, CLIENT_EMAIL)
 
     r = await api_client.post("/api/v1/orders", json={
-        "items": [{"sku": "A-1", "quantity": 2}], "price_calc_mode": "fixed"
+        "items": [{"sku": "A-1", "quantity": 2}], "price_calc_mode": "fixed",
+        "delivery_point": "Склад Минск"
     })
     assert r.status_code == 201, r.text
     o = r.json()
@@ -147,10 +149,10 @@ async def test_list_only_own_orders(api_client, session_factory):
     await create_user(sf, email=OTHER_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
 
     await _login(api_client, CLIENT_EMAIL)
-    await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}]})
+    await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"})
 
     await _login(api_client, OTHER_EMAIL)
-    await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}]})
+    await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}], "delivery_point": "Склад Минск"})
 
     # other видит только свой (1 заказ)
     r = await api_client.get("/api/v1/orders")
@@ -165,7 +167,7 @@ async def test_get_other_clients_order_returns_404(api_client, session_factory):
     await create_user(sf, email=OTHER_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
 
     await _login(api_client, CLIENT_EMAIL)
-    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}]})).json()["id"]
+    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"})).json()["id"]
 
     # other не должен видеть заказ client
     await _login(api_client, OTHER_EMAIL)
@@ -181,7 +183,7 @@ async def test_cancel_new_order(api_client, session_factory):
     await _seed(sf)
     await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
-    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}]})).json()["id"]
+    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"})).json()["id"]
 
     r = await api_client.post(f"/api/v1/orders/{order_id}/cancel")
     assert r.status_code == 200
@@ -193,7 +195,7 @@ async def test_cancel_completed_conflict(api_client, session_factory):
     await _seed(sf)
     await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
-    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}]})).json()["id"]
+    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"})).json()["id"]
 
     # Симулируем завершённый статус напрямую в БД (менеджер довёл до COMPLETED).
     async with sf() as s:
@@ -221,7 +223,7 @@ async def test_cart_cleared_after_order_create(api_client, session_factory):
     assert r.json()["total_items"] == 1
 
     # Оформляем заявку
-    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}]})
+    r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}], "delivery_point": "Склад Минск"})
     assert r.status_code == 201
 
     # Корзина должна быть пуста
@@ -238,7 +240,7 @@ async def test_repeat_order_fills_cart(api_client, session_factory):
     await _seed(sf)
     await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
-    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 4}]})).json()["id"]
+    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 4}], "delivery_point": "Склад Минск"})).json()["id"]
 
     r = await api_client.post(f"/api/v1/orders/{order_id}/repeat")
     assert r.status_code == 200, r.text

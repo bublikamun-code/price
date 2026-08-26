@@ -11,13 +11,22 @@ from app.models.file import FileAsset
 from app.models.order import Cart, CartItem, Order, OrderItem
 from app.models.pricing import ExchangeRate, UserBrand
 from app.models.system import AuditLog, Notification
-from app.models.user import ConsentLog, Favorite, Session, User
+from app.models.user import (
+    ConsentLog,
+    Favorite,
+    PasswordResetToken,
+    Session,
+    TotpRecoveryCode,
+    User,
+)
 
 __all__ = [
     # user
     "User",
     "Session",
+    "TotpRecoveryCode",
     "ConsentLog",
+    "PasswordResetToken",
     "Favorite",
     # catalog
     "Brand",

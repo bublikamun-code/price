@@ -4,10 +4,10 @@
 # ============================================================
 
 # --- Web framework ---
-fastapi==0.115.0
+fastapi==0.141.1                 # >=0.13x тянет starlette >=1.3.1 — фикс PYSEC-2026-161/248/1941/1943/228x
 uvicorn[standard]==0.30.6
 gunicorn==23.0.0
-python-multipart==0.0.9          # загрузка файлов (CSV, ZIP)
+python-multipart==0.0.32         # загрузка файлов (CSV, ZIP); фикс цепочки PYSEC-2026-1852..3040
 
 # --- DB / ORM ---
 SQLAlchemy[asyncio]==2.0.35
@@ -20,9 +20,11 @@ pydantic-settings==2.5.2
 email-validator==2.2.0
 
 # --- Auth / security ---
-python-jose[cryptography]==3.3.0
+PyJWT[crypto]==2.13.0            # JWT вместо python-jose: убирает транзитивные ecdsa/pyasn1 с advisory (§16 п.30)
 bcrypt==4.2.0
-slowapi==0.1.9                   # rate-limiting
+slowapi==0.1.10                  # rate-limiting
+pyotp==2.10.0                    # TOTP-коды 2FA менеджера (§16 п.22)
+qrcode==8.2                      # QR для otpauth-uri 2FA; PNG-бэкенд — Pillow выше
 
 # --- Background tasks ---
 celery[redis]==5.4.0
@@ -30,19 +32,21 @@ redis==5.0.8
 
 # --- Object storage / медиа ---
 boto3==1.35.23
-Pillow==11.2.1                   # обработка фото: webp thumb/large (§10)
+Pillow==12.3.0                   # обработка фото: webp thumb/large (§10); >=12.3 — фиксы PYSEC-2025-61, PYSEC-2026-*
 
 # --- Data parsing / export ---
 polars==1.7.1                    # быстрый парсинг CSV
 openpyxl==3.1.5                  # экспорт .xlsx
-# weasyprint==62.3               # PDF-генерация (раскомментировать при Этапе 7; требует системных deps)
-Jinja2==3.1.4                    # шаблоны (уведомления, PDF)
+pydyf==0.12.1                    # пара к weasyprint 69 (старый пин 0.11 был для weasyprint 62.3)
+weasyprint==69.0                 # PDF-генерация (§16 п.25); >=68 — фикс PYSEC-2026-2034; системные deps — Dockerfile
+Jinja2==3.1.6                    # шаблоны (уведомления, PDF); >=3.1.6 — фиксы PYSEC-2026-147x
 
 # --- HTTP клиент (НБ РБ, Telegram API) ---
 httpx==0.27.2
 
 # --- Logging / observability ---
 structlog==24.4.0
+prometheus-client==0.21.1                 # метрики: HTTP-histogram (core/http_metrics.py) + push_to_gateway для Celery
 
 # --- Test (также в requirements-dev.txt, дублируем для удобства запуска в контейнере) ---
 # pytest см. dev

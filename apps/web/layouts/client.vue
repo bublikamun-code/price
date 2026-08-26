@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Layout авторизованного клиента: шапка + sidebar + контент.
 // Навигация — см. SITEMAP.md §2.
+// Приватная зона не индексируется (публичная SEO-витрина только на /brands).
+useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 const route = useRoute()
 const navItems = [
   { to: '/', label: 'Главная', icon: 'heroicons:home' },
@@ -10,7 +12,7 @@ const navItems = [
   { to: '/cart', label: 'Корзина', icon: 'heroicons:shopping-cart' },
   { to: '/orders', label: 'Мои заявки', icon: 'heroicons:clipboard-document-list' },
   { to: '/files', label: 'Файлы', icon: 'heroicons:folder' },
-  { to: '/profile', label: 'Профиль', icon: 'heroicons:user' },
+  // Профиль остался только в меню аватара (справа сверху) — дубль в сайдбаре убран
 ]
 
 function isActive(to: string) {
@@ -24,7 +26,7 @@ function isActive(to: string) {
     <AppHeader />
     <div class="flex-1 flex">
       <!-- Sidebar (desktop) -->
-      <aside class="hidden lg:flex flex-col w-64 shrink-0 border-r border-border bg-surface p-4 sticky top-[64px] h-[calc(100vh-64px)]">
+      <aside class="hidden lg:flex flex-col w-64 shrink-0 border-r border-border bg-surface p-4 sticky top-[72px] h-[calc(100vh-72px)]">
         <nav class="flex flex-col gap-1">
           <NuxtLink
             v-for="item in navItems"

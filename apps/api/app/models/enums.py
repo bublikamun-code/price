@@ -10,6 +10,7 @@ from sqlalchemy import Enum as SAEnum
 class UserRole(str, enum.Enum):
     CLIENT = "CLIENT"
     MANAGER = "MANAGER"
+    ADMIN = "ADMIN"
 
 
 class StockStatus(str, enum.Enum):

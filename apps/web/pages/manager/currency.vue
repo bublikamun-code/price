@@ -3,7 +3,7 @@
 // GET/POST /api/v1/manager/currencies/rate(s), POST /manager/currencies/refresh.
 import type { RateOut } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Курсы валют — Менеджер' })
 
 const { request } = useApi()
@@ -166,7 +166,7 @@ onUnmounted(() => {
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Валюта</th>
               <th class="px-4 py-3 font-medium">Дата</th>
               <th class="px-4 py-3 font-medium text-right">Курс, BYN</th>

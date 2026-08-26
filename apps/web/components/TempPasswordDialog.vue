@@ -3,6 +3,7 @@
 // Пароль выдаётся один раз — бэкенд его не хранит в открытом виде.
 const props = defineProps<{ password: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
+const overlayDown = ref(false)
 
 const copied = ref(false)
 let copiedTimer: ReturnType<typeof setTimeout> | null = null
@@ -26,7 +27,7 @@ onUnmounted(() => {
 <template>
   <div
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-    @click.self="emit('close')"
+    @mousedown.self="overlayDown = true" @click.self="if (overlayDown) emit('close'); overlayDown = false"
   >
     <div class="card max-w-md w-full p-6">
       <div class="flex items-start justify-between gap-4 mb-4">

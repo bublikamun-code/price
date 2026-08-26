@@ -2,7 +2,7 @@
 // Лента заявок менеджера. См. SITEMAP.md §7, §9 (FSM), §11 (RBAC).
 import type { OrderListPage, OrderRead, OrderStatus } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Заявки — Менеджер' })
 
 const { request } = useApi()
@@ -41,6 +41,9 @@ const statusFilter = ref<'' | OrderStatus>('')
 const changingId = ref<string | null>(null)
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
+
+// client_name / client_company / seq приходят из API (см. types/api.ts OrderRead)
+const orderRows = computed<OrderRead[]>(() => orders.value)
 
 async function load() {
   loading.value = true
@@ -94,9 +97,6 @@ function goPage(p: number) {
   load()
 }
 
-function shortId(id: string): string {
-  return id.slice(0, 8)
-}
 function formatDate(s: string): string {
   return new Date(s).toLocaleDateString('ru-RU')
 }
@@ -143,7 +143,7 @@ onMounted(load)
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">№</th>
               <th class="px-4 py-3 font-medium">Дата</th>
               <th class="px-4 py-3 font-medium">Клиент</th>
@@ -153,11 +153,14 @@ onMounted(load)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="o in orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
-              <td class="px-4 py-3 font-mono text-xs" :title="o.id">№{{ shortId(o.id) }}</td>
+            <tr v-for="o in orderRows" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+              <td class="px-4 py-3 font-mono text-xs whitespace-nowrap" :title="o.id">{{ formatOrderNumber(o.seq, o.id) }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatDate(o.created_at) }}</td>
-              <td class="px-4 py-3 font-mono text-xs text-ink-muted" :title="o.client_id">{{ shortId(o.client_id) }}</td>
-              <td class="px-4 py-3 text-right font-semibold">{{ o.total_amount }} {{ o.currency_code }}</td>
+              <td class="px-4 py-3">
+                <div :title="o.client_id">{{ o.client_name ?? '№' + o.client_id.slice(0, 8) }}</div>
+                <div v-if="o.client_company" class="text-xs text-ink-muted mt-0.5">{{ o.client_company }}</div>
+              </td>
+              <td class="px-4 py-3 text-right font-semibold whitespace-nowrap">{{ formatMoney(o.total_amount, o.currency_code) }}</td>
               <td class="px-4 py-3">
                 <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
               </td>

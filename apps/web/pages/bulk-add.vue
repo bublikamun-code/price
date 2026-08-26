@@ -173,7 +173,7 @@ function resetResults() {
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-4 py-3 font-medium w-10"/>
                 <th class="px-4 py-3 font-medium">Артикул</th>
                 <th class="px-4 py-3 font-medium">Наименование</th>

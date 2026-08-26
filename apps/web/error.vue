@@ -18,7 +18,7 @@ function handleHome() {
         {{ error.statusCode === 404 ? 'Страница не найдена' : 'Что-то пошло не так' }}
       </h1>
       <p class="text-sm text-ink-muted mb-6">
-        {{ error.statusMessage || 'Попробуйте обновить страницу или вернуться позже.' }}
+        {{ error.statusCode === 404 ? 'Проверьте адрес или вернитесь на главную' : 'Мы уже разбираемся.' }}
       </p>
       <button class="btn-primary px-6 py-3" @click="handleHome">На главную</button>
     </div>

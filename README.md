@@ -3,7 +3,7 @@
 Веб-приложение для B2B-продаж: личные кабинеты клиентов и менеджера,
 динамические прайс-листы с персональными ценами, импорт CSV, заявки, уведомления.
 
-> **Каноничные документы:** [`ARCHITECTURE_PLAN.md`](./ARCHITECTURE_PLAN.md) (v1.1) и [`SITEMAP.md`](./SITEMAP.md) (v1.0).
+> **Каноничные документы:** [`ARCHITECTURE_PLAN.md`](./ARCHITECTURE_PLAN.md) (v1.9) и [`SITEMAP.md`](./SITEMAP.md) (v1.0).
 > Любое отклонение от них в коде — сначала правка документа, потом код (см. §21 архитектуры).
 
 ---
@@ -87,7 +87,7 @@ make migrate
 |---|---|
 | Web (клиент) | http://localhost:3000 |
 | API (FastAPI) + Swagger | http://localhost:8000/docs |
-| Nginx (единый вход) | http://localhost:8080 |
+| Nginx (единый вход) | http://localhost:8080 (override: `DEV_NGINX_PORT` в `.env` — напр. 8081 при конфликте портов с соседними проектами; аналогично `DEV_DB_PORT`/`DEV_REDIS_PORT`) |
 | MinIO Console | http://localhost:9001 (minioadmin / minioadmin) |
 | PostgreSQL | localhost:5432 (price / price_secret) |
 | Redis | localhost:6379 |
@@ -108,7 +108,7 @@ make test          # тесты
 
 Реализация идёт по этапам из [`ARCHITECTURE_PLAN.md` §15/§19](./ARCHITECTURE_PLAN.md).
 
-Текущий статус: **Этапы 0–8** ✅ (кроме отложенных: PDF-экспорт §16.1 F и SSE-уведомлений §16 п.20) — ядро, авторизация/RBAC, каталог и персональные цены, импорт CSV, заявки, менеджер-панель и все экраны MVP (§16 п.20) реализованы.
+Текущий статус: **Этапы 0–11.5 + PDF-экспорт + SSE-уведомления** ✅ — продуктовый backlog MVP пуст (все фичи §16.1 реализованы); из крупного остаётся Этап 12 (TG Mini App, post-MVP) и пост-MVP-инфра (Loki/Tempo/Uptime Kuma, WAL-G, registry). Фактический выезд на VPS — по RUNBOOK.
 
 | Этап | Статус | Примечание |
 |---|---|---|
@@ -119,13 +119,17 @@ make test          # тесты
 | 4 — Импорт CSV (Celery) | ✅ | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI; streaming upload в S3; rollback версии прайса (§16 п.14); photo-ZIP: webp thumb/large + матчинг к сериям + `series_photo` CSV (§16 п.17) |
 | 5 — Frontend | ✅ | все экраны MVP: login, каталог/карточка, корзина/checkout, заявки, избранное, профиль, consent, уведомления (pull, колокольчик), массовое добавление, файлы + manager-страницы (§16 п.20) |
 | 6–8 — Заявки и менеджер | ✅ | заявки клиента/менеджера; экспорт каталога CSV/XLSX (PDF отложен, §16 п.16); файловый архив `/files` + `/manager/files` (§16 п.18); клиенты/скидки/курсы/аудит (§16 п.19): `/manager/users` CRUD + temp-пароли + матрица скидок + fixed-rate, `/manager/currency`, `/manager/audit`; дозакрытие экранов (§16 п.20): дашборд (фича G, кэш 60 с), `/manager/catalog` + PATCH товара (аудит, инвалидация кэша), `/manager/brands` + фото серий, уведомления in-app pull, `/bulk-add` (фича B), `/consent` (п.10) |
-| 9–12 | ⬜ | hardening, observability, деплой, TG Mini App |
+| 9 — Hardening | ✅ | rollback версии прайса, rate limits + Redis, валидация файлов, CSRF-фикс стейл-кук (§16 п.21), 2FA TOTP для менеджера + журнал сессий с отзывом (§16 п.22); i18n исключён каноном (§16 п.9 — RU-only) |
+| 10 — Observability и тесты | ✅ | `/metrics` (instrumentator) + Pushgateway для Celery; `make obs-up` — Prometheus+Grafana (2 дашборда)+Alertmanager (правила §12)+Pushgateway; E2E Playwright `make test-e2e` (9 сценариев §13); k6-скрипты `infra/k6/` (`make test-load[-import]`, нужен k6 на хосте); Loki/Tempo/Uptime Kuma и CI → Этап 11 (§16 п.23) |
+| 11 — Деплой в prod | ✅ (комплект) | `nginx.prod.conf` (TLS1.3+HSTS, :80→301, /metrics allow приватные сети), prod-overlay харднинг (порты db/redis/minio закрыты, фиксы merge-багов), `make prod-up/prod-down/prod-logs/prod-migrate`, `make backup` (pg_dump -Fc, retention 30 д.) + `backup-list`, `make gen-self-signed-certs`, `docs/RUNBOOK.md`, CI `.github/workflows/ci.yml` (lint→test→security→build; registry/WAL-G — пост-MVP, §16 п.24) |
+| 11.5 — 1С-заглушки | ✅ | subroute `/api/integrations/1c` (§18): 4 эндпоинта → 501; `X-Integration-Token` (401) + IP-allowlist CIDR (403), пустой токен → 503; DTO `schemas/commerceml/`; 27 тестов |
+| 12 | ⬜ | TG Mini App (post-MVP) |
 
 **Ближайшие задачи / остаток:**
-- **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅; остаток — production TLS (проверяется при деплое, Этап 11); известный edge (найден при GUI-тесте 2026-08-20): 403 на login/refresh, если в браузере остался `refresh_token`, а `csrf_token`-cookie потерян — требуется решение в §16 (например, чистить стейл-куки при логине);
+- **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅, edge со стейл-куками при логине закрыт (§16 п.21), 2FA TOTP (фича H) ✅ и журнал сессий с отзывом (фича I) ✅ (§16 п.22); остаток — production TLS (проверяется при деплое, Этап 11);
 - **Импорт** — streaming upload в S3 ✅, rollback версии прайса ✅, photo-ZIP+миниатюры ✅;
-- **Продуктовые сценарии** — экраны §16 п.20 ✅ (дашборд, manager-каталог/бренды, уведомления pull, bulk-add, consent); остаются: PDF-формат экспорта (weasyprint, §16.1 F), SSE-стрим уведомлений (отложено, §16 п.20), статическая страница `/privacy`;
-- **Инфраструктура** — observability, production deployment и TG Mini App.
+- **Продуктовые сценарии** — экраны §16 п.20 ✅ (дашборд, manager-каталог/бренды, bulk-add, consent); `/privacy` ✅; PDF-экспорт ✅ (§16 п.25); **SSE-стрим уведомлений ✅ (§16 п.26)** — realtime-колокольчик с fallback-poll; продуктовый backlog пуст, из крупного остаётся только Этап 12 (TG Mini App, post-MVP);
+- **Инфраструктура** — observability ✅ (§16 п.23: метрики, дашборды, алёрты, E2E, k6-скрипты); prod-комплект ✅ (§16 п.24: TLS-конфиг, бэкапы, RUNBOOK, CI, 1С-заглушки; фактический прогон CI и выезд на VPS — при деплое); остаются: Loki/Tempo/Uptime Kuma и WAL-G (пост-MVP), TG Mini App (Этап 12).
 
 ---
 

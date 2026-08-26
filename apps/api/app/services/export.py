@@ -1,11 +1,13 @@
-"""Экспорт каталога в CSV/XLSX (§16 п.16): job-стейт в Redis + dispatch Celery.
+"""Экспорт каталога (CSV/XLSX/PDF) и PDF-заявки: job-стейт в Redis + dispatch Celery.
 
 Контракт:
-  * ``start_export`` — создать job ``QUEUED`` (ключ ``export:job:{job_id}``,
+  * ``start_export``     — создать job ``QUEUED`` (ключ ``export:job:{job_id}``,
     TTL 24 ч) и диспатчить Celery-задачу ``run_export``;
-  * ``get_job``      — стейт job'а для его владельца (чужой/несуществующий →
-    ``None``, роутер отдаёт 404);
-  * ``set_job_state``— частичное обновление стейта из задачи
+  * ``start_order_pdf``  — то же для PDF-заявки (§16 п.25, фича F):
+    задача ``run_order_pdf``;
+  * ``get_job``          — стейт job'а для его владельца (чужой/несуществующий
+    → ``None``, роутер отдаёт 404);
+  * ``set_job_state``    — частичное обновление стейта из задачи
     (``RUNNING`` → ``DONE``/``FAILED``).
 
 Стейт живёт только в Redis (без строки в БД): выгрузка — эфемерный артефакт,
@@ -15,11 +17,14 @@ presigned-ссылки живут 5 минут. Redis-ошибки не роня
 """
 from __future__ import annotations
 
+import io
 import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from redis.asyncio import Redis
 
 from app.core.config import settings
@@ -85,6 +90,31 @@ async def start_export(
     return str(job_id)
 
 
+async def start_order_pdf(*, user: User, order) -> str:
+    """Создать job PDF-выгрузки заявки (§16 п.25, фича F) и диспатчить задачу.
+
+    ``order`` уже проверена роутером (клиент-владелец или MANAGER); job
+    привязывается к ``user`` — создателю (опрашивать статус может только он).
+    """
+    from app.tasks.export_order_pdf import run_order_pdf  # lazy: цикличность импортов
+
+    job_id = uuid.uuid4()
+    state = {
+        "job_id": str(job_id),
+        "user_id": str(user.id),
+        "type": "order_pdf",
+        "order_id": str(order.id),
+        "format": "pdf",
+        "status": STATUS_QUEUED,
+        "error": None,
+        "s3_key": None,
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    await safe_set_job(job_id, state)
+    run_order_pdf.delay(str(job_id), str(order.id))
+    return str(job_id)
+
+
 async def get_job(user_id, job_id) -> dict[str, Any] | None:
     """Стейт job'а для владельца. ``None`` — нет ключа, Redis лежит или чужой."""
     state = await safe_get_job(job_id)
@@ -104,6 +134,95 @@ async def set_job_state(job_id, **fields: Any) -> None:
         return
     state.update(fields)
     await safe_set_job(job_id, state)
+
+
+# ----- XLSX выгрузка заявки (синхронно, без job/Celery: заявка маленькая) -----
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+# Заголовки таблицы позиций (1С вставляет по колонкам — порядок фиксирован).
+_ORDER_COLUMNS = ["Артикул", "Наименование", "Кол-во", "Цена", "Сумма"]
+
+
+def build_order_xlsx(*, order, client, items) -> bytes:
+    """XLSX заявки для переноса в 1С (openpyxl в память, без временных файлов).
+
+    Лист «Заявка»: шапка (номер З-000XXX, дата, клиент, способ получения),
+    таблица «Артикул | Наименование | Кол-во | Цена | Сумма» из
+    ``product_snapshot`` + замороженных ``unit_price``/``quantity`` (§9),
+    итоговая строка. Кол-во/цены/суммы — числами (не строками), чтобы 1С
+    вставляла их как числа.
+    """
+    from app.services.email import DELIVERY_METHOD_RU, format_order_no  # lazy
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Заявка"
+    bold = Font(bold=True)
+
+    # Шапка.
+    ws.append(["Заявка", format_order_no(order.seq)])
+    ws.append([
+        "Дата",
+        order.created_at.strftime("%d.%m.%Y") if order.created_at else "",
+    ])
+    ws.append(["Клиент", client.full_name or ""])
+    if client.company:
+        ws.append(["Компания", client.company])
+    delivery = DELIVERY_METHOD_RU.get(order.delivery_method or "", "")
+    if order.delivery_method == "delivery" and order.delivery_point:
+        delivery = f"{delivery} ({order.delivery_point})"
+    ws.append(["Способ получения", delivery])
+    ws.append([])  # отступ перед таблицей
+
+    # Таблица позиций.
+    header_row = ws.max_row + 1
+    ws.append(_ORDER_COLUMNS)
+    total = 0.0
+    for i in items:
+        snap = i.product_snapshot or {}
+        qty = int(i.quantity)
+        price = float(i.unit_price)
+        amount = round(qty * price, 2)
+        total += amount
+        ws.append([snap.get("sku", ""), snap.get("name", ""), qty, price, amount])
+
+    # Итоговая строка.
+    totals_row = ws.max_row + 1
+    ws.append(["", "Итого", "", "", round(float(order.total_amount), 2)])
+
+    for row in (header_row, totals_row):
+        for cell in ws[row]:
+            cell.font = bold
+
+    # Авто-подбор ширин по длине значений колонок.
+    for col in range(1, len(_ORDER_COLUMNS) + 2):
+        width = max(
+            (
+                len(str(cell.value))
+                for cells in ws.iter_rows(min_col=col, max_col=col)
+                for cell in cells
+                if cell.value is not None
+            ),
+            default=10,
+        )
+        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = min(
+            max(width + 2, 10), 60
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def order_xlsx_headers(*, seq: int | None, order_id: uuid.UUID) -> dict[str, str]:
+    """Content-Type + Content-Disposition для скачивания xlsx заявки."""
+    no = f"-{seq:03d}" if seq else ""
+    filename = f"order{no}-{str(order_id)[:8]}.xlsx"
+    return {
+        "Content-Type": _XLSX_MEDIA_TYPE,
+        "Content-Disposition": f'attachment; filename="{filename}"',
+    }
 
 
 # ----- fail-open обёртки (§4: Redis не должен валить экспорт/каталог) -----

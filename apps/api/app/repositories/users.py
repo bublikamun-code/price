@@ -12,6 +12,11 @@ from app.models.user import Session as SessionModel
 from app.models.user import User
 
 
+def _like_escape(s: str) -> str:
+    """Экранирует спецсимволы LIKE (\\, %, _), чтобы ввод искался буквально (M7)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 async def fetch_users(
     db: AsyncSession,
     *,
@@ -44,7 +49,7 @@ async def fetch_users(
         .where(User.role == UserRole.CLIENT)
     )
     if q:
-        pat = f"%{q}%"
+        pat = f"%{_like_escape(q)}%"
         stmt = stmt.where(
             or_(User.email.ilike(pat), User.full_name.ilike(pat), User.company.ilike(pat))
         )
@@ -53,7 +58,7 @@ async def fetch_users(
 
     total_stmt = select(func.count(User.id)).where(User.role == UserRole.CLIENT)
     if q:
-        pat = f"%{q}%"
+        pat = f"%{_like_escape(q)}%"
         total_stmt = total_stmt.where(
             or_(User.email.ilike(pat), User.full_name.ilike(pat), User.company.ilike(pat))
         )
@@ -65,6 +70,11 @@ async def get_client(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     return await db.scalar(
         select(User).where(User.id == user_id, User.role == UserRole.CLIENT)
     )
+
+
+async def get_by_telegram_id(db: AsyncSession, telegram_id: int) -> User | None:
+    """Пользователь по привязанному Telegram ID (Mini App auth). См. §16 п.27."""
+    return await db.scalar(select(User).where(User.telegram_id == telegram_id))
 
 
 async def email_exists(db: AsyncSession, email: str) -> bool:

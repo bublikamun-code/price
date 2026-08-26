@@ -9,7 +9,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.config import settings
 from app.db.session import get_db
 
 router = APIRouter(tags=["health"])
@@ -37,5 +36,6 @@ async def readyz(db: AsyncSession = Depends(get_db)) -> JSONResponse:
 
     # Redis/S3 проверки будут добавлены в Этапе 3+ (см. ARCHITECTURE_PLAN.md §12)
 
-    body = {"status": "ok" if http_status == 200 else "fail", "checks": checks, "env": settings.env}
+    # L1: не светим окружение (dev/prod) наружу — это помогает fingerprinting.
+    body = {"status": "ok" if http_status == 200 else "fail", "checks": checks}
     return JSONResponse(status_code=http_status, content=body)

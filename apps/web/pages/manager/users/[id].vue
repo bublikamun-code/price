@@ -12,7 +12,7 @@ import type {
   UserManagerRead,
 } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 
 const route = useRoute()
 const { request } = useApi()
@@ -434,7 +434,7 @@ onMounted(() => {
         <div v-if="discountRows.length" class="max-h-96 overflow-y-auto border border-border/60 rounded-card">
           <table class="w-full text-sm">
             <thead class="sticky top-0">
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-4 py-3 font-medium">Бренд</th>
                 <th class="px-4 py-3 font-medium text-right w-40">Скидка, %</th>
               </tr>
@@ -556,7 +556,7 @@ onMounted(() => {
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-ink-muted text-left bg-canvas">
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                 <th class="px-4 py-3 font-medium">№</th>
                 <th class="px-4 py-3 font-medium">Дата</th>
                 <th class="px-4 py-3 font-medium">Статус</th>

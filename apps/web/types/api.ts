@@ -1,7 +1,7 @@
 // Типы API-контрактов. См. ARCHITECTURE_PLAN.md §6, app/schemas/.
 // Auth — плоский ответ; catalog — конверт {data, meta}.
 
-export type UserRole = 'CLIENT' | 'MANAGER'
+export type UserRole = 'CLIENT' | 'MANAGER' | 'ADMIN'
 export type StockStatus = 'IN_STOCK' | 'PREORDER' | 'ARCHIVED'
 
 export interface TokenPair {
@@ -20,9 +20,54 @@ export interface UserPublic {
   is_active: boolean
   display_currency: string
   consent_accepted: boolean
+  // 2FA менеджера (фича H, §16 п.22): наличие TOTP-секрета на бэкенде.
+  totp_enabled: boolean
   // Дайджест изменения цен (in-app уведомления). См. PATCH /api/v1/auth/me.
   price_digest_enabled: boolean
   price_digest_sources: string[] // только 'cart' | 'favorite' | 'orders'
+}
+
+// ---------- 2FA (фича H, §16 п.22) ----------
+
+// POST /auth/login при включённой 2FA: 200 {"data": {two_fa_required, ticket}} — без токенов и кук.
+export interface TwoFALoginRequired {
+  two_fa_required: true
+  ticket: string
+}
+
+export interface TwoFALoginEnvelope {
+  data: TwoFALoginRequired
+}
+
+// POST /auth/2fa/setup → {"data": {secret, otpauth_uri, qr_png_data_url}}.
+export interface TwoFASetupOut {
+  secret: string
+  otpauth_uri: string
+  qr_png_data_url: string
+}
+
+export interface TwoFASetupResponse {
+  data: TwoFASetupOut
+}
+
+// POST /auth/2fa/enable → {"data": {recovery_codes: [8 строк]}} (показ ровно 1 раз).
+export interface TwoFAEnableResponse {
+  data: { recovery_codes: string[] }
+}
+
+// ---------- Журнал сессий (фича I, §16 п.22) ----------
+
+export interface SessionOut {
+  id: string
+  user_agent: string | null
+  ip: string | null
+  created_at: string
+  expires_at: string
+  current: boolean
+}
+
+export interface SessionListResponse {
+  data: SessionOut[]
 }
 
 export interface BrandRef {
@@ -52,6 +97,8 @@ export interface ProductCard {
   currency: string
   rate_source: string
   has_discount: boolean
+  // Точный остаток в шт (null — не раскрывается). Используется для ограничения qty.
+  stock_qty?: number | null
 }
 
 export interface ProductDetail extends ProductCard {
@@ -75,8 +122,8 @@ export interface FiltersOut {
   stock: string[]
 }
 
-// Экспорт каталога (CSV/XLSX). См. §6 + app/api/v1/catalog.py, §16 п.16.
-export type ExportFormat = 'csv' | 'xlsx'
+// Экспорт каталога (CSV/XLSX/PDF). См. §6 + app/api/v1/catalog.py, §16 п.16, п.25.
+export type ExportFormat = 'csv' | 'xlsx' | 'pdf'
 export type ExportJobStatus = 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED'
 
 export interface ExportStartOut {
@@ -191,7 +238,10 @@ export interface OrderItemRead {
 
 export interface OrderRead {
   id: string
+  seq?: number | null
   client_id: string
+  client_name?: string | null
+  client_company?: string | null
   manager_id: string | null
   status: OrderStatus
   currency_code: string
@@ -432,6 +482,20 @@ export interface UserManagerCreateOut {
   temp_password: string
 }
 
+// --- Админ-панель (GET/POST/PATCH /admin/managers) ---
+export interface AdminManagerListItem {
+  id: string
+  email: string
+  full_name: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface AdminManagerCreateOut {
+  user: AdminManagerListItem
+  temp_password: string
+}
+
 export interface TempPasswordOut {
   temp_password: string
 }
@@ -539,4 +603,62 @@ export interface ManagerBrand {
 export interface SeriesPhotoOut {
   photo_key: string
   photo_url: string
+}
+
+// ---------- Этап 12: Telegram Mini App (§16 п.27, SITEMAP §8) ----------
+
+// POST /api/v1/auth/telegram/link-code (веб-кабинет): одноразовый 6-значный код,
+// Redis TTL 10 мин. Вводится при первом входе в Mini App.
+export interface TelegramLinkCode {
+  code: string
+  expires_in: number // секунды (600)
+}
+
+// Тело POST /api/m/v1/auth/telegram: подписанные initData + код связки (первый вход).
+export interface TelegramAuthIn {
+  init_data: string
+  link_code?: string
+}
+
+// Успех POST /api/m/v1/auth/telegram: TokenPair + признак первого входа (линк по коду).
+// applyTokens берёт access_token; user надёжнее получать отдельным fetchMe.
+export interface MiniAppAuthResponse extends TokenPair {
+  linked: boolean
+  user?: UserPublic | null
+}
+
+// Отказы m-auth: 401 {detail, link_required: true} | 503 (не настроено) | 403 (MANAGER).
+export interface TelegramLinkRequiredError {
+  detail: string
+  link_required: true
+}
+
+// ---------- Публичная SEO-витрина (/brands, SITEMAP §5; §16 п.29) ----------
+// Без цен/остатков/ПДн. Ответы могут приходить в конверте {data: ...} (§6).
+
+// GET /api/v1/public/brands → [{id, name, slug}].
+export interface PublicBrand {
+  id: string
+  name: string
+  slug: string
+}
+
+// Серия внутри GET /api/v1/public/brands/{slug}; photo_thumb — S3-ключ миниатюры
+// (отдаётся через /api/v1/public/photo?key=), null — показываем заглушку.
+export interface PublicSeriesRef {
+  id: string
+  name: string
+  slug: string
+  photo_thumb: string | null
+}
+
+// GET /api/v1/public/brands/{slug} → {id, name, slug, series: [...]}.
+export interface PublicBrandDetail extends PublicBrand {
+  series: PublicSeriesRef[]
+}
+
+// GET /api/v1/public/series/{slug}/products → [{sku, name}] (без цен/статусов).
+export interface PublicSeriesProduct {
+  sku: string
+  name: string
 }

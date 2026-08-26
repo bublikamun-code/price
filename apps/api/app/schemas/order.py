@@ -3,7 +3,7 @@ from datetime import datetime
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import OrderStatus
 from app.schemas import MetaPage
@@ -19,6 +19,16 @@ class OrderCreate(BaseModel):
     items: list[OrderItemCreate] = Field(min_length=1)
     notes: str | None = None
     price_calc_mode: Literal["fixed", "nbrb_current"] = "fixed"
+    # Способ получения: самовывоз (по умолчанию) или доставка.
+    delivery_method: Literal["pickup", "delivery"] = "pickup"
+    # Пункт самовывоза / комментарий доставки (не более 255 символов).
+    delivery_point: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def _point_required_for_pickup(self):
+        if self.delivery_method == "pickup" and not self.delivery_point:
+            raise ValueError("При самовывозе укажите delivery_point (пункт выдачи)")
+        return self
 
 
 class OrderStatusUpdate(BaseModel):
@@ -48,9 +58,18 @@ class OrderRead(BaseModel):
     rate_source: str | None
     total_amount: float
     notes: str | None
+    # Способ получения и пункт самовывоза / пометка доставки.
+    delivery_method: str = "pickup"
+    delivery_point: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[OrderItemRead] | None = None
+    # Сквозной номер заявки (для отображения «№N»).
+    seq: int | None = None
+    # Денормализованное имя/компания клиента (заполняется сервисом/роутером,
+    # не хранится в orders — подтягивается из users при выдаче).
+    client_name: str | None = None
+    client_company: str | None = None
 
 
 class OrderListPage(BaseModel):

@@ -16,12 +16,20 @@ ENV PYTHONUNBUFFERED=1 \
     POETRY_VIRTUALENVS_CREATE=false
 
 # Системные библиотеки (asyncpg, weasyprint и т.п.)
+# weasyprint: Pango/HarfBuzz (рендер PDF, §16 п.25) + DejaVu (кириллица).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libpq-dev \
         curl \
         ca-certificates \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz0b \
+        fonts-dejavu-core \
         && rm -rf /var/lib/apt/lists/*
+
+# Сам pip обновляем в base — иначе advisory на старый pip наследуют оба stage (§16 п.30)
+RUN python -m pip install --upgrade pip
 
 WORKDIR /app
 
@@ -42,6 +50,15 @@ FROM base AS runtime
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && \
     apt-get purge -y --auto-remove build-essential
+
+# Pango/HarfBuzz/шрифты для weasyprint — ставим ПОСЛЕ purge build-essential,
+# чтобы --auto-remove не снёс их вместе с build-депами (§16 п.25).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz0b \
+        fonts-dejavu-core \
+        && rm -rf /var/lib/apt/lists/*
 
 COPY . /app
 

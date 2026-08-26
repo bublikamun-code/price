@@ -32,8 +32,6 @@ from pathlib import PurePosixPath
 
 from PIL import Image
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -41,6 +39,7 @@ from app.models.catalog import Series
 from app.repositories.catalog import PHOTO_KEY_PREFIX, _slugify
 from app.services import storage
 from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
+from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
 
 log = get_logger("app.tasks.photo_zip")
@@ -60,10 +59,7 @@ MAX_JOB_ERRORS = 50         # в стейт job'а пишем не больше
 
 # Отдельный движок для Celery-задач (NullPool, по образцу import/export).
 # Тесты подменяют ``_worker_session`` на свой sessionmaker (тестовый движок).
-_worker_engine = create_async_engine(settings.database_url, poolclass=NullPool)
-_worker_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
-    bind=_worker_engine, expire_on_commit=False
-)
+_worker_engine, _worker_session = create_worker_db()
 
 
 class PhotoZipError(Exception):
@@ -241,6 +237,4 @@ def _series_lookups(
 
 async def _mark_failed(job_id: uuid.UUID, message: str) -> None:
     """Пометить job FAILED при критической ошибке (storage/неожиданное)."""
-    from app.services.photo_zip import STATUS_FAILED, set_job_state
-
-    await set_job_state(job_id, status=STATUS_FAILED, error=message[:500])
+    await mark_redis_job_failed("app.services.photo_zip", job_id, message)

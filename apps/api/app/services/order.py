@@ -29,6 +29,18 @@ ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.COMPLETED: set(),
     OrderStatus.CANCELLED: set(),
 }
+class StockExceededError(Exception):
+    """Позиции заказано больше, чем доступно (product.stock_qty IS NOT NULL).
+
+    Роутер превращает в HTTP 422 с сообщением для фронта.
+    """
+
+    def __init__(self, sku: str, available: int) -> None:
+        self.sku = sku
+        self.available = available
+        super().__init__(f"По позиции {sku} доступно только {available} шт")
+
+
 # Статусы, из которых клиент вправе отменить свою заявку.
 CLIENT_CANCELABLE: set[OrderStatus] = {OrderStatus.NEW, OrderStatus.IN_PROGRESS}
 
@@ -56,6 +68,10 @@ class OrderService:
                 raise ValueError(f"Товар {ci.sku} не найден")
             if product.stock_status == StockStatus.ARCHIVED:
                 raise ValueError(f"Товар {ci.sku} архивный — недоступен для заказа")
+            # Остатки при заказе: если остаток задан (IS NOT NULL) — не даём
+            # заказать больше доступного (NULL → остаток не отслеживается).
+            if product.stock_qty is not None and ci.quantity > product.stock_qty:
+                raise StockExceededError(ci.sku, product.stock_qty)
             pr = await self.pricing.price_product(
                 product, user, payload.price_calc_mode
             )
@@ -86,6 +102,9 @@ class OrderService:
             rate_source=resolved.source,
             total_amount=round(total, 2),
             notes=payload.notes,
+            delivery_method=payload.delivery_method,
+            delivery_point=payload.delivery_point,
+            seq=await orders_repo.next_order_seq(self.db),
         )
         order = await orders_repo.create_order(self.db, order=order)
         for item in new_items:

@@ -2,7 +2,7 @@
 // Журнал аудита (менеджер). Этап 8. GET /api/v1/manager/audit?action&actor_id&target_type.
 import type { AuditPage, AuditRead } from '~/types/api'
 
-definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Журнал аудита — Менеджер' })
 
 const { request } = useApi()
@@ -147,7 +147,7 @@ onMounted(load)
           <option v-for="t in TARGET_TYPE_SUGGESTIONS" :key="t" :value="t"/>
         </datalist>
       </div>
-      <button type="submit" class="btn-outline shrink-0">Применить</button>
+      <button type="submit" class="btn-primary shrink-0">Применить</button>
     </form>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
@@ -168,7 +168,7 @@ onMounted(load)
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-ink-muted text-left bg-canvas">
+            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">Время</th>
               <th class="px-4 py-3 font-medium">Актёр</th>
               <th class="px-4 py-3 font-medium">Действие</th>

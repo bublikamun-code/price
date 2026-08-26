@@ -195,6 +195,7 @@ def _manager_product_stmt():
             Product.base_price,
             Product.override_price,
             Product.stock_status,
+            Product.stock_qty,
             Brand.id.label("brand_id"),
             Brand.name.label("brand_name"),
             Series.id.label("series_id"),

@@ -67,7 +67,20 @@ class Order(Base, TimestampMixin, UUIDPrimaryKey):
 
     total_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Способ получения: 'pickup' (самовывоз) | 'delivery' (доставка).
+    delivery_method: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pickup", server_default="pickup"
+    )
+    # Название пункта самовывоза / пометка доставки.
+    delivery_point: Mapped[str | None] = mapped_column(String(255), nullable=True)
     external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 1С (§18)
+
+    # Сквозной номер заявки («№123» вместо обрезанного UUID). Присваивается
+    # при создании (MAX(seq)+1); для существующих строк — backfill миграцией.
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (UniqueConstraint("seq", name="uq_orders_seq"),)
 
 
 class OrderItem(Base, UUIDPrimaryKey):

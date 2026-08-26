@@ -4,16 +4,19 @@
 """
 import secrets
 import uuid
+from datetime import datetime, timezone
 from typing import Sequence
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.models as m
 from app.core.config import settings
-from app.core.security import JWTError, decode_token
+from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.enums import UserRole
+from app.services.cache import get_session_cached, set_session_cached
 
 
 def _extract_access_token(request: Request) -> str | None:
@@ -31,8 +34,20 @@ def _extract_refresh_token(request: Request) -> str | None:
     return request.cookies.get("refresh_token")
 
 
+# Логин и второй шаг 2FA-логина освобождены от CSRF: запросы неаутентифицированы,
+# креды передаются явно в теле, а не через ambient-куки (ARCHITECTURE_PLAN.md §16 п.21-22).
+# Префиксы как в api/v1/router.py + auth.router
+_CSRF_EXEMPT_PATHS = {
+    "/api/v1/auth/login",
+    "/api/v1/auth/2fa/verify",
+    "/api/m/v1/auth/telegram",  # §16 п.27: креды — подписанные initData, не ambient-куки
+}
+
+
 def validate_csrf(request: Request) -> None:
     """Double-submit CSRF для mutating-запросов с cookie-аутентификацией."""
+    if request.url.path in _CSRF_EXEMPT_PATHS:
+        return
     if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
         return
     auth = request.headers.get("Authorization", "")
@@ -46,11 +61,37 @@ def validate_csrf(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF-токен отсутствует или неверен")
 
 
+async def _session_is_active(db: AsyncSession, sid: uuid.UUID) -> bool:
+    """Проверяет, что сессия (sid из access-JWT) не отозвана и не истекла.
+
+    Кэш Redis — оптимизация «горячего» пути; отзыв сессии немедленно удаляет
+    ключ (invalidate_session), поэтому отзывать токены можно мгновенно (§11).
+    Redis down → мимо кэша, читаем БД (fail-open на кэш, не на безопасность).
+    """
+    cached = await get_session_cached(sid)
+    if cached == "1":
+        return True
+    if cached == "0":
+        return False
+    session = await db.get(m.Session, sid)
+    active = (
+        session is not None
+        and not session.revoked
+        and session.expires_at > datetime.now(timezone.utc)
+    )
+    await set_session_cached(sid, active)
+    return active
+
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> m.User:
-    """Декодирует access-JWT и возвращает активного пользователя."""
+    """Декодирует access-JWT и возвращает активного пользователя.
+
+    Дополнительно проверяет, что сессия (sid) не отозвана: после logout/revoke
+    access-токен перестаёт приниматься сразу, а не по истечении TTL (§11).
+    """
     token = _extract_access_token(request)
     creds_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -61,7 +102,7 @@ async def get_current_user(
         raise creds_exc
     try:
         payload = decode_token(token)
-    except JWTError:
+    except jwt.PyJWTError:
         raise creds_exc
     if payload.get("type") != "access":
         raise creds_exc
@@ -70,6 +111,15 @@ async def get_current_user(
         user_id = uuid.UUID(str(payload.get("sub")))
     except (ValueError, TypeError):
         raise creds_exc
+
+    sid_raw = payload.get("sid")
+    if sid_raw:
+        try:
+            sid = uuid.UUID(str(sid_raw))
+        except (ValueError, TypeError):
+            raise creds_exc
+        if not await _session_is_active(db, sid):
+            raise creds_exc
 
     user = await db.get(m.User, user_id)
     if user is None or not user.is_active:
@@ -88,7 +138,22 @@ def require_role(*roles: UserRole):
     allowed: Sequence[UserRole] = roles
 
     async def _dependency(user: m.User = Depends(get_current_user)) -> m.User:
-        if user.role not in allowed:
+        # ADMIN «видит всё»: проходит проверку любой роли.
+        if user.role != UserRole.ADMIN and user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Недостаточно прав",
+            )
+        return user
+
+    return _dependency
+
+
+def require_admin():
+    """Зависимость: пускает только пользователей с ролью ADMIN."""
+
+    async def _dependency(user: m.User = Depends(get_current_user)) -> m.User:
+        if user.role != UserRole.ADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Недостаточно прав",

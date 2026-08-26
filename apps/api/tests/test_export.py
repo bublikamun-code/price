@@ -1,11 +1,12 @@
-"""Тесты экспорта каталога в CSV/XLSX. См. ARCHITECTURE_PLAN.md §16 п.16.
+"""Тесты экспорта каталога в CSV/XLSX/PDF. См. ARCHITECTURE_PLAN.md §16 п.16, п.25.
 
 Слои:
-  1. Эндпоинт POST /catalog/export: 202 (csv/xlsx) + job QUEUED + dispatch
-     Celery-задачи; 422 для pdf.
+  1. Эндпоинт POST /catalog/export: 202 (csv/xlsx/pdf) + job QUEUED + dispatch
+     Celery-задачи.
   2. Задача _run_export (БД реальная, S3 замокан): CSV c персональной ценой
-     (utf-8-sig, разделитель «;»), XLSX читается openpyxl, статусы
-     QUEUED → RUNNING → DONE; StorageError → FAILED (не роняет worker).
+     (utf-8-sig, разделитель «;»), XLSX читается openpyxl, PDF (%PDF-magic,
+     §16 п.25), статусы QUEUED → RUNNING → DONE; StorageError → FAILED
+     (не роняет worker).
   3. GET /catalog/export/{job_id}: DONE + presigned url; чужой пользователь → 404;
      случайный job_id → 404.
   4. Фильтры: brand_ids ограничивает выгрузку товарами бренда.
@@ -168,13 +169,23 @@ class TestStartEndpoint:
         assert filters_json["brand_ids"] == [str(keaz.id)]
         assert dispatched[0][3] == "csv" and dispatched[0][4] == "fixed"
 
-    async def test_pdf_422(self, api_client, session_factory, job_redis, dispatched):
-        await _seed_catalog(session_factory)
+    async def test_start_pdf_202(self, api_client, session_factory, job_redis, dispatched):
+        """PDF-экспорт каталога (§16 п.25): 422-заглушка снята."""
+        client, _keaz, _iek = await _seed_catalog(session_factory)
         await _login(api_client, CLIENT_EMAIL)
+
         r = await api_client.post("/api/v1/catalog/export", params={"format": "pdf"})
-        assert r.status_code == 422, r.text
-        assert "PDF" in r.json()["detail"]
-        assert dispatched == []  # задача не запускалась
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+
+        state = _job_state(job_redis, job_id)
+        assert state["status"] == "QUEUED"
+        assert state["user_id"] == str(client.id)
+        assert state["format"] == "pdf"
+
+        assert len(dispatched) == 1
+        assert dispatched[0][0] == job_id
+        assert dispatched[0][3] == "pdf"
 
 
 # ===========================================================================
@@ -251,6 +262,32 @@ class TestExportTask:
         assert float(ws["F3"].value) == 100.0
         assert float(ws["G3"].value) == 90.0  # персональная цена (скидка 10%)
         assert ws["H3"].value == "BYN"
+
+    async def test_pdf_magic_and_content_type(
+        self, session_factory, monkeypatch, job_redis, dispatched
+    ):
+        """PDF-выгрузка (§16 п.25): %PDF-magic, application/pdf, ключ export/{job}.pdf."""
+        client, _keaz, _iek = await _seed_catalog(session_factory)
+        filters = {"q": None, "brand_ids": [], "series_ids": [], "stock": None}
+        job_id = await export_service.start_export(
+            user=client, filters=CatalogFilters(), format="pdf",
+            price_calc_mode="fixed",
+        )
+
+        result, uploads = await _run_task(
+            session_factory, monkeypatch, job_id=job_id, user=client,
+            filters=filters, fmt="pdf",
+        )
+
+        assert result["status"] == "DONE"
+        assert result["rows"] == 2
+        assert _job_state(job_redis, job_id)["s3_key"] == f"export/{job_id}.pdf"
+
+        assert uploads[0]["key"] == f"export/{job_id}.pdf"
+        assert uploads[0]["kwargs"]["content_type"] == "application/pdf"
+        body = uploads[0]["body"]
+        assert body.startswith(b"%PDF")  # валидный PDF
+        assert b"%%EOF" in body[-64:]
 
     async def test_storage_error_marks_failed(
         self, session_factory, monkeypatch, job_redis, dispatched

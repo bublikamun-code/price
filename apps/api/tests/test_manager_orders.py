@@ -31,7 +31,7 @@ async def _seed_and_order(sf, api_client):
     manager = await create_user(sf, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
 
     await _login(api_client, CLIENT_EMAIL)
-    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}]})).json()["id"]
+    order_id = (await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-1", "quantity": 2}], "delivery_point": "Склад Минск"})).json()["id"]
     return order_id, manager, client
 
 

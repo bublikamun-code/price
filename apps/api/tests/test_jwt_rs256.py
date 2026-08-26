@@ -2,7 +2,7 @@
 
 Dev-режим HS256+SECRET_KEY покрывается test_auth.py (без правок); здесь:
   - RS256 roundtrip (access/refresh) через settings.jwt_signing_key/jwt_verify_key
-  - проверка подписи чужим публичным ключом → JWTError
+  - проверка подписи чужим публичным ключом → jwt.PyJWTError
   - кэш PEM по пути (файл читается один раз)
   - валидация Settings: RS256 без путей / с нечитаемыми файлами → ошибка старта
   - HS256 с заданными путями → warning, файлы не используются
@@ -10,10 +10,10 @@ Dev-режим HS256+SECRET_KEY покрывается test_auth.py (без пр
 import logging
 from pathlib import Path
 
+import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import JWTError, jwt
 from pydantic import ValidationError
 
 from app.core.config import Settings, settings
@@ -74,14 +74,14 @@ def test_rs256_refresh_token_roundtrip(rs256_keys):
 
 
 def test_rs256_foreign_public_key_rejected(tmp_path, monkeypatch):
-    """Подпись одной парой, проверка публичным ключом другой → JWTError."""
+    """Подпись одной парой, проверка публичным ключом другой → jwt.PyJWTError."""
     private, _ = _write_rsa_pair(tmp_path / "mine")
     _, foreign_pub = _write_rsa_pair(tmp_path / "foreign")
     monkeypatch.setattr(settings, "jwt_algorithm", "RS256")
     monkeypatch.setattr(settings, "jwt_private_key_path", str(private))
     monkeypatch.setattr(settings, "jwt_public_key_path", str(foreign_pub))
     token = create_access_token("user-1")
-    with pytest.raises(JWTError):
+    with pytest.raises(jwt.PyJWTError):
         decode_token(token)
 
 

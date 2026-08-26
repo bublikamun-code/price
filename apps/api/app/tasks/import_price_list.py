@@ -32,8 +32,6 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import polars as pl
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -56,6 +54,7 @@ from app.repositories.catalog import (
 )
 from app.services import storage
 from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
+from app.tasks._common import create_worker_db
 from app.workers import celery_app
 
 log = get_logger("app.tasks.import_price_list")
@@ -63,16 +62,9 @@ log = get_logger("app.tasks.import_price_list")
 BATCH_SIZE = 2000
 TWO_PLACES = Decimal("0.01")
 
-# Отдельный движок для Celery-задач. NullPool принципиален: соединение asyncpg
-# привязывается к event-loop'у, а задача крутится в своём asyncio.run на каждый
-# вызов. QueuePool закэшировал бы коннект между разными loop'ами →
-# "Future attached to a different loop". NullPool открывает/закрывает коннект на
-# каждый checkout → нет привязки. API при этом остаётся на пуле (db/session.py).
+# Отдельный движок для Celery-задач: NullPool (зачем — см. tasks/_common.py).
 # Тесты подменяют ``_worker_session`` на свой sessionmaker (тестовый движок).
-_worker_engine = create_async_engine(settings.database_url, poolclass=NullPool)
-_worker_session: async_sessionmaker[AsyncSession] = async_sessionmaker(
-    bind=_worker_engine, expire_on_commit=False
-)
+_worker_engine, _worker_session = create_worker_db()
 
 
 @celery_app.task(bind=True, name="import_price_list", autoretry_for=())
@@ -206,6 +198,9 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
                     price_list_version_id=version.id,
                     override_price=override_byn,
                     update_override=has_discount,
+                    stock_qty=nr.stock_qty,
+                    # Колонки остатка нет в CSV → не трогаем ранее заведённый остаток.
+                    update_stock_qty="stock_qty" in col_map,
                 )
                 await add_price_history(
                     db,

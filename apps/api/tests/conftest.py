@@ -61,6 +61,22 @@ async def engine(db_url):
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.create_all)
+    # PG-enum нельзя ALTER'ить внутри транзакции — отдельный autocommit-коннект.
+    # Нужно только для ранее созданной тестовой БД (свежая create_all уже
+    # содержит все значения enum). Idempotent.
+    raw = create_async_engine(db_url, poolclass=NullPool)
+    try:
+        async with raw.connect() as raw_conn:
+            await raw_conn.execution_options(isolation_level="AUTOCOMMIT")
+            await raw_conn.execute(
+                text(
+                    "DO $$ BEGIN "
+                    "ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'ADMIN'; "
+                    "EXCEPTION WHEN undefined_object THEN NULL; END $$"
+                )
+            )
+    finally:
+        await raw.dispose()
     yield eng
     await eng.dispose()
 
@@ -151,6 +167,7 @@ async def create_product(
     base_price=100,
     override_price=None,
     stock: StockStatus = StockStatus.IN_STOCK,
+    stock_qty: int | None = None,
     attributes: dict | None = None,
 ) -> Product:
     async with session_factory() as s:
@@ -162,6 +179,7 @@ async def create_product(
             base_price=base_price,
             override_price=override_price,
             stock_status=stock,
+            stock_qty=stock_qty,
             attributes=attributes or {},
         )
         s.add(p)
