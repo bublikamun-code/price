@@ -185,8 +185,9 @@ class Settings(BaseSettings):
     # Флаг Secure у кук аутентификации (access/refresh/csrf): prod — true,
     # куки уходят только по HTTPS (COOKIE_SECURE=true в prod-compose, §16 п.30)
     cookie_secure: bool = False
-    # CSP в режиме Report-Only (§16 п.30): браузер не блокирует, только репортит;
-    # enforcing — после анализа отчётов на проде. Пустая строка = заголовок выключен.
+    # CSP в enforcing-режиме (§16 п.30): браузер блокирует нарушения политики.
+    # 'unsafe-inline' в script/style — для инлайн-скриптов гидратации Nuxt SSR.
+    # Пустая строка = заголовок выключен.
     content_security_policy: str = (
         "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
         "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; "

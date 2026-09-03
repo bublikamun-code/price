@@ -123,11 +123,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         if settings.content_security_policy:
-            # CSP в режиме Report-Only: браузер только репортит, ничего не блокирует
-            # (§16 п.30). Enforcing — после анализа отчётов на проде; пустая строка
-            # в конфиге полностью выключает заголовок.
+            # CSP в enforcing-режиме (§16 п.30): браузер блокирует нарушения.
+            # Политика допускает 'unsafe-inline' для script/style — Nuxt SSR
+            # инлайнит скрипты гидратации; внешних ресурсов фронт не грузит.
+            # Пустая строка в конфиге полностью выключает заголовок.
             response.headers.setdefault(
-                "Content-Security-Policy-Report-Only", settings.content_security_policy
+                "Content-Security-Policy", settings.content_security_policy
             )
         if request.cookies.get("access_token"):
             response.headers.setdefault("Cache-Control", "no-store")
