@@ -140,39 +140,9 @@ onMounted(() => {
 
     <!-- Дашборд авторизованного клиента (тот же layout: AppHeader + container-app) -->
     <section v-else-if="isClient" class="container-app py-8 lg:py-12">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
-        <!-- Новости (левая колонка) -->
-        <div v-if="!newsFailed && (newsLoading || newsItems.length)" class="space-y-4 md:col-span-2 lg:col-span-1 order-last lg:order-first">
-          <div class="flex items-center justify-between gap-3 mb-1">
-            <h3 class="text-lg font-semibold">Новости</h3>
-            <Icon name="heroicons:newspaper" class="w-5 h-5 text-ink-faint" />
-          </div>
-
-          <!-- Skeleton -->
-          <template v-if="newsLoading">
-            <div v-for="i in 3" :key="i" class="card p-4">
-              <div class="skeleton h-3 w-1/3 mb-2" />
-              <div class="skeleton h-4 w-full mb-2" />
-              <div class="skeleton h-3 w-2/3" />
-            </div>
-          </template>
-
-          <!-- Карточки новостей -->
-          <template v-else>
-            <article v-for="item in newsItems" :key="item.id" class="card card-hover p-4">
-              <div class="flex items-center gap-2 mb-1.5">
-                <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
-                <span v-else class="badge-info text-xs">Новость</span>
-                <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
-              </div>
-              <h4 class="font-medium text-sm leading-snug mb-1">{{ item.title }}</h4>
-              <p class="text-xs text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
-            </article>
-          </template>
-        </div>
-
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
         <!-- Последние заявки -->
-        <div v-if="!ordersFailed" class="card p-5 md:col-span-2 lg:col-span-2">
+        <div v-if="!ordersFailed" class="card p-5 md:col-span-2">
           <div class="flex items-center justify-between gap-3 mb-4">
             <h3 class="text-lg font-semibold">Последние заявки</h3>
             <NuxtLink
@@ -290,6 +260,36 @@ onMounted(() => {
             </NuxtLink>
           </nav>
         </div>
+        </div>
+      </div>
+
+      <!-- Новости и обновления (под основным контентом, полная ширина) -->
+      <div v-if="!newsFailed && (newsLoading || newsItems.length)" class="mt-8">
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <h3 class="text-lg font-semibold">Новости и обновления</h3>
+          <Icon name="heroicons:newspaper" class="w-5 h-5 text-ink-faint" />
+        </div>
+
+        <!-- Skeleton -->
+        <div v-if="newsLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div v-for="i in 3" :key="i" class="card p-5">
+            <div class="skeleton h-3 w-1/3 mb-3" />
+            <div class="skeleton h-5 w-full mb-2" />
+            <div class="skeleton h-3 w-2/3" />
+          </div>
+        </div>
+
+        <!-- Карточки новостей -->
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <article v-for="item in newsItems" :key="item.id" class="card card-hover p-5">
+            <div class="flex items-center gap-2 mb-2">
+              <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
+              <span v-else class="badge-info text-xs">Новость</span>
+              <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
+            </div>
+            <h4 class="font-semibold mb-2 leading-snug">{{ item.title }}</h4>
+            <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
+          </article>
         </div>
       </div>
     </section>
