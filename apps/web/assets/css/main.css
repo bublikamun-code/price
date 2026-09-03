@@ -1,13 +1,70 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..900&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ============================================================
-   Базовые стили дизайн-системы. См. ARCHITECTURE_PLAN.md §3.
-   Плоский, воздушный, минимализм, мягкие цвета.
+   Дизайн-система. Токены — RGB-триплеты для rgb()/alpha.
+   Палитра светлой и тёмной темы — из прод-билда нового дизайна
+   (восстановлено из бэкапа чанков; не менять значения без
+   согласования — это зафиксированный дизайн).
    ============================================================ */
+
+:root {
+  --color-canvas: 245 245 245;
+  --color-surface: 255 255 255;
+  --color-surface-2: 250 250 250;
+  --color-border: 229 229 229;
+  --color-ink: 38 38 38;
+  --color-ink-muted: 107 114 128;
+  --color-ink-faint: 156 163 175;
+  --color-primary: 38 38 38;
+  --color-primary-hover: 55 65 81;
+  --color-primary-soft: 245 245 245;
+  --color-secondary: 23 23 23;
+  --color-secondary-soft: 245 245 245;
+  --color-destructive: 231 0 11;
+  --color-destructive-soft: 254 242 242;
+  --color-success: 34 197 94;
+  --color-success-soft: 240 253 244;
+  --color-success-text: 21 128 61;
+  --color-warning: 234 179 8;
+  --color-warning-soft: 254 252 232;
+  --color-warning-text: 161 98 7;
+  --color-danger: 231 0 11;
+  --color-danger-soft: 254 242 242;
+  --color-danger-text: 153 27 27;
+  --color-info-text: 23 23 23;
+}
+
+.dark {
+  --color-canvas: 10 10 10;
+  --color-surface: 23 23 23;
+  --color-surface-2: 38 38 38;
+  --color-border: 38 38 38;
+  --color-ink: 250 250 250;
+  --color-ink-muted: 163 163 163;
+  --color-ink-faint: 82 82 82;
+  --color-primary: 250 250 250;
+  --color-primary-hover: 229 229 229;
+  --color-primary-soft: 38 38 38;
+  --color-secondary: 229 229 229;
+  --color-secondary-soft: 38 38 38;
+  --color-destructive: 239 68 68;
+  --color-destructive-soft: 69 10 10;
+  --color-success: 34 197 94;
+  --color-success-soft: 5 46 22;
+  --color-success-text: 74 222 128;
+  --color-warning: 234 179 8;
+  --color-warning-soft: 113 63 18;
+  --color-warning-text: 253 224 71;
+  --color-danger: 239 68 68;
+  --color-danger-soft: 69 10 10;
+  --color-danger-text: 252 165 165;
+  --color-info-text: 250 250 250;
+  color-scheme: dark;
+}
 
 @layer base {
   html {
@@ -19,7 +76,7 @@
     @apply bg-canvas text-ink font-sans antialiased;
   }
 
-  /* Нативные чекбоксы — в палитре акцента, а не системный синий Chrome */
+  /* Нативные чекбоксы — в цвете акцента, а не системный синий Chrome */
   input[type='checkbox'] {
     @apply accent-primary;
   }
@@ -44,7 +101,7 @@
 @layer components {
   /* Карточка-плитка — основной строительный блок UI */
   .card {
-    @apply bg-surface rounded-card shadow-card border border-border/60
+    @apply bg-surface rounded-card shadow-card border border-border
            transition-all duration-200 ease-soft;
   }
   .card-hover {
@@ -54,23 +111,37 @@
   /* Кнопки */
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2.5
-           rounded-pill font-semibold text-sm transition-all duration-200 ease-soft
+           rounded-[18px] font-medium text-sm transition-all duration-200 ease-soft
            focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-primary text-white px-5 shadow-[0_4px_12px_rgba(91,141,239,0.25)]
-           hover:bg-primary-hover hover:shadow-[0_6px_16px_rgba(91,141,239,0.32)]
-           active:scale-[.98] active:shadow-none;
+    @apply btn bg-primary text-white px-5 hover:bg-primary-hover active:scale-[.98];
   }
   .btn-secondary {
-    @apply btn bg-secondary-soft text-secondary hover:bg-secondary/15;
+    @apply btn bg-canvas text-ink hover:bg-surface-2;
   }
   .btn-ghost {
     @apply btn bg-transparent text-ink-muted hover:bg-canvas hover:text-ink;
   }
   .btn-outline {
-    @apply btn bg-surface border border-border text-ink hover:border-primary hover:text-primary;
+    @apply btn bg-transparent border border-border text-ink hover:bg-canvas;
+  }
+
+  /* Сегментированный переключатель (каталог: Со скидкой/Розница) */
+  .segmented-control {
+    @apply inline-flex items-center gap-1 p-1 rounded-pill border border-border;
+  }
+  .segmented-control > a,
+  .segmented-control > button {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5
+           rounded-[18px] font-medium text-sm transition-all duration-200 ease-soft;
+  }
+  .segmented-control > a.active,
+  .segmented-control > a[aria-pressed='true'],
+  .segmented-control > button.active,
+  .segmented-control > button[aria-pressed='true'] {
+    @apply bg-canvas text-ink;
   }
 
   /* Чипы/бейджи */
@@ -80,21 +151,23 @@
   .badge {
     @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-xs font-medium;
   }
-  .badge-success { @apply badge bg-success-soft text-success; }
-  .badge-warning { @apply badge bg-warning-soft text-warning; }
-  .badge-danger  { @apply badge bg-danger-soft text-danger; }
-  .badge-info    { @apply badge bg-primary-soft text-primary; }
+  .badge-success { @apply badge bg-success-soft text-success-text; }
+  .badge-warning { @apply badge bg-warning-soft text-warning-text; }
+  .badge-danger  { @apply badge bg-danger-soft text-danger-text; }
+  .badge-info    { @apply badge bg-primary-soft text-ink; }
+  .badge-primary { @apply badge bg-primary text-white; }
+  .badge-solid   { @apply badge bg-ink text-canvas; }
 
-  /* Поля ввода */
+  /* Поля ввода: без рамки в покое, подсветка при фокусе */
   .input {
-    @apply w-full px-4 py-2.5 rounded-pill bg-surface border border-border
+    @apply w-full px-4 py-2.5 rounded-[18px] bg-canvas border border-transparent
            text-ink placeholder:text-ink-faint text-sm
-           focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15
+           focus:outline-none focus:border-border focus:bg-surface focus:ring-2 focus:ring-primary/15
            transition-all duration-200;
   }
   /* Селекты: единый стиль вместо системного (каталог/файлы/профиль) */
   select.input {
-    @apply pr-10 cursor-pointer bg-surface rounded-pill;
+    @apply pr-10 cursor-pointer rounded-[18px];
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -107,7 +180,7 @@
     display: none;
   }
   select.input:hover {
-    @apply border-primary/40;
+    @apply border-border;
   }
 
   /* Числовые input: убираем нативные стрелки +/- */
@@ -126,17 +199,51 @@
 
   /* Sidebar-навигация */
   .nav-link {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-card text-sm font-medium
-           text-ink-muted hover:bg-canvas hover:text-ink transition-colors duration-150;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-[18px] text-sm font-medium
+           text-ink-muted hover:bg-surface-2 hover:text-ink transition-colors duration-150;
   }
   .nav-link-active {
-    @apply bg-primary-soft text-primary;
+    @apply bg-primary text-white;
   }
 
   /* Skeleton shimmer */
   .skeleton {
-    @apply bg-gradient-to-r from-border via-surface-2 to-border bg-[length:200%_100%] animate-pulse rounded-card;
+    @apply bg-gradient-to-r from-border via-surface-2 to-border bg-[length:200%_100%] animate-pulse rounded-[18px];
   }
+}
+
+/* Тёмная тема — компонентные переопределения (из бэкапа нового дизайна) */
+.dark .btn-primary {
+  background-color: #fafafa;
+  color: #262626;
+}
+.dark .btn-primary:hover {
+  background-color: #e5e5e5;
+  color: #262626;
+}
+.dark .nav-link-active {
+  background-color: #ffffff1a !important;
+  color: #fff !important;
+}
+.dark .segmented-control > a.active,
+.dark .segmented-control > a[aria-pressed='true'],
+.dark .segmented-control > button.active,
+.dark .segmented-control > button[aria-pressed='true'] {
+  background-color: #fafafa;
+  color: #262626;
+}
+.dark .segmented-control > a.active:hover,
+.dark .segmented-control > button.active:hover {
+  background-color: #e5e5e5;
+  color: #262626;
+}
+.dark .badge-solid {
+  background-color: #ffffff1a;
+  color: #fafafa;
+}
+.dark .badge-primary {
+  background-color: #fafafa;
+  color: #262626;
 }
 
 @layer utilities {

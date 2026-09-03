@@ -10,6 +10,9 @@ useHead({ title: 'Профиль' })
 const auth = useAuth()
 const { request } = useApi()
 
+// --- Оформление: тёмная/светлая тема (useTheme — обёртка над @nuxtjs/color-mode) ---
+const { mode: themeMode, toggle: toggleTheme } = useTheme()
+
 // --- Telegram Mini App: код связки (§16 п.27, SITEMAP §8). Только CLIENT. ---
 const tgCode = ref('')
 const tgGenerating = ref(false)
@@ -139,6 +142,29 @@ async function generateLinkCode() {
           </div>
         </div>
       </NuxtLink>
+
+      <!-- Оформление: тёмная/светлая тема -->
+      <div class="card p-5 h-full">
+        <h3 class="font-semibold mb-3">Оформление</h3>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <Icon name="heroicons:moon" class="w-5 h-5 text-ink-muted" />
+            <span class="text-sm font-medium">Тёмная тема</span>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+            :class="themeMode === 'dark' ? 'bg-primary' : 'bg-border'"
+            @click="toggleTheme"
+          >
+            <span
+              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+              :class="themeMode === 'dark' ? 'translate-x-6' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+        <p class="text-xs text-ink-faint mt-3">Переключатель сохраняется в этом браузере.</p>
+      </div>
 
       <!-- Согласие и данные (на всю ширину) -->
       <div class="card p-5 h-full lg:col-span-2">

@@ -66,6 +66,9 @@ rsync -az --delete \
   -e "$SSH" \
   apps/api/ "$REMOTE:$PP/app/api/"
 
+log "бэкап текущего .output на сервере (защита от отката дизайна)"
+$SSH "$REMOTE" "[ -d $PP/app/web/.output ] && rm -rf $PP/app/web/.output.prev && cp -a $PP/app/web/.output $PP/app/web/.output.prev && echo 'backup ok' || echo 'нет старого .output — бэкап пропущен'"
+
 log "rsync web/.output → $REMOTE"
 rsync -az --delete \
   -e "$SSH" \
@@ -85,4 +88,16 @@ sleep 3
 TITLE="$(curl -s --max-time 15 "$SITE_URL/" | grep -oE '<title>[^<]*' | head -1 || true)"
 [ -n "$TITLE" ] || die "сайт не отвечает после деплоя — смотри ~/pp/logs и pm2 на ноде"
 log "OK: $TITLE"
+
+# Smoke-тест дизайна: отдаваемый HTML обязан содержать тёмные токены.
+# Это маркер того, что задеплоен тёмный дизайн, а не светлый откат.
+if curl -s --max-time 15 "$SITE_URL/login" | grep -q -- '--color-canvas:10 10 10'; then
+  log "smoke: тёмная тема на месте"
+else
+  log "СМОК ПРОВАЛ: тёмный дизайн не обнаружен — откатываю .output и перезапускаю"
+  $SSH "$REMOTE" "set -e; [ -d $PP/app/web/.output.prev ] && rm -rf $PP/app/web/.output && mv $PP/app/web/.output.prev $PP/app/web/.output && $PP/bin/start-all.sh && echo 'rollback ok'" \
+    || die "не удалось выполнить авто-откат — верни .output вручную на сервере"
+  die "деплой откачен: новый билд не содержал тёмную тему (светлый дизайн из git?)"
+fi
+
 log "деплой $REF завершён"

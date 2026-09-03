@@ -19,9 +19,9 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
 
   colorMode: {
-    preference: 'light',
-    fallback: 'light',
-    classSuffix: '',
+    preference: 'dark',   // новый дизайн — тёмный по умолчанию
+    fallback: 'dark',
+    classSuffix: '',      // класс `dark` на <html> (селекторы в main.css)
   },
 
   runtimeConfig: {
