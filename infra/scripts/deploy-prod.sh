@@ -84,14 +84,28 @@ $PP/bin/start-all.sh
 EOF
 
 log "health-check"
-sleep 3
-TITLE="$(curl -s --max-time 15 "$SITE_URL/" | grep -oE '<title>[^<]*' | head -1 || true)"
+TITLE=""
+for i in $(seq 1 20); do
+  TITLE="$(curl -s --max-time 15 "$SITE_URL/" | grep -oE '<title>[^<]*' | head -1 || true)"
+  [ -n "$TITLE" ] && break
+  sleep 3
+done
 [ -n "$TITLE" ] || die "сайт не отвечает после деплоя — смотри ~/pp/logs и pm2 на ноде"
 log "OK: $TITLE"
 
 # Smoke-тест дизайна: отдаваемый HTML обязан содержать тёмные токены.
 # Это маркер того, что задеплоен тёмный дизайн, а не светлый откат.
-if curl -s --max-time 15 "$SITE_URL/login" | grep -q -- '--color-canvas:10 10 10'; then
+# PM2 reload грациозный: старый процесс может ещё отвечать первые секунды,
+# поэтому поллим до 90 секунд, а не проверяем один раз.
+SMOKED=0
+for i in $(seq 1 30); do
+  if curl -s --max-time 15 "$SITE_URL/login" | grep -q -- '--color-canvas:10 10 10'; then
+    SMOKED=1
+    break
+  fi
+  sleep 3
+done
+if [ "$SMOKED" = "1" ]; then
   log "smoke: тёмная тема на месте"
 else
   log "СМОК ПРОВАЛ: тёмный дизайн не обнаружен — откатываю .output и перезапускаю"
