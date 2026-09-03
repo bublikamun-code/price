@@ -25,6 +25,9 @@ export interface UserPublic {
   // Дайджест изменения цен (in-app уведомления). См. PATCH /api/v1/auth/me.
   price_digest_enabled: boolean
   price_digest_sources: string[] // только 'cart' | 'favorite' | 'orders'
+  // Дополнительные поля из .output.bak (могут отсутствовать в старом бэкенде)
+  discount_percent?: number
+  manager?: { full_name: string } | null
 }
 
 // ---------- 2FA (фича H, §16 п.22) ----------

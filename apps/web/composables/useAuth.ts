@@ -29,6 +29,9 @@ export interface AuthUser {
   priceDigestSources: string[] // 'cart' | 'favorite' | 'orders'
   // Согласие на обработку ПДн (SITEMAP /consent). false → клиент ведётся на /consent.
   consent_accepted: boolean
+  // Дополнительные поля из .output.bak
+  discountPercent?: number
+  manager?: { full_name: string } | null
 }
 
 /** Тело PATCH /api/v1/auth/me (минимум одно поле). */
@@ -112,6 +115,9 @@ export const useAuthStore = defineStore('auth', () => {
         priceDigestSources: u.price_digest_sources ?? [],
         // нет поля в ответе → считаем принятым (не гоняем на /consent без причины)
         consent_accepted: u.consent_accepted ?? true,
+        // Дополнительные поля из .output.bak
+        discountPercent: u.discount_percent ?? 0,
+        manager: u.manager ?? null,
       }
     }
     if (cookies) cookies.userC.value = user.value
