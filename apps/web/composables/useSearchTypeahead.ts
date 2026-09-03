@@ -62,7 +62,7 @@ export function useSearchTypeahead(opts: UseSearchTypeaheadOptions = {}) {
     open.value = true
 
     try {
-      const res = await request('/api/v1/catalog/products', {
+      const res = await request<{ data: TypeaheadProduct[] }>('/api/v1/catalog/products', {
         query: { q, page: 1, per_page: perPage },
       })
       if (s !== seq) return

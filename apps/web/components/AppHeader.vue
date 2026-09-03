@@ -156,7 +156,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
                 >
                   <img
                     v-if="thumbOf(p.photo_key)"
-                    :src="thumbOf(p.photo_key)"
+                    :src="thumbOf(p.photo_key) ?? undefined"
                     :alt="p.name"
                     class="w-14 h-14 rounded-lg object-cover shrink-0 bg-canvas"
                   >
@@ -252,7 +252,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
             >
               <img
                 v-if="thumbOf(p.photo_key)"
-                :src="thumbOf(p.photo_key)"
+                :src="thumbOf(p.photo_key) ?? undefined"
                 :alt="p.name"
                 class="w-12 h-12 rounded-lg object-cover shrink-0 bg-canvas"
               >
