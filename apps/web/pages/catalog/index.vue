@@ -441,7 +441,7 @@ onMounted(load)
         <!-- Список -->
         <div v-else class="card overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="w-full text-sm table-fixed">
+            <table class="w-full text-sm table-fixed min-w-[640px]">
               <thead>
                 <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                   <th class="px-2 py-2 font-medium w-[11%]">Артикул</th>

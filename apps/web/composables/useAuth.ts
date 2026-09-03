@@ -12,6 +12,8 @@ export interface LoginResult {
   twoFARequired: boolean
   /** Одноразовый ticket для POST /auth/2fa/verify; только при twoFARequired. */
   ticket?: string
+  /** Бэкенд требует смену пароля (навигация уже выполнена внутри login). */
+  forcePasswordChange?: boolean
 }
 
 export interface AuthUser {
@@ -32,6 +34,8 @@ export interface AuthUser {
   // Дополнительные поля из .output.bak
   discountPercent?: number
   manager?: { full_name: string } | null
+  // Принудительная смена пароля при первом входе (WIP на бэкенде; false если не отдано).
+  forcePasswordChange: boolean
 }
 
 /** Тело PATCH /api/v1/auth/me (минимум одно поле). */
@@ -118,13 +122,14 @@ export const useAuthStore = defineStore('auth', () => {
         // Дополнительные поля из .output.bak
         discountPercent: u.discount_percent ?? 0,
         manager: u.manager ?? null,
+        forcePasswordChange: u.force_password_change ?? false,
       }
     }
     if (cookies) cookies.userC.value = user.value
     persistCookie('auth_user', user.value ? JSON.stringify(user.value) : null, COOKIE_MAX_AGE.user)
   }
 
-  function applyTokens(t: TokenPair) {
+  function applyTokens(t: Pick<TokenPair, 'access_token'>) {
     token.value = t.access_token
     if (cookies) {
       cookies.tokenC.value = t.access_token
@@ -160,10 +165,18 @@ export const useAuthStore = defineStore('auth', () => {
       credentials: 'include',
     })
     if ('data' in res) {
-      return { twoFARequired: true, ticket: res.data.ticket }
+      return {
+        twoFARequired: true,
+        ticket: res.data.ticket,
+        forcePasswordChange: res.data.force_password_change,
+      }
     }
     applyTokens(res)
     await fetchMe()
+    if (res.force_password_change) {
+      await navigateTo('/force-change-password')
+      return { twoFARequired: false, forcePasswordChange: true }
+    }
     return { twoFARequired: false }
   }
 
@@ -179,6 +192,9 @@ export const useAuthStore = defineStore('auth', () => {
     })
     applyTokens(pair)
     await fetchMe()
+    if (pair.force_password_change) {
+      await navigateTo('/force-change-password')
+    }
   }
 
   async function fetchMe() {

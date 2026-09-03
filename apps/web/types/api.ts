@@ -8,6 +8,8 @@ export interface TokenPair {
   access_token: string
   token_type: string
   expires_in: number
+  // Принудительная смена пароля при первом входе (бэкенд может не отдавать — фича WIP).
+  force_password_change?: boolean
 }
 
 export interface UserPublic {
@@ -28,6 +30,8 @@ export interface UserPublic {
   // Дополнительные поля из .output.bak (могут отсутствовать в старом бэкенде)
   discount_percent?: number
   manager?: { full_name: string } | null
+  // Принудительная смена пароля при первом входе (WIP на бэкенде).
+  force_password_change?: boolean
 }
 
 // ---------- 2FA (фича H, §16 п.22) ----------
@@ -36,6 +40,8 @@ export interface UserPublic {
 export interface TwoFALoginRequired {
   two_fa_required: true
   ticket: string
+  // Может прийти вместе с ticket: после verify2fa тоже потребуется смена пароля.
+  force_password_change?: boolean
 }
 
 export interface TwoFALoginEnvelope {
