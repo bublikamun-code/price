@@ -72,7 +72,7 @@ rsync -az --delete \
   apps/web/.output/ "$REMOTE:$PP/app/web/.output/"
 
 log "миграции + перезапуск стека"
-$SSH "$REMOTE" 'bash -s' <<EOF
+$SSH "$REMOTE" 'bash -s' <<EOF || die "миграции/перезапуск завершились с ошибкой"
 set -e
 source $PP/app/api/.env
 cd $PP/app/api
