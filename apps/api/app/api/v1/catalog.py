@@ -7,6 +7,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -306,16 +307,36 @@ async def get_export_job(
         )
     url = None
     if state.get("status") == "DONE" and state.get("s3_key"):
-        try:
-            url = storage.presigned_get(settings.s3_bucket_exports, state["s3_key"])
-        except storage.StorageError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-            ) from exc
+        url = f"/api/v1/catalog/export/{job_id}/download"
     return ExportJobOut(
         job_id=state["job_id"],
         status=state["status"],
         format=state["format"],
         error=state.get("error"),
         url=url,
+    )
+
+
+@router.get("/export/{job_id}/download")
+async def download_export(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Прокси-скачивание экспорта из S3 (обходит проблему с presigned URL)."""
+    state = await export_service.get_job(user.id, job_id)
+    if state is None or state.get("status") != "DONE" or not state.get("s3_key"):
+        raise HTTPException(status_code=404, detail="Экспорт не найден или не готов")
+    s3_key = state["s3_key"]
+    fmt = state.get("format", "csv")
+    content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if fmt == "xlsx" else "text/csv"
+    filename = f"catalog-export-{job_id}.{fmt}"
+    try:
+        body = storage.get_bytes(settings.s3_bucket_exports, s3_key)
+    except storage.StorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    import io
+    return StreamingResponse(
+        io.BytesIO(body),
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
