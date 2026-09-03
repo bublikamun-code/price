@@ -42,8 +42,11 @@ log = get_logger("app.tasks.export_catalog")
 
 # Колонки выгрузки (§16 п.16): base_price — розница BYN, unit_price — цена
 # клиента в валюте расчёта, currency — валюта расчёта (retail в BYN).
-COLUMNS = ["sku", "name", "brand", "series", "stock_status",
-           "base_price", "unit_price", "currency"]
+COLUMNS = ["Артикул", "Наименование", "Бренд", "Серия", "Наличие",
+           "Цена розничная", "Цена клиента", "Валюта"]
+
+# Индексы ценовых колонок (0-based) — для числового формата в XLSX.
+_PRICE_COL_INDICES = (5, 6)  # «Цена розничная», «Цена клиента»
 
 _CONTENT_TYPES = {
     "csv": "text/csv",
@@ -156,13 +159,49 @@ def _to_csv_bytes(records: list[list]) -> bytes:
 
 
 def _to_xlsx_bytes(records: list[list]) -> bytes:
-    """XLSX через openpyxl в память (BytesIO) — без временных файлов."""
+    """XLSX через openpyxl в память (BytesIO) — без временных файлов.
+
+    Форматирование: жирная шапка, числовой формат цен (#,##0.00),
+    авто-подбор ширины колонок по содержимому.
+    """
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import get_column_letter
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Каталог"
+
+    bold = Font(bold=True)
+    price_fmt = "#,##0.00"
+
+    # Шапка.
     ws.append(COLUMNS)
+    for cell in ws[1]:
+        cell.font = bold
+        cell.alignment = Alignment(horizontal="center")
+
+    # Данные.
     for record in records:
         ws.append(record)
+
+    # Числовой формат для ценовых колонок (строки данных, начиная со 2-й).
+    for col_idx in _PRICE_COL_INDICES:
+        col_letter = get_column_letter(col_idx + 1)  # 1-based
+        for row in range(2, ws.max_row + 1):
+            cell = ws[f"{col_letter}{row}"]
+            if cell.value is not None:
+                cell.number_format = price_fmt
+
+    # Авто-подбор ширины колонок (оценочный: max длина × ~1.15 + 2).
+    for col in range(1, len(COLUMNS) + 1):
+        col_letter = get_column_letter(col)
+        max_len = max(
+            (len(str(cell.value)) for cells in ws.iter_rows(min_col=col, max_col=col)
+             for cell in cells if cell.value is not None),
+            default=10,
+        )
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 10), 50)
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

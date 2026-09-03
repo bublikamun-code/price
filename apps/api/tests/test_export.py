@@ -39,8 +39,8 @@ PASSWORD = "Passw0rd!"
 CLIENT_EMAIL = "client@example.by"
 OTHER_EMAIL = "other@example.by"
 
-COLUMNS = ["sku", "name", "brand", "series", "stock_status",
-           "base_price", "unit_price", "currency"]
+COLUMNS = ["Артикул", "Наименование", "Бренд", "Серия", "Наличие",
+           "Цена розничная", "Цена клиента", "Валюта"]
 
 
 # ---------- helpers ----------
