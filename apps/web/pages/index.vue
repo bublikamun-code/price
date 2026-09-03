@@ -5,6 +5,8 @@ import type {
   FavoriteListPage,
   FileAsset,
   FileAssetPage,
+  NewsPage,
+  NewsRead,
   OrderListPage,
   OrderRead,
   OrderStatus,
@@ -69,10 +71,35 @@ const filesLoading = ref(true)
 const filesFailed = ref(false)
 const lastFile = ref<FileAsset | null>(null)
 
+// Новости: GET /api/v1/news — последние 5 штук для дашборда и лендинга.
+const newsLoading = ref(true)
+const newsFailed = ref(false)
+const newsItems = ref<NewsRead[]>([])
+
+function formatNewsDate(s: string): string {
+  return new Date(s).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+/** Краткий текст: первые 120 символов контента, обрезанные по слову. */
+function newsExcerpt(content: string): string {
+  if (content.length <= 120) return content
+  const cut = content.slice(0, 120)
+  const lastSpace = cut.lastIndexOf(' ')
+  return (lastSpace > 60 ? cut.slice(0, lastSpace) : cut) + '…'
+}
+
+async function loadNews() {
+  const { request } = useApi()
+  request<NewsPage>('/api/v1/news', { query: { page: 1, per_page: 5 } })
+    .then((res) => { newsItems.value = res.data })
+    .catch(() => { newsFailed.value = true })
+    .finally(() => { newsLoading.value = false })
+}
+
 async function loadDashboard() {
   const { request } = useApi()
 
-  // Три независимых запроса: ошибка любого скрывает только свою карточку.
+  // Четыре независимых запроса: ошибка любого скрывает только свою карточку.
   request<OrderListPage>('/api/v1/orders', { query: { page: 1, per_page: 3 } })
     .then((res) => { recentOrders.value = res.data })
     .catch(() => { ordersFailed.value = true })
@@ -87,10 +114,17 @@ async function loadDashboard() {
     .then((res) => { lastFile.value = res.data[0] ?? null })
     .catch(() => { filesFailed.value = true })
     .finally(() => { filesLoading.value = false })
+
+  loadNews()
 }
 
 onMounted(() => {
-  if (isAuthenticated && isClient) loadDashboard()
+  if (isAuthenticated && isClient) {
+    loadDashboard()
+  } else {
+    // Гости тоже видят блок новостей на лендинге.
+    loadNews()
+  }
 })
 </script>
 
@@ -106,7 +140,37 @@ onMounted(() => {
 
     <!-- Дашборд авторизованного клиента (тот же layout: AppHeader + container-app) -->
     <section v-else-if="isClient" class="container-app py-8 lg:py-12">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+        <!-- Новости (левая колонка) -->
+        <div v-if="!newsFailed && (newsLoading || newsItems.length)" class="space-y-4 md:col-span-2 lg:col-span-1 order-last lg:order-first">
+          <div class="flex items-center justify-between gap-3 mb-1">
+            <h3 class="text-lg font-semibold">Новости</h3>
+            <Icon name="heroicons:newspaper" class="w-5 h-5 text-ink-faint" />
+          </div>
+
+          <!-- Skeleton -->
+          <template v-if="newsLoading">
+            <div v-for="i in 3" :key="i" class="card p-4">
+              <div class="skeleton h-3 w-1/3 mb-2" />
+              <div class="skeleton h-4 w-full mb-2" />
+              <div class="skeleton h-3 w-2/3" />
+            </div>
+          </template>
+
+          <!-- Карточки новостей -->
+          <template v-else>
+            <article v-for="item in newsItems" :key="item.id" class="card card-hover p-4">
+              <div class="flex items-center gap-2 mb-1.5">
+                <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
+                <span v-else class="badge-info text-xs">Новость</span>
+                <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
+              </div>
+              <h4 class="font-medium text-sm leading-snug mb-1">{{ item.title }}</h4>
+              <p class="text-xs text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
+            </article>
+          </template>
+        </div>
+
         <!-- Последние заявки -->
         <div v-if="!ordersFailed" class="card p-5 md:col-span-2 lg:col-span-2">
           <div class="flex items-center justify-between gap-3 mb-4">
@@ -269,6 +333,34 @@ onMounted(() => {
             <h3 class="text-lg font-semibold mb-2">{{ a.title }}</h3>
             <p class="text-sm text-ink-muted leading-relaxed">{{ a.text }}</p>
           </div>
+        </div>
+      </section>
+
+      <!-- Новости (гости) -->
+      <section v-if="!newsFailed && (newsLoading || newsItems.length)" class="container-app py-12 lg:py-16">
+        <h2 class="text-2xl font-bold text-center mb-8">Новости и обновления</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Skeleton -->
+          <template v-if="newsLoading">
+            <div v-for="i in 3" :key="i" class="card p-5">
+              <div class="skeleton h-3 w-1/3 mb-3" />
+              <div class="skeleton h-5 w-full mb-2" />
+              <div class="skeleton h-3 w-2/3" />
+            </div>
+          </template>
+
+          <!-- Карточки -->
+          <template v-else>
+            <article v-for="item in newsItems.slice(0, 6)" :key="item.id" class="card card-hover p-5">
+              <div class="flex items-center gap-2 mb-2">
+                <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
+                <span v-else class="badge-info text-xs">Новость</span>
+                <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
+              </div>
+              <h3 class="font-semibold mb-2 leading-snug">{{ item.title }}</h3>
+              <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
+            </article>
+          </template>
         </div>
       </section>
 

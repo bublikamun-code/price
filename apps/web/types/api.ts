@@ -662,3 +662,21 @@ export interface PublicSeriesProduct {
   sku: string
   name: string
 }
+
+// ---------- Новостная лента (GET /api/v1/news) ----------
+
+export type NewsType = 'NEWS' | 'NEW_PRODUCT'
+
+export interface NewsRead {
+  id: string
+  title: string
+  content: string
+  type: NewsType
+  image_url: string | null
+  published_at: string
+}
+
+export interface NewsPage {
+  data: NewsRead[]
+  meta: MetaPage
+}
