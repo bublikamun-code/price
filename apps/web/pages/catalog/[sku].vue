@@ -105,48 +105,20 @@ function formatDate(s: string): string {
   return new Date(s).toLocaleDateString('ru-RU')
 }
 
-// Характеристики без служебного photo_url
-const LABEL_RU: Record<string, string> = {
-  material: 'Материал',
-  color: 'Цвет',
-  ip: 'Класс защиты (IP)',
-  modules: 'Модулей',
-  width: 'Ширина',
-  height: 'Высота',
-  depth: 'Глубина',
-  size: 'Размер',
-  power: 'Мощность',
-  unit: 'Ед. измерения',
-  purpose: 'Назначение',
-  din_rail: 'DIN-рейка',
-  weight_g: 'Вес, г',
-  weight: 'Вес',
-  ik_rating: 'Класс защиты (IK)',
-  ip_rating: 'Класс защиты (IP)',
-  dimensions_mm: 'Габариты, мм',
-  dimensions: 'Габариты',
-  mounting_type: 'Тип монтажа',
-  mounting: 'Монтаж',
-  type: 'Тип',
-  brand_country: 'Страна бренда',
-  country: 'Страна',
-  warranty_months: 'Гарантия, мес',
-  warranty: 'Гарантия',
-  package_qty: 'Упаковка, шт',
-  certificate: 'Сертификат',
-}
-
-function humanizeLabel(k: string): string {
-  if (LABEL_RU[k]) return LABEL_RU[k]
-  const s = k.replaceAll('_', ' ')
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
+// Характеристики и описание: утилиты из utils/attributes.ts (автоимпорт Nuxt).
+// Служебные ключи (фото/описание) не выводим в списке характеристик.
+const productDescription = computed(() => {
+  const attrs = product.value?.attributes || {}
+  const d = attrs.description
+  return typeof d === 'string' && d.trim() ? d.trim() : ''
+})
 
 const attrEntries = computed<{ label: string; value: string }[]>(() => {
   const a = product.value?.attributes || {}
   return Object.entries(a)
-    .filter(([k]) => k !== 'photo_url')
-    .map(([k, v]) => ({ label: humanizeLabel(k), value: String(v) }))
+    .filter(([k]) => !SERVICE_ATTR_KEYS.has(k))
+    .map(([k, v]) => ({ label: getAttributeLabel(k), value: formatAttributeValue(k, v) }))
+    .filter((row) => row.value && row.value !== '—')
 })
 
 async function loadProduct() {
@@ -332,6 +304,27 @@ onUnmounted(() => {
               <img :src="thumbOf(product.photo_key)!" :alt="product.name" class="w-full h-full object-cover" >
             </div>
           </div>
+
+          <!-- Описание (под фото) -->
+          <div v-if="productDescription" class="mt-6">
+            <h2 class="font-semibold mb-3">Описание</h2>
+            <p class="text-sm text-ink-muted leading-relaxed panel p-5">{{ productDescription }}</p>
+          </div>
+
+          <!-- Характеристики (под фото) -->
+          <div v-if="attrEntries.length" class="mt-6">
+            <h2 class="font-semibold mb-3">Характеристики</h2>
+            <dl class="panel p-5 grid md:grid-cols-2 gap-x-8">
+              <div
+                v-for="row in attrEntries"
+                :key="row.label"
+                class="flex justify-between gap-4 py-2 border-b border-border"
+              >
+                <dt class="text-sm text-ink-muted shrink-0">{{ row.label }}</dt>
+                <dd class="text-sm font-medium text-right break-all">{{ row.value }}</dd>
+              </div>
+            </dl>
+          </div>
         </div>
 
         <!-- Инфо -->
@@ -402,21 +395,6 @@ onUnmounted(() => {
             </div>
             <p v-if="qtyHint" class="text-xs text-warning mt-1.5">{{ qtyHint }}</p>
             <div v-if="cartError" class="badge-danger justify-center py-2 mt-2">{{ cartError }}</div>
-          </div>
-
-          <!-- Характеристики -->
-          <div v-if="attrEntries.length">
-            <h3 class="font-semibold mb-3">Характеристики</h3>
-            <dl class="card p-5">
-              <div
-                v-for="row in attrEntries"
-                :key="row.label"
-                class="flex justify-between gap-4 py-2 border-b border-border last:border-b-0"
-              >
-                <dt class="text-sm text-ink-muted shrink-0">{{ row.label }}</dt>
-                <dd class="text-sm font-medium text-right break-all">{{ row.value }}</dd>
-              </div>
-            </dl>
           </div>
         </div>
       </div>
