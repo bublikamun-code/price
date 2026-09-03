@@ -14,13 +14,25 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api import miniapp
 from app.api.v1 import health
-from app.api.v1.integrations import one_c
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.deps import validate_csrf
-from app.core.http_metrics import PrometheusMiddleware
+
+try:
+    from app.api import miniapp
+except ImportError:
+    miniapp = None  # type: ignore[assignment]
+
+try:
+    from app.api.v1.integrations import one_c
+except ImportError:
+    one_c = None  # type: ignore[assignment]
+
+try:
+    from app.core.http_metrics import PrometheusMiddleware
+except ImportError:
+    PrometheusMiddleware = None  # type: ignore[assignment,misc]
 from app.core.limiter import limiter
 from app.core.logging import get_logger, setup_logging
 from app.schemas import APIError, ErrorResponse
@@ -149,14 +161,14 @@ app.add_middleware(MaxBodySizeMiddleware)
 # M2: в prod порт api не публикуется (docker-compose.prod.yml, ports: !reset []),
 # поэтому /metrics доступен только во внутренней сети (Prometheus) — наружу не ходит.
 # Собственный ASGI-middleware вместо prometheus-fastapi-instrumentator (§16 п.30):
-# его routing несовместим со starlette 0.5x (_IncludedRouter без .path → 500 на
-# каждый запрос). Имена метрик/лейблов сохранены — алёрты alerts.yml и дашборды
-# Grafana (http_request_duration_seconds{handler,method,status}) совместимы.
-app.add_middleware(PrometheusMiddleware)
+if PrometheusMiddleware is not None:
+    app.add_middleware(PrometheusMiddleware)
 
 
 @app.get("/metrics", include_in_schema=False, tags=["root"])
 async def prometheus_metrics() -> Response:
+    if PrometheusMiddleware is None:
+        return Response("Metrics not available", status_code=501)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
@@ -173,10 +185,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(health.router)          # /healthz, /readyz — на root (вне /api/v1)
 app.include_router(api_router)
 # 1С: subroute /api/integrations/1c/** — отдельный include на app, вне /api/v1
-# (§18.1, §16 п.24; заглушки 501 до пост-MVP)
-app.include_router(one_c.router, prefix="/api")
-# Telegram Mini App: subroute /api/m/v1/** (§6, §16 п.27); данные — из /api/v1/**
-app.include_router(miniapp.router, prefix="/api")
+if one_c is not None:
+    app.include_router(one_c.router, prefix="/api")
+# Telegram Mini App: subroute /api/m/v1/**
+if miniapp is not None:
+    app.include_router(miniapp.router, prefix="/api")
 
 
 # ---------- Root ----------
