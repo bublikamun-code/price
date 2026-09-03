@@ -1,0 +1,69 @@
+{
+  "cookies": [
+    {
+      "name": "access_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3NTA0MjliNC03NjhiLTQ4ZGYtYjMwOC04NjgxNjQyYmM1MTMiLCJpYXQiOjE3ODgwNDMwMDgsImV4cCI6MTc4ODA0MzkwOCwidHlwZSI6ImFjY2VzcyIsInJvbGUiOiJDTElFTlQiLCJzaWQiOiI1NTNjOWJhZi0zOGZmLTQ5MmQtYTE1OS0zMTRlMmI4MjMxN2IifQ.XyLxAK6Vvk8v4EU0MOj8jIs2TPesFG1O5aQVTVJvQbI",
+      "domain": "172.19.0.9",
+      "path": "/",
+      "expires": 1788043908.716776,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "refresh_token",
+      "value": "xMBR2IxyI2uvueAfIQME0QE1DIFbP-FpNogO8YU5OtJ3oguRQ8dYY5dF0GvyBais",
+      "domain": "172.19.0.9",
+      "path": "/",
+      "expires": 1788647808.716854,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "csrf_token",
+      "value": "Jl3fNT5loPpVIOqA9OCNyMmH0o-qFfGZzVkSGXuqchY",
+      "domain": "172.19.0.9",
+      "path": "/",
+      "expires": 1788647808.716877,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "auth_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3NTA0MjliNC03NjhiLTQ4ZGYtYjMwOC04NjgxNjQyYmM1MTMiLCJpYXQiOjE3ODgwNDMwMDgsImV4cCI6MTc4ODA0MzkwOCwidHlwZSI6ImFjY2VzcyIsInJvbGUiOiJDTElFTlQiLCJzaWQiOiI1NTNjOWJhZi0zOGZmLTQ5MmQtYTE1OS0zMTRlMmI4MjMxN2IifQ.XyLxAK6Vvk8v4EU0MOj8jIs2TPesFG1O5aQVTVJvQbI",
+      "domain": "172.19.0.9",
+      "path": "/",
+      "expires": 1790635008.735849,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "auth_user",
+      "value": "%7B%22id%22%3A%22750429b4-768b-48df-b308-8681642bc513%22%2C%22email%22%3A%22client%40example.by%22%2C%22name%22%3A%22Client%22%2C%22role%22%3A%22CLIENT%22%2C%22displayCurrency%22%3A%22EUR%22%2C%22company%22%3Anull%2C%22phone%22%3Anull%2C%22totpEnabled%22%3Afalse%2C%22priceDigestEnabled%22%3Afalse%2C%22priceDigestSources%22%3A%5B%22cart%22%2C%22favorite%22%2C%22orders%22%5D%2C%22consent_accepted%22%3Atrue%7D",
+      "domain": "172.19.0.9",
+      "path": "/",
+      "expires": 1790635008.73591,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://172.19.0.9",
+      "localStorage": [
+        {
+          "name": "__VUE_DEVTOOLS_NEXT_PLUGIN_SETTINGS__dev.esm.pinia__",
+          "value": "{\"logStoreChanges\":true}"
+        },
+        {
+          "name": "nuxt-color-mode",
+          "value": "light"
+        }
+      ]
+    }
+  ]
+}
