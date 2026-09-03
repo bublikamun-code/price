@@ -5,7 +5,7 @@
 // чтобы на главной (/) меню было таким же, как на остальных страницах.
 const route = useRoute()
 const auth = useAuth()
-const showMobileNav = computed(() => auth.isAuthenticated && auth.isClient)
+const showMobileNav = computed(() => !!auth.user && auth.isClient)
 
 const bottomNavItems = [
   { to: '/', label: 'Главная', icon: 'heroicons:home' },

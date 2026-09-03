@@ -76,6 +76,11 @@
     @apply bg-canvas text-ink font-sans antialiased;
   }
 
+  /* clip, не hidden: не ломает position:sticky шапки */
+  html, body {
+    overflow-x: clip;
+  }
+
   /* Нативные чекбоксы — в цвете акцента, а не системный синий Chrome */
   input[type='checkbox'] {
     @apply accent-primary;

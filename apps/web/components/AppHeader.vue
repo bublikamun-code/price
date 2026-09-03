@@ -9,7 +9,6 @@ const { unreadCount } = useNotifications()
 
 const searchOpen = ref(false)
 const profileOpen = ref(false)
-const profilePos = ref({ top: 0, right: 0 })
 const desktopSearchOpen = ref(false)
 const mobileSearchTop = ref(56)
 
@@ -185,7 +184,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
             </p>
           </div>
 
-          <div>
+          <div class="relative">
             <button
               class="flex items-center gap-1.5 px-1.5 py-1 rounded-pill hover:bg-canvas transition-colors"
               @click="profileOpen = !profileOpen"
@@ -286,20 +285,17 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
     </div>
   </Teleport>
 
-  <Teleport to="body">
-    <div
-      class="fixed w-56 card p-2 z-[60]"
-      :style="[{ top: profilePos.top + 'px', right: profilePos.right + 'px' }, profileOpen ? null : { display: 'none' }]"
-    >
-      <div class="px-3 py-2 border-b border-border mb-1">
-        <p class="text-sm font-medium text-ink truncate">{{ auth.user?.name }}</p>
-        <p class="text-xs text-ink-faint truncate">{{ auth.user?.email }}</p>
-      </div>
-      <NuxtLink to="/profile" class="nav-link" @click="profileOpen = false">Профиль</NuxtLink>
-      <NuxtLink to="/notifications" class="nav-link" @click="profileOpen = false">Уведомления</NuxtLink>
-      <button class="nav-link w-full text-left text-danger" @click="auth.logout()">Выйти</button>
+  <!-- Закрытие по клику вне меню: прозрачный оверлей под меню -->
+  <div v-if="profileOpen" class="fixed inset-0 z-40" @click="profileOpen = false" />
+  <div v-if="profileOpen" class="absolute right-0 top-full mt-2 w-56 card p-2 z-50">
+    <div class="px-3 py-2 border-b border-border mb-1">
+      <p class="text-sm font-medium text-ink truncate">{{ auth.user?.name }}</p>
+      <p class="text-xs text-ink-faint truncate">{{ auth.user?.email }}</p>
     </div>
-  </Teleport>
+    <NuxtLink to="/profile" class="nav-link" @click="profileOpen = false">Профиль</NuxtLink>
+    <NuxtLink to="/notifications" class="nav-link" @click="profileOpen = false">Уведомления</NuxtLink>
+    <button class="nav-link w-full text-left text-danger" @click="auth.logout()">Выйти</button>
+  </div>
 </template>
 
 <style scoped>

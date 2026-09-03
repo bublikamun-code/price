@@ -49,15 +49,20 @@ def get_s3_client() -> BaseClient:
 def get_s3_presign_client() -> BaseClient:
     """Клиент для генерации presigned-URL.
 
-    Host входит в SigV4-подпись (SignedHeaders), поэтому ссылка для браузера
-    должна подписываться сразу внешним endpoint — строковая замена хоста
-    после генерации ломает подпись (SignatureDoesNotMatch).
-    ``generate_presigned_url`` не делает сетевых запросов, так что клиент
-    с внешним endpoint безопасен и внутри контейнера.
+    Host входит в SigV4-подпись (SignedHeaders), поэтому подписываем ТЕМ
+    host, который MinIO реально видит в запросе. На проде nginx-виртуалхост
+    статики (managed хостера, ``proxy_set_header Host`` недоступен) форвардит
+    upstream'у Host ``127.0.0.1:19000`` (proxy_host), а не внешний. Поэтому
+    подпись считается на внутренний endpoint (``s3_endpoint``), а в готовой
+    строке URL хост строково заменяется на внешний (``s3_external_endpoint``)
+    — браузер идёт на внешний адрес, nginx проксирует на MinIO с Host,
+    под которым считалась подпись. Замена хоста после генерации подпись НЕ
+    ломает: SigV4 фиксирует host на момент подписания.
+    ``generate_presigned_url`` не делает сетевых запросов.
     """
     return boto3.client(
         "s3",
-        endpoint_url=settings.s3_external_endpoint or settings.s3_endpoint,
+        endpoint_url=settings.s3_endpoint,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
         region_name=settings.s3_region,
@@ -124,15 +129,20 @@ def delete_object(bucket: str, key: str) -> None:
 def presigned_get(bucket: str, key: str, *, expires: int | None = None) -> str:
     """Presigned URL на чтение объекта (TTL из настроек, по умолчанию 5 мин).
 
-    Используется браузером: подпись считается клиентом на внешний endpoint
-    (``s3_external_endpoint``), поэтому ссылка валидна снаружи контейнера.
+    Используется браузером: подпись считается на внутренний endpoint (см.
+    ``get_s3_presign_client`` — nginx форвардит upstream'у внутренний Host),
+    затем в строке URL хост заменяется на внешний (``s3_external_endpoint``),
+    чтобы ссылка была валидна снаружи контейнера.
     """
     client = get_s3_presign_client()
     ttl = expires if expires is not None else settings.s3_presign_ttl_seconds
     try:
-        return client.generate_presigned_url(
+        url = client.generate_presigned_url(
             "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=ttl
         )
     except (BotoCoreError, ClientError) as exc:
         log.warning("s3.presign_failed", bucket=bucket, key=key, error=str(exc))
         raise StorageError(f"Не удалось создать ссылку на {bucket}/{key}") from exc
+    if settings.s3_external_endpoint:
+        url = url.replace(settings.s3_endpoint, settings.s3_external_endpoint, 1)
+    return url

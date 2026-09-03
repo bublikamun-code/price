@@ -126,7 +126,7 @@ function backToStep1() {
 </script>
 
 <template>
-  <div class="card p-8">
+  <div class="card p-5 sm:p-8">
     <h1 class="text-2xl font-bold text-center mb-2">С возвращением</h1>
     <p class="text-sm text-ink-muted text-center mb-8">
       {{ step === 1 ? 'Войдите по данным, выданным менеджером' : 'Подтвердите вход кодом' }}
@@ -142,7 +142,7 @@ function backToStep1() {
         <label class="label" for="password">Пароль</label>
         <input id="password" v-model="password" type="password" required autocomplete="current-password" class="input" placeholder="••••••••" >
       </div>
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
         <label class="flex items-center gap-2 text-sm text-ink-muted cursor-pointer">
           <input v-model="remember" type="checkbox" class="rounded border-border" >
           Запомнить меня
