@@ -56,6 +56,12 @@ class FileVisibility(str, enum.Enum):
     MANAGER_ONLY = "MANAGER_ONLY"
 
 
+class NewsType(str, enum.Enum):
+    """Тип новости (§5)."""
+    NEWS = "NEWS"
+    NEW_PRODUCT = "NEW_PRODUCT"
+
+
 def pg_enum(enum_cls: type[enum.Enum], name: str) -> SAEnum:
     """Создаёт SQLAlchemy ENUM-тип, хранящий значения enum (не имена).
 

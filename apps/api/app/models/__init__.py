@@ -8,6 +8,7 @@
 """
 from app.models.catalog import Brand, PriceHistory, PriceListVersion, Product, Series
 from app.models.file import FileAsset
+from app.models.news import News
 from app.models.order import Cart, CartItem, Order, OrderItem
 from app.models.pricing import ExchangeRate, UserBrand
 from app.models.system import AuditLog, Notification
@@ -47,4 +48,6 @@ __all__ = [
     # system
     "AuditLog",
     "Notification",
+    # news
+    "News",
 ]
