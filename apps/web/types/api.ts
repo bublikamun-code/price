@@ -706,3 +706,36 @@ export interface NewsPage {
   data: NewsRead[]
   meta: MetaPage
 }
+
+// ---------- Маркетинговые баннеры (GET /api/v1/banners, менеджерский CRUD) ----------
+
+export type BannerLinkType = 'NONE' | 'PRODUCT' | 'NEWS'
+export type BannerPosition = 'PROMO' | 'NEW'
+
+// GET /api/v1/banners?position=promo|new — только активные, sort ASC.
+export interface BannerRead {
+  id: string
+  title: string
+  subtitle: string | null
+  image_key: string | null
+  link_type: BannerLinkType
+  link_value: string | null
+  position: BannerPosition
+  sort: number
+  is_active: boolean
+}
+
+// POST /api/v1/manager/banners — все поля обязательны (link_value/subtitle/image_key допускают null).
+export interface BannerCreate {
+  title: string
+  subtitle: string | null
+  image_key: string | null
+  link_type: BannerLinkType
+  link_value: string | null
+  position: BannerPosition
+  sort: number
+  is_active: boolean
+}
+
+// PATCH /api/v1/manager/banners/{id} — частичный, все поля опциональны.
+export type BannerUpdate = Partial<BannerCreate>

@@ -2,6 +2,7 @@
 // Главная страница: гость видит маркетинговый лендинг (SITEMAP.md §5),
 // авторизованный клиент — компактный дашборд (заявки / избранное / файлы).
 import type {
+  BannerRead,
   FavoriteListPage,
   FileAsset,
   FileAssetPage,
@@ -71,10 +72,12 @@ const filesLoading = ref(true)
 const filesFailed = ref(false)
 const lastFile = ref<FileAsset | null>(null)
 
-// Акции/новинки: GET /api/v1/dashboard — берём только карусели товаров.
-const promosLoading = ref(true)
+// Акции/новинки: GET /api/v1/dashboard — берём только карусели товаров (fallback для баннеров).
+// Баннеры: GET /api/v1/banners?position=promo|new — активные, sort ASC.
 const promos = ref<ClientNewArrival[]>([])
 const newArrivals = ref<ClientNewArrival[]>([])
+const bannerPromo = ref<BannerRead[]>([])
+const bannerNew = ref<BannerRead[]>([])
 
 interface ClientNewArrival {
   id: string
@@ -132,14 +135,22 @@ async function loadDashboard() {
 
   loadNews()
 
-  // Карусели товаров: акции (товары со скидкой) и новинки.
+  // Карусели товаров: акции (товары со скидкой) и новинки — запасной вариант баннеров.
   request<{ new_arrivals?: ClientNewArrival[]; promos?: ClientNewArrival[] }>('/api/v1/dashboard')
     .then((res) => {
       promos.value = res.promos ?? []
       newArrivals.value = res.new_arrivals ?? []
     })
     .catch(() => {})
-    .finally(() => { promosLoading.value = false })
+
+  // Маркетинговые баннеры: ошибка тихая — просто останется fallback на товары.
+  // position парсится бэкендом как enum — строго в верхнем регистре.
+  request<BannerRead[]>('/api/v1/banners', { query: { position: 'PROMO' } })
+    .then((res) => { bannerPromo.value = res })
+    .catch(() => {})
+  request<BannerRead[]>('/api/v1/banners', { query: { position: 'NEW' } })
+    .then((res) => { bannerNew.value = res })
+    .catch(() => {})
 }
 
 onMounted(() => {
@@ -165,8 +176,10 @@ onMounted(() => {
     <!-- Дашборд авторизованного клиента (тот же layout: AppHeader + container-app) -->
     <section v-else-if="isClient" class="container-app py-8 lg:py-12">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
+        <!-- Левая колонка (2/3): заявки + баннеры -->
+        <div class="md:col-span-2 grid gap-5 content-start">
         <!-- Последние заявки -->
-        <div v-if="!ordersFailed" class="card p-5 md:col-span-2">
+        <div v-if="!ordersFailed" class="card p-5">
           <div class="flex items-center justify-between gap-3 mb-4">
             <h3 class="text-lg font-semibold">Последние заявки</h3>
             <NuxtLink
@@ -196,6 +209,25 @@ onMounted(() => {
               </NuxtLink>
             </li>
           </ul>
+        </div>
+
+        <!-- Баннеры: Акции и Новинки (приоритет — баннеры, запасной вариант — товары дашборда) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <HomeBanner
+            title="Акции"
+            icon="heroicons:tag"
+            :banners="bannerPromo"
+            :fallback="promos[0] ?? null"
+            :fallback-href="promos[0] ? `/catalog/${promos[0].sku}` : '/catalog'"
+          />
+          <HomeBanner
+            title="Новинки"
+            icon="heroicons:sparkles"
+            :banners="bannerNew"
+            :fallback="newArrivals[0] ?? null"
+            :fallback-href="newArrivals[0] ? `/catalog/${newArrivals[0].sku}` : '/catalog'"
+          />
+        </div>
         </div>
 
         <!-- Правая колонка: избранное, файлы, быстрые действия -->
@@ -287,18 +319,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Акции и новинки: товары со скидкой и недавно добавленные (карусели) -->
-      <div v-if="promosLoading || promos.length || newArrivals.length" class="mt-8">
-        <div v-if="promosLoading" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div class="card p-5"><div class="skeleton h-40 w-full"/></div>
-          <div class="card p-5"><div class="skeleton h-40 w-full"/></div>
-        </div>
-        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <ProductCarousel v-if="promos.length" title="Акции" icon="heroicons:tag" :items="promos" />
-          <ProductCarousel v-if="newArrivals.length" title="Новинки" icon="heroicons:sparkles" :items="newArrivals" />
-        </div>
-      </div>
-
       <!-- Новости и обновления (под основным контентом, полная ширина) -->
       <div v-if="!newsFailed && (newsLoading || newsItems.length)" class="mt-8">
         <div class="flex items-center justify-between gap-3 mb-4">
@@ -317,15 +337,17 @@ onMounted(() => {
 
         <!-- Карточки новостей -->
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          <article v-for="item in newsItems" :key="item.id" class="card card-hover p-5">
-            <div class="flex items-center gap-2 mb-2">
-              <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
-              <span v-else class="badge-info text-xs">Новость</span>
-              <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
-            </div>
-            <h4 class="font-semibold mb-2 leading-snug">{{ item.title }}</h4>
-            <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
-          </article>
+          <NuxtLink v-for="item in newsItems" :key="item.id" :to="`/news/${item.id}`">
+            <article class="card card-hover p-5 h-full">
+              <div class="flex items-center gap-2 mb-2">
+                <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
+                <span v-else class="badge-info text-xs">Новость</span>
+                <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
+              </div>
+              <h4 class="font-semibold mb-2 leading-snug hover:text-primary transition-colors">{{ item.title }}</h4>
+              <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
+            </article>
+          </NuxtLink>
         </div>
       </div>
     </section>
@@ -387,15 +409,17 @@ onMounted(() => {
 
           <!-- Карточки -->
           <template v-else>
-            <article v-for="item in newsItems.slice(0, 6)" :key="item.id" class="card card-hover p-5">
-              <div class="flex items-center gap-2 mb-2">
-                <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
-                <span v-else class="badge-info text-xs">Новость</span>
-                <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
-              </div>
-              <h3 class="font-semibold mb-2 leading-snug">{{ item.title }}</h3>
-              <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
-            </article>
+            <NuxtLink v-for="item in newsItems.slice(0, 6)" :key="item.id" :to="`/news/${item.id}`">
+              <article class="card card-hover p-5 h-full">
+                <div class="flex items-center gap-2 mb-2">
+                  <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
+                  <span v-else class="badge-info text-xs">Новость</span>
+                  <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
+                </div>
+                <h3 class="font-semibold mb-2 leading-snug hover:text-primary transition-colors">{{ item.title }}</h3>
+                <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
+              </article>
+            </NuxtLink>
           </template>
         </div>
       </section>

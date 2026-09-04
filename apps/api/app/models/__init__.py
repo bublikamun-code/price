@@ -6,6 +6,7 @@
 
 Схема — см. ARCHITECTURE_PLAN.md §5.
 """
+from app.models.banner import Banner
 from app.models.catalog import (
     Brand,
     PriceHistory,
@@ -58,4 +59,6 @@ __all__ = [
     "Notification",
     # news
     "News",
+    # banner
+    "Banner",
 ]

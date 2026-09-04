@@ -62,6 +62,19 @@ class NewsType(str, enum.Enum):
     NEW_PRODUCT = "NEW_PRODUCT"
 
 
+class BannerLinkType(str, enum.Enum):
+    """Тип ссылки баннера (главная страница)."""
+    NONE = "NONE"
+    PRODUCT = "PRODUCT"   # link_value — sku товара
+    NEWS = "NEWS"         # link_value — id новости
+
+
+class BannerPosition(str, enum.Enum):
+    """Позиция баннера на главной."""
+    PROMO = "PROMO"
+    NEW = "NEW"
+
+
 def pg_enum(enum_cls: type[enum.Enum], name: str) -> SAEnum:
     """Создаёт SQLAlchemy ENUM-тип, хранящий значения enum (не имена).
 

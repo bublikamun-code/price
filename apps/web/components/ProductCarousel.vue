@@ -67,9 +67,9 @@ function scrollByDir(dir: 1 | -1) {
         v-for="p in props.items"
         :key="p.id"
         :to="props.itemLink ? props.itemLink(p) : `/catalog/${p.sku}`"
-        class="w-36 sm:w-40 shrink-0 snap-start group"
+        class="w-40 sm:w-48 shrink-0 snap-start group"
       >
-        <div class="aspect-square bg-surface rounded-card overflow-hidden mb-2 border border-border">
+        <div class="aspect-[3/4] bg-surface rounded-card overflow-hidden mb-2 border border-border">
           <img
             v-if="thumbOf(p.photo_key)"
             :src="thumbOf(p.photo_key)!"
@@ -81,9 +81,9 @@ function scrollByDir(dir: 1 | -1) {
             <Icon name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
           </div>
         </div>
-        <p class="text-xs font-medium line-clamp-2 leading-snug mb-1 group-hover:text-primary">{{ p.name }}</p>
+        <p class="text-sm font-medium line-clamp-2 leading-snug mb-1 group-hover:text-primary">{{ p.name }}</p>
         <div class="flex items-baseline gap-1.5 flex-wrap">
-          <span class="text-sm font-bold">{{ formatMoney(p.client_price, p.currency) }}</span>
+          <span class="text-base font-bold">{{ formatMoney(p.client_price, p.currency) }}</span>
           <span v-if="p.has_discount" class="badge-primary text-[10px]">Скидка</span>
         </div>
       </NuxtLink>

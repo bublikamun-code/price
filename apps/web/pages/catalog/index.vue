@@ -239,7 +239,13 @@ function attrChips(p: ProductCard): { label: string; value: string }[] {
   if (a.material) out.push({ label: 'Материал', value: String(a.material) })
   return out.slice(0, 4)
 }
-const stockLabel: Record<string, string> = { IN_STOCK: 'В наличии', PREORDER: 'Под заказ' }
+const stockLabel: Record<string, string> = { IN_STOCK: 'В наличии', PREORDER: 'Под заказ', ARCHIVED: 'Снят с производства' }
+// Табличный вид: статус — иконка + тултип (классы — те же, что у бейджей наличия).
+const STOCK_ICON: Record<string, { icon: string; cls: string }> = {
+  IN_STOCK: { icon: 'heroicons:check-circle-20-solid', cls: 'text-success' },
+  PREORDER: { icon: 'heroicons:clock', cls: 'text-warning' },
+  ARCHIVED: { icon: 'heroicons:archive-box-x-mark', cls: 'text-danger' },
+}
 
 onMounted(load)
 </script>
@@ -534,14 +540,12 @@ onMounted(load)
             <table class="w-full text-sm table-fixed">
               <thead>
                 <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                  <th class="px-2 py-2 font-medium w-[11%]">Артикул</th>
-                  <th class="px-2 py-2 font-medium w-[30%]">Наименование</th>
-                  <th class="px-2 py-2 font-medium w-[11%] hidden sm:table-cell">Бренд</th>
-                  <th class="px-2 py-2 font-medium w-[10%] hidden sm:table-cell">Серия</th>
+                  <th class="px-2 py-2 font-medium w-[12%]">Артикул</th>
+                  <th class="px-2 py-2 font-medium w-[35%]">Наименование</th>
                   <th class="px-2 py-2 font-medium w-[10%] hidden sm:table-cell">Наличие</th>
-                  <th class="px-2 py-2 font-medium text-right w-[16%] sm:w-[11%]">Цена</th>
-                  <th class="px-2 py-2 font-medium text-center w-[18%] sm:w-[9%] whitespace-nowrap">Кол-во</th>
-                  <th class="px-2 py-2 font-medium text-right w-[12%] sm:w-[5%]" />
+                  <th class="px-2 py-2 font-medium text-right w-[16%] sm:w-[14%]">Цена</th>
+                  <th class="px-2 py-2 font-medium text-center w-[20%] sm:w-[19%] whitespace-nowrap">Кол-во</th>
+                  <th class="px-2 py-2 font-medium text-right w-[12%] sm:w-[8%]" />
                 </tr>
               </thead>
               <tbody>
@@ -552,11 +556,16 @@ onMounted(load)
                       {{ p.name }}
                     </NuxtLink>
                   </td>
-                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate hidden sm:table-cell">{{ p.brand?.name || '—' }}</td>
-                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate hidden sm:table-cell">{{ p.series?.name || '—' }}</td>
                   <td class="px-2 py-2 hidden sm:table-cell">
-                    <span class="badge whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
-                      {{ stockLabel[p.stock_status] || p.stock_status }}
+                    <span class="relative inline-flex group">
+                      <Icon
+                        :name="STOCK_ICON[p.stock_status]?.icon || 'heroicons:question-mark-circle'"
+                        class="w-5 h-5"
+                        :class="STOCK_ICON[p.stock_status]?.cls || 'text-ink-faint'"
+                      />
+                      <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs rounded-card bg-surface text-ink border border-border shadow-lg whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity z-10">
+                        {{ stockLabel[p.stock_status] || p.stock_status }}
+                      </span>
                     </span>
                     <span v-if="p.stock_qty != null && p.stock_qty > 0 && p.stock_qty <= 5" class="badge-warning block w-fit mt-1">
                       Осталось {{ p.stock_qty }} шт

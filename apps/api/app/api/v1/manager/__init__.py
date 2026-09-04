@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends
 
 from app.api.v1.manager import (
     audit,
+    banners,
     brands,
     currencies,
     dashboard,
     files,
+    news,
     orders,
     prices,
     products,
@@ -29,6 +31,8 @@ router.include_router(audit.router)
 router.include_router(dashboard.router)
 router.include_router(products.router)
 router.include_router(brands.router)
+router.include_router(banners.router)
+router.include_router(news.router)
 
 
 @router.get("/ping")

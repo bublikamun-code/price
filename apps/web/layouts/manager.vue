@@ -13,6 +13,8 @@ const navItems = [
   { to: '/manager/users', label: 'Клиенты', icon: 'heroicons:users' },
   { to: '/manager/orders', label: 'Заявки', icon: 'heroicons:clipboard-document-list' },
   { to: '/manager/files', label: 'Файлы', icon: 'heroicons:folder' },
+  { to: '/manager/banners', label: 'Баннеры', icon: 'heroicons:rectangle-stack' },
+  { to: '/manager/news', label: 'Новости', icon: 'heroicons:newspaper' },
   { to: '/manager/currency', label: 'Курсы валют', icon: 'heroicons:banknotes' },
   { to: '/manager/audit', label: 'Аудит', icon: 'heroicons:shield-check' },
 ]

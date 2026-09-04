@@ -4,7 +4,7 @@ Health-эндпоинты (/healthz, /readyz) монтируются на root �
 """
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, cart, catalog, dashboard, favorites, files, news, notifications, orders, public
+from app.api.v1 import admin, auth, banners, cart, catalog, dashboard, favorites, files, news, notifications, orders, public
 from app.api.v1.manager import router as manager_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -19,6 +19,7 @@ api_router.include_router(files.router)
 api_router.include_router(public.router)
 api_router.include_router(notifications.router)
 api_router.include_router(news.router)
+api_router.include_router(banners.router)
 api_router.include_router(manager_router)
 
 # --- Mini App (Telegram, post-MVP) ---
