@@ -354,6 +354,7 @@ onMounted(() => {
           </NuxtLink>
         </div>
       </div>
+      </div>
     </section>
 
     <!-- Лендинг для гостей: без изменений -->
