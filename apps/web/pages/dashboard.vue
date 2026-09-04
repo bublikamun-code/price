@@ -434,15 +434,6 @@ onMounted(load)
         </div>
 
       </div>
-
-      <!-- Акции + новинки: карусели товаров (библиотеки не нужны — нативный скролл со snap) -->
-      <div
-        v-if="!loading && (data?.promos?.length || data?.new_arrivals?.length)"
-        class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8"
-      >
-        <ProductCarousel v-if="data?.promos?.length" title="Акции" icon="heroicons:tag" :items="data.promos" />
-        <ProductCarousel v-if="data?.new_arrivals?.length" title="Новинки" icon="heroicons:sparkles" :items="data.new_arrivals" />
-      </div>
     </template>
   </div>
 </template>
