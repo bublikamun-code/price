@@ -7,9 +7,13 @@
     ``type`` / ``brand_id`` + пагинация §6;
   * ``GET /files/{id}/download`` — presigned-URL (TTL 5 мин); нет файла
     или недоступен по visibility → 404;
-  * ``GET /files/photo?key=photos-series/...`` — фото серии: 307-редирект на
-    presigned URL (5 мин, §16 п.17). Экономим bandwidth API: содержимое
-    отдаёт MinIO, а не воркеры FastAPI.
+  * ``GET /files/photo?key=photos-series/...`` — фото серии/товара.
+    Раньше был 307-редирект на presigned URL внешнего S3-эндпоинта,
+    но его TLS-сертификат не покрывает имя хоста статики (managed-nginx
+    хостера отдаёт дефолтный ``*.hoster.by``) → браузер блокировал фото
+    (ERR_CERT_COMMON_NAME_INVALID). Поэтому содержимое теперь отдаёт
+    сам API (фото — сжатые webp ≤1200px, десятки–сотни КБ), с
+    ``Cache-Control: private`` на срок жизни бывшего presigned TTL.
 
 Ключ фото валидируется: обязательный «голый» путь без схемы и без ``..``
 (path traversal), иначе 400.
@@ -17,8 +21,8 @@
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -119,13 +123,21 @@ async def download_file(
 async def get_photo(
     key: str = Query(description="S3-ключ фото (например photos-series/serie-a.webp)"),
     _user: User = Depends(get_current_user),
-) -> RedirectResponse:
-    """Редирект 307 на presigned URL фото серии из бакета ``photos-series``."""
+) -> Response:
+    """Фото из бакета ``photos-series`` через API (см. docstring модуля:
+    внешний S3-эндпоинт недоступен браузерам из-за невалидного TLS)."""""
     valid_key = _validate_photo_key(key)
     try:
-        url = storage.presigned_get(settings.s3_bucket_photos, valid_key)
+        data = await run_in_threadpool(
+            storage.get_bytes, settings.s3_bucket_photos, valid_key
+        )
     except storage.StorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
-    return RedirectResponse(url=url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    media_type = "image/webp" if valid_key.endswith(".webp") else "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Cache-Control": f"private, max-age={settings.s3_presign_ttl_seconds}"},
+    )
