@@ -76,6 +76,7 @@ async function addToCart(p: ProductCard) {
       // POST /cart/items на бэкенде инкрементирует кол-во, поэтому для товара
       // в корзине ставим целевое значение через PUT, а не добавляем поверх.
       await cart.update(p.sku, { quantity: getQty(p.sku) })
+      cart.lastAdded.value = cart.cart.value?.items.find(i => i.sku === p.sku) ?? null
     } else {
       await cart.add({ sku: p.sku, quantity: getQty(p.sku) })
     }

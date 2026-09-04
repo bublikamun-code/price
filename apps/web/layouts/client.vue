@@ -61,6 +61,7 @@ function isActive(to: string) {
       </main>
     </div>
     <AppFooter />
+    <AppCartPopup />
 
     <!-- Нижняя навигация (mobile) -->
     <nav class="fixed bottom-0 left-0 right-0 bg-surface border-t border-border z-40 px-4 py-2 lg:hidden pb-[env(safe-area-inset-bottom)]">

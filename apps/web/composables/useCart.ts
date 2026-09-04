@@ -1,9 +1,11 @@
 // Корзина клиента (persist в БД). См. ARCHITECTURE_PLAN.md §19.
 // Module-level ref — общий счётчик между AppHeader и страницами.
-import type { CartItemCreate, CartItemUpdate, CartRead } from '~/types/api'
+import type { CartItemCreate, CartItemRead, CartItemUpdate, CartRead } from '~/types/api'
 
 const cart = ref<CartRead | null>(null)
 const loading = ref(false)
+// Последняя добавленная позиция — триггер всплывающей корзины (снизу справа).
+const lastAdded = ref<CartItemRead | null>(null)
 
 export function useCart() {
   const { request } = useApi()
@@ -29,6 +31,7 @@ export function useCart() {
       method: 'POST',
       body: payload,
     })
+    lastAdded.value = cart.value.items.find(i => i.sku === payload.sku) ?? null
     return cart.value
   }
 
@@ -52,5 +55,5 @@ export function useCart() {
     return cart.value
   }
 
-  return { cart, data, count, loading, refresh, add, update, remove, clear }
+  return { cart, data, count, loading, lastAdded, refresh, add, update, remove, clear }
 }
