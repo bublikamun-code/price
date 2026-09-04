@@ -21,8 +21,8 @@ async function toggleFav(sku: string) {
 }
 
 type Sort = 'name' | '-name' | 'price' | '-price' | 'sku'
-// 9 = 3 ряда плитки: пагинация помещается в экран без скролла
-const PER_PAGE = 9
+// 12 = 4 ряда плитки; пагинация прилипает к низу экрана, её видно всегда
+const PER_PAGE = 12
 
 const sortOptions = [
   { value: 'name', label: 'Название А→Я' },
@@ -365,8 +365,8 @@ onMounted(load)
         @click="drawerOpen = false"
       />
 
-      <!-- Фильтры: на десктопе — колонка на всю высоту каталога (нижняя граница
-          совпадает с границей таблицы/карточек), на мобильном — шторка слева -->
+      <!-- Фильтры: на десктопе — компактная колонка по высоте содержимого,
+          на мобильном — шторка слева -->
       <aside
         class="w-72 lg:w-64 shrink-0"
         :class="[
@@ -376,7 +376,7 @@ onMounted(load)
           'lg:block',
         ]"
       >
-        <div class="card p-5 h-full flex flex-col">
+        <div class="card p-4">
           <div class="flex items-center justify-between mb-4">
             <h3 class="font-semibold">Фильтры</h3>
             <button class="btn-ghost p-1.5 lg:hidden" aria-label="Закрыть фильтры" @click="drawerOpen = false">
@@ -384,7 +384,7 @@ onMounted(load)
             </button>
           </div>
 
-          <div class="mb-5">
+          <div class="mb-4">
             <label class="label">Поиск</label>
             <div class="relative">
               <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
@@ -397,7 +397,7 @@ onMounted(load)
             </div>
           </div>
 
-          <div v-if="filters.brands.length" class="mb-5">
+          <div v-if="filters.brands.length" class="mb-4">
             <label class="label">Производитель</label>
             <label v-for="b in visibleFilterItems(filters.brands, 'brands')" :key="b.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
               <input v-model="selectedBrands" type="checkbox" :value="b.id" class="rounded border-border" @change="applyFilters" >
@@ -415,7 +415,7 @@ onMounted(load)
             >Скрыть</button>
           </div>
 
-          <div v-if="filters.series.length" class="mb-5">
+          <div v-if="filters.series.length" class="mb-4">
             <label class="label">Серия</label>
             <label v-for="s in visibleFilterItems(filters.series, 'series')" :key="s.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
               <input v-model="selectedSeries" type="checkbox" :value="s.id" class="rounded border-border" @change="applyFilters" >
@@ -433,12 +433,12 @@ onMounted(load)
             >Скрыть</button>
           </div>
 
-          <div class="mb-5">
+          <div class="mb-4">
             <label class="label">Наличие</label>
             <BaseSelect v-model="selectedStock" :options="stockOptions" class="min-w-[150px]" @change="applyFilters" />
           </div>
 
-          <button class="btn-ghost w-full justify-center mt-auto" @click="resetFilters">Сбросить</button>
+          <button class="btn-ghost w-full justify-center" @click="resetFilters">Сбросить</button>
         </div>
       </aside>
 
@@ -625,22 +625,30 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- Пагинация -->
-        <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-8">
-          <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
-            <Icon name="heroicons:chevron-left" class="w-5 h-5" />
-          </button>
-          <button
-            v-for="pgn in totalPages"
-            :key="pgn"
-            class="w-10 h-10 rounded-pill font-medium text-sm"
-            :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-            @click="goPage(pgn)"
-          >{{ pgn }}</button>
-          <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
-            <Icon name="heroicons:chevron-right" class="w-5 h-5" />
-          </button>
-        </nav>
+        <!-- Пагинация: на десктопе прилипает к низу экрана — кнопки страниц
+            видны всегда, строк таблицы/карточек помещается сколько влезает;
+            на мобильном — обычный поток под списком (инаже перекрыла бы
+            нижнюю навигацию) -->
+        <div
+          v-if="!loading && totalPages > 1"
+          class="mt-4 py-2.5 border-t border-border bg-canvas/95 backdrop-blur lg:sticky lg:bottom-0 lg:z-10 lg:-mx-4 lg:px-4"
+        >
+          <nav class="flex items-center justify-center gap-1">
+            <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+              <Icon name="heroicons:chevron-left" class="w-5 h-5" />
+            </button>
+            <button
+              v-for="pgn in totalPages"
+              :key="pgn"
+              class="w-10 h-10 rounded-pill font-medium text-sm"
+              :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+              @click="goPage(pgn)"
+            >{{ pgn }}</button>
+            <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+              <Icon name="heroicons:chevron-right" class="w-5 h-5" />
+            </button>
+          </nav>
+        </div>
       </div>
     </div>
   </div>

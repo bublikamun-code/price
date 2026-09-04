@@ -252,18 +252,6 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
     </div>
   </header>
 
-  <div v-if="auth.isClient" class="bg-surface-2 border-b border-border text-xs py-1">
-    <div class="container-app flex items-center justify-center gap-1 text-ink-muted">
-      <span v-if="auth.user?.company">{{ auth.user.company }}</span>
-      <span v-if="auth.user?.company">·</span>
-      <span>ваша скидка {{ auth.user?.discountPercent ?? 0 }}%</span>
-      <template v-if="auth.user?.manager">
-        <span>·</span>
-        <span>менеджер: {{ auth.user.manager.full_name }}</span>
-      </template>
-    </div>
-  </div>
-
   <Teleport to="body">
     <div v-if="desktopSearchOpen" class="fixed inset-0 z-50 flex items-start justify-center">
       <div class="absolute inset-0 bg-ink/40" @click="closeDesktopSearch" />
