@@ -157,7 +157,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
                     v-if="thumbOf(p.photo_key)"
                     :src="thumbOf(p.photo_key) ?? undefined"
                     :alt="p.name"
-                    class="w-14 h-14 rounded-lg object-cover shrink-0 bg-canvas"
+                    class="w-14 h-14 rounded-lg object-contain shrink-0 bg-canvas"
                   >
                   <span v-else class="w-14 h-14 rounded-lg bg-canvas text-ink-faint flex items-center justify-center shrink-0">
                     <Icon name="heroicons:photo" class="w-7 h-7" />
@@ -268,7 +268,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key) ?? undefined"
                 :alt="p.name"
-                class="w-12 h-12 rounded-lg object-cover shrink-0 bg-canvas"
+                class="w-12 h-12 rounded-lg object-contain shrink-0 bg-canvas"
               >
               <span v-else class="w-12 h-12 rounded-lg bg-canvas text-ink-faint flex items-center justify-center shrink-0">
                 <Icon name="heroicons:photo" class="w-6 h-6" />

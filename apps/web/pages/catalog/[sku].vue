@@ -318,7 +318,7 @@ onUnmounted(() => {
               v-if="mainPhoto"
               :src="mainPhoto"
               :alt="product.name"
-              class="w-full h-full object-cover cursor-zoom-in"
+              class="w-full h-full object-contain cursor-zoom-in"
               @click="lightbox = true"
             >
             <Icon v-else name="heroicons:photo" class="w-20 h-20 text-ink-faint" />
@@ -356,7 +356,7 @@ onUnmounted(() => {
                 :src="thumbOf(key)!"
                 :alt="`${product.name} — фото ${i + 1}`"
                 :loading="i === 0 ? undefined : 'lazy'"
-                class="w-full h-full object-cover"
+                class="w-full h-full object-contain"
               >
             </button>
           </div>

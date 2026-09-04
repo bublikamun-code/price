@@ -456,7 +456,7 @@ onMounted(load)
                 :src="thumbOf(p.photo_key)!"
                 :alt="p.name"
                 loading="lazy"
-                class="w-full h-full object-cover"
+                class="w-full h-full object-contain"
               >
               <Icon v-else name="heroicons:photo" class="w-8 h-8 sm:w-10 sm:h-10 text-ink-faint" />
               <button

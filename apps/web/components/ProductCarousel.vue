@@ -74,7 +74,7 @@ function scrollByDir(dir: 1 | -1) {
             v-if="thumbOf(p.photo_key)"
             :src="thumbOf(p.photo_key)!"
             :alt="p.name"
-            class="w-full h-full object-cover"
+            class="w-full h-full object-contain"
             loading="lazy"
           >
           <div v-else class="w-full h-full flex items-center justify-center">
