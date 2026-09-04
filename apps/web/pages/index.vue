@@ -165,10 +165,8 @@ onMounted(() => {
     <!-- Дашборд авторизованного клиента (тот же layout: AppHeader + container-app) -->
     <section v-else-if="isClient" class="container-app py-8 lg:py-12">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
-        <!-- Левая колонка (2/3 ширины): заявки + акции/новинки -->
-        <div class="md:col-span-2 grid gap-5 content-start">
         <!-- Последние заявки -->
-        <div v-if="!ordersFailed" class="card p-5">
+        <div v-if="!ordersFailed" class="card p-5 md:col-span-2">
           <div class="flex items-center justify-between gap-3 mb-4">
             <h3 class="text-lg font-semibold">Последние заявки</h3>
             <NuxtLink
@@ -198,15 +196,6 @@ onMounted(() => {
               </NuxtLink>
             </li>
           </ul>
-        </div>
-
-        <!-- Акции и новинки: два равных блока под «Последние заявки» -->
-        <div v-if="promosLoading || promos.length || newArrivals.length" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <div v-if="promosLoading" class="card p-5"><div class="skeleton h-40 w-full"/></div>
-          <div v-if="promosLoading" class="card p-5"><div class="skeleton h-40 w-full"/></div>
-          <ProductCarousel v-if="!promosLoading && promos.length" title="Акции" icon="heroicons:tag" :items="promos" />
-          <ProductCarousel v-if="!promosLoading && newArrivals.length" title="Новинки" icon="heroicons:sparkles" :items="newArrivals" />
-        </div>
         </div>
 
         <!-- Правая колонка: избранное, файлы, быстрые действия -->
@@ -296,10 +285,21 @@ onMounted(() => {
           </nav>
         </div>
         </div>
-
       </div>
 
-      <!-- Новости и обновления (в самом низу, полная ширина) -->
+      <!-- Акции и новинки: товары со скидкой и недавно добавленные (карусели) -->
+      <div v-if="promosLoading || promos.length || newArrivals.length" class="mt-8">
+        <div v-if="promosLoading" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div class="card p-5"><div class="skeleton h-40 w-full"/></div>
+          <div class="card p-5"><div class="skeleton h-40 w-full"/></div>
+        </div>
+        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <ProductCarousel v-if="promos.length" title="Акции" icon="heroicons:tag" :items="promos" />
+          <ProductCarousel v-if="newArrivals.length" title="Новинки" icon="heroicons:sparkles" :items="newArrivals" />
+        </div>
+      </div>
+
+      <!-- Новости и обновления (под основным контентом, полная ширина) -->
       <div v-if="!newsFailed && (newsLoading || newsItems.length)" class="mt-8">
         <div class="flex items-center justify-between gap-3 mb-4">
           <h3 class="text-lg font-semibold">Новости и обновления</h3>
