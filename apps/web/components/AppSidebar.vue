@@ -33,7 +33,7 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <aside class="hidden lg:block shrink-0 sticky top-[72px] self-start py-4 pl-4">
+  <aside class="hidden lg:block shrink-0 sticky top-[72px] self-start py-4 pr-4">
     <div
       class="card p-3 transition-[width] duration-200"
       :class="collapsed ? 'w-[60px]' : 'w-60'"

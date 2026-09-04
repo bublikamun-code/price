@@ -22,15 +22,17 @@ function isActive(to: string) {
 <template>
   <div class="min-h-screen flex flex-col bg-canvas">
     <AppHeader />
-    <div class="flex-1 flex">
-      <AppSidebar />
+    <!-- Вся строка (сайдбар + контент) — в одном контейнере с шапкой,
+         чтобы карточка шапки и колонка контента были строго друг под другом -->
+    <div class="flex-1 flex justify-center">
+      <div class="container-app flex">
+        <AppSidebar />
 
-      <!-- Content -->
-      <main class="flex-1 min-w-0">
-        <div class="container-app py-6 lg:py-8 pb-16 lg:pb-0">
+        <!-- Content -->
+        <main class="flex-1 min-w-0 py-6 lg:py-8 pb-16 lg:pb-0">
           <slot />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
     <AppFooter />
     <AppCartPopup />
