@@ -312,7 +312,7 @@ onUnmounted(() => {
     <div v-else-if="product">
       <div class="grid lg:grid-cols-2 gap-8">
         <!-- Фото -->
-        <div>
+        <div class="order-1 lg:order-none">
           <div class="card aspect-square overflow-hidden bg-surface-2 flex items-center justify-center relative">
             <img
               v-if="mainPhoto"
@@ -360,15 +360,18 @@ onUnmounted(() => {
               >
             </button>
           </div>
+        </div>
 
-          <!-- Описание (под фото) -->
-          <div v-if="productDescription" class="mt-6">
+        <!-- Описание, характеристики, история и похожие: десктоп — под фото (col 1, row 2), мобильный — под блоком покупки -->
+        <div class="order-3 lg:order-none lg:col-start-1 lg:row-start-2 flex flex-col gap-6 min-w-0">
+          <!-- Описание -->
+          <div v-if="productDescription">
             <h2 class="font-semibold mb-3">Описание</h2>
             <p class="text-sm text-ink-muted leading-relaxed panel p-5">{{ productDescription }}</p>
           </div>
 
           <!-- Характеристики (под фото) -->
-          <div v-if="attrEntries.length" class="mt-6">
+          <div v-if="attrEntries.length">
             <h2 class="font-semibold mb-3">Характеристики</h2>
             <dl class="panel p-5 grid md:grid-cols-2 gap-x-8">
               <div
@@ -383,7 +386,7 @@ onUnmounted(() => {
           </div>
 
           <!-- График истории цены (левая колонка — правая при этом липнет до конца) -->
-          <div v-if="history.length >= 2 && chart" class="card p-6 mt-6">
+          <div v-if="history.length >= 2 && chart" class="card p-6">
             <h3 class="font-semibold mb-4">История цены</h3>
             <svg v-if="chart" :viewBox="`0 0 600 200`" class="w-full" preserveAspectRatio="none">
               <!-- Базовая цена -->
@@ -424,7 +427,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Соседи по серии (левая колонка) -->
-          <div v-if="siblings.length" class="mt-6">
+          <div v-if="siblings.length">
             <h3 class="font-semibold mb-4">
               Похожие товары<template v-if="product.series"> серии {{ product.series.name }}</template>
             </h3>
@@ -458,9 +461,9 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Инфо (липкий блок покупки на десктопе: левая колонка скролится, правая на месте, как в корзине) -->
-        <div class="lg:sticky lg:top-[88px] lg:self-start">
-          <h1 class="text-3xl font-display font-bold mb-1">{{ product.name }}</h1>
+        <!-- Инфо: липкий блок покупки на десктопе (левая колонка скролится, правая на месте, как в корзине); на мобильном — сразу под фото -->
+        <div class="order-2 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-[88px] lg:self-start">
+          <h1 class="text-2xl lg:text-3xl font-display font-bold mb-1">{{ product.name }}</h1>
           <p class="text-sm text-ink-muted mt-1 mb-4">Артикул: {{ product.sku }}</p>
 
           <div class="flex flex-wrap items-center gap-2 mb-5">
