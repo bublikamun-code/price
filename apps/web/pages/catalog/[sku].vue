@@ -325,9 +325,84 @@ onUnmounted(() => {
               </div>
             </dl>
           </div>
+
+          <!-- График истории цены (левая колонка — правая при этом липнет до конца) -->
+          <div v-if="history.length >= 2 && chart" class="card p-6 mt-6">
+            <h3 class="font-semibold mb-4">История цены</h3>
+            <svg v-if="chart" :viewBox="`0 0 600 200`" class="w-full" preserveAspectRatio="none">
+              <!-- Базовая цена -->
+              <polyline
+                :points="chart.base"
+                fill="none"
+                stroke="currentColor"
+                class="text-primary"
+                stroke-width="2"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              />
+              <!-- Фикс. цена -->
+              <polyline
+                v-if="chart.override"
+                :points="chart.override"
+                fill="none"
+                stroke="currentColor"
+                class="text-warning"
+                stroke-width="2"
+                stroke-dasharray="5 4"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              />
+            </svg>
+            <div class="flex items-center justify-between mt-2 text-xs text-ink-faint">
+              <span>{{ formatDate(chart.first) }}</span>
+              <div class="flex items-center gap-4">
+                <span class="flex items-center gap-1.5">
+                  <span class="w-3 h-0.5 bg-primary"/> Базовая
+                </span>
+                <span v-if="chart.override" class="flex items-center gap-1.5">
+                  <span class="w-3 h-0.5 bg-warning"/> Фиксированная
+                </span>
+              </div>
+              <span>{{ formatDate(chart.last) }}</span>
+            </div>
+          </div>
+
+          <!-- Соседи по серии (левая колонка) -->
+          <div v-if="siblings.length" class="mt-6">
+            <h3 class="font-semibold mb-4">
+              Похожие товары<template v-if="product.series"> серии {{ product.series.name }}</template>
+            </h3>
+            <div class="flex gap-4 overflow-x-auto pb-2">
+              <NuxtLink
+                v-for="s in siblings"
+                :key="s.id"
+                :to="`/catalog/${s.sku}`"
+                class="card card-hover p-4 shrink-0 w-56 flex flex-col"
+              >
+                <div class="aspect-square bg-canvas rounded-card mb-3 flex items-center justify-center overflow-hidden">
+                  <img
+                    v-if="thumbOf(s.photo_key)"
+                    :src="thumbOf(s.photo_key)!"
+                    :alt="s.name"
+                    loading="lazy"
+                    class="w-full h-full object-contain"
+                  >
+                  <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
+                </div>
+                <span v-if="s.brand" class="badge-info self-start mb-1.5">{{ s.brand.name }}</span>
+                <h4 class="font-medium text-sm line-clamp-2 mb-1">{{ s.name }}</h4>
+                <p class="text-xs text-ink-faint mb-2">{{ s.sku }}</p>
+                <div class="mt-auto">
+                  <span class="text-base font-bold text-primary">
+                    {{ formatMoney(s.has_discount ? s.client_price : s.retail_price, s.currency) }}
+                  </span>
+                </div>
+              </NuxtLink>
+            </div>
+          </div>
         </div>
 
-        <!-- Инфо (липкий блок покупки на десктопе) -->
+        <!-- Инфо (липкий блок покупки на десктопе: левая колонка скролится, правая на месте, как в корзине) -->
         <div class="lg:sticky lg:top-[88px] lg:self-start">
           <h1 class="text-3xl font-display font-bold mb-1">{{ product.name }}</h1>
           <p class="text-sm text-ink-muted mt-1 mb-4">Артикул: {{ product.sku }}</p>
@@ -396,81 +471,6 @@ onUnmounted(() => {
             <p v-if="qtyHint" class="text-xs text-warning mt-1.5">{{ qtyHint }}</p>
             <div v-if="cartError" class="badge-danger justify-center py-2 mt-2">{{ cartError }}</div>
           </div>
-        </div>
-      </div>
-
-      <!-- График истории цены -->
-      <div v-if="history.length >= 2 && chart" class="card p-6 mt-8">
-        <h3 class="font-semibold mb-4">История цены</h3>
-        <svg v-if="chart" :viewBox="`0 0 600 200`" class="w-full" preserveAspectRatio="none">
-          <!-- Базовая цена -->
-          <polyline
-            :points="chart.base"
-            fill="none"
-            stroke="currentColor"
-            class="text-primary"
-            stroke-width="2"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-          />
-          <!-- Фикс. цена -->
-          <polyline
-            v-if="chart.override"
-            :points="chart.override"
-            fill="none"
-            stroke="currentColor"
-            class="text-warning"
-            stroke-width="2"
-            stroke-dasharray="5 4"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-          />
-        </svg>
-        <div class="flex items-center justify-between mt-2 text-xs text-ink-faint">
-          <span>{{ formatDate(chart.first) }}</span>
-          <div class="flex items-center gap-4">
-            <span class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 bg-primary"/> Базовая
-            </span>
-            <span v-if="chart.override" class="flex items-center gap-1.5">
-              <span class="w-3 h-0.5 bg-warning"/> Фиксированная
-            </span>
-          </div>
-          <span>{{ formatDate(chart.last) }}</span>
-        </div>
-      </div>
-
-      <!-- Соседи по серии -->
-      <div v-if="siblings.length" class="mt-8">
-        <h3 class="font-semibold mb-4">
-          Похожие товары<template v-if="product.series"> серии {{ product.series.name }}</template>
-        </h3>
-        <div class="flex gap-4 overflow-x-auto pb-2">
-          <NuxtLink
-            v-for="s in siblings"
-            :key="s.id"
-            :to="`/catalog/${s.sku}`"
-            class="card card-hover p-4 shrink-0 w-56 flex flex-col"
-          >
-            <div class="aspect-square bg-canvas rounded-card mb-3 flex items-center justify-center overflow-hidden">
-              <img
-                v-if="thumbOf(s.photo_key)"
-                :src="thumbOf(s.photo_key)!"
-                :alt="s.name"
-                loading="lazy"
-                class="w-full h-full object-contain"
-              >
-              <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
-            </div>
-            <span v-if="s.brand" class="badge-info self-start mb-1.5">{{ s.brand.name }}</span>
-            <h4 class="font-medium text-sm line-clamp-2 mb-1">{{ s.name }}</h4>
-            <p class="text-xs text-ink-faint mb-2">{{ s.sku }}</p>
-            <div class="mt-auto">
-              <span class="text-base font-bold text-primary">
-                {{ formatMoney(s.has_discount ? s.client_price : s.retail_price, s.currency) }}
-              </span>
-            </div>
-          </NuxtLink>
         </div>
       </div>
     </div>
