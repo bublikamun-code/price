@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // «Моя аналитика» — сводка клиента (route /dashboard): KPI, график заявок за 30 дней,
-// статусы, топ товаров, последние/активные заявки, изменения цен в избранном, новинки.
+// статусы, топ товаров, последние/активные заявки, изменения цен в избранном, акции и новинки.
 // GET /api/v1/dashboard (аналог /api/v1/manager/dashboard для клиента, кэш ~60 с).
 import type { OrderStatus, OrdersByDayItem } from '~/types/api'
 
@@ -89,6 +89,8 @@ interface ClientDashboardData {
   active_orders: ClientActiveOrder[]
   favorite_price_changes: ClientPriceChange[]
   new_arrivals: ClientNewArrival[]
+  // Товары со скидкой клиента (карусель «Акции»). Поле новое — бэкенд может ещё не отдавать.
+  promos?: ClientNewArrival[]
   quick_actions: { repeat_order_id: string | null }
 }
 
@@ -219,18 +221,19 @@ onMounted(load)
       <!-- KPI -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
         <template v-if="loading">
-          <div v-for="i in 4" :key="i" class="card p-5">
+          <div v-for="i in 4" :key="i" class="card p-4 sm:p-5">
             <div class="skeleton h-4 w-2/3 mb-3" />
             <div class="skeleton h-8 w-1/2" />
           </div>
         </template>
         <template v-else-if="data">
-          <div v-for="k in kpiTiles" :key="k.label" class="card p-5">
+          <!-- min-w-0 + break-words: длинные суммы («3 690,00 BYN») не вылезают за карточку на 359px -->
+          <div v-for="k in kpiTiles" :key="k.label" class="card p-4 sm:p-5 min-w-0">
             <div class="flex items-center justify-between gap-2 mb-3">
-              <span class="text-xs text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
+              <span class="text-xs sm:text-sm text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
               <span :class="`badge-${k.tone} shrink-0`"><Icon :name="k.icon" class="w-3.5 h-3.5" /></span>
             </div>
-            <p class="text-2xl font-bold whitespace-nowrap" :title="k.value">{{ k.value }}</p>
+            <p class="text-xl sm:text-3xl font-bold break-words" :title="k.value">{{ k.value }}</p>
           </div>
         </template>
       </div>
@@ -278,81 +281,80 @@ onMounted(load)
         </div>
       </div>
 
-      <!-- Топ товаров + последние заявки -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-        <div class="panel overflow-hidden">
-          <h3 class="font-semibold px-6 py-4">Топ-5 товаров</h3>
-          <div v-if="loading" class="px-6 pb-6">
-            <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
-          </div>
-          <EmptyState
-            v-else-if="!data?.top_products.length"
-            icon="heroicons:shopping-bag"
-            title="Пока нет данных"
-            description="Товары из ваших заявок появятся в этом списке."
-          />
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                  <th class="px-6 py-2.5 font-medium">Артикул</th>
-                  <th class="px-4 py-2.5 font-medium">Наименование</th>
-                  <th class="px-4 py-2.5 font-medium text-right whitespace-nowrap">Кол-во</th>
-                  <th class="px-6 py-2.5 font-medium text-right whitespace-nowrap">Сумма</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="p in data.top_products" :key="p.product_id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-6 py-2.5 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
-                  <td class="px-4 py-2.5 max-w-56 truncate" :title="p.name">{{ p.name }}</td>
-                  <td class="px-4 py-2.5 text-right">{{ p.qty }}</td>
-                  <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ formatMoney(p.revenue_byn, 'BYN') }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <!-- Топ-5 товаров: полная ширина -->
+      <div class="panel overflow-hidden mb-8">
+        <h3 class="font-semibold px-6 py-4">Топ-5 товаров</h3>
+        <div v-if="loading" class="px-6 pb-6">
+          <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
         </div>
-
-        <div class="panel overflow-hidden">
-          <h3 class="font-semibold px-6 py-4">Последние заявки</h3>
-          <div v-if="loading" class="px-6 pb-6">
-            <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
-          </div>
-          <EmptyState
-            v-else-if="!data?.recent_orders.length"
-            icon="heroicons:clock"
-            title="Заявок пока нет"
-            description="История ваших заявок будет здесь."
-          />
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                  <th class="px-6 py-2.5 font-medium">№</th>
-                  <th class="px-4 py-2.5 font-medium">Дата</th>
-                  <th class="px-4 py-2.5 font-medium">Статус</th>
-                  <th class="px-6 py-2.5 font-medium text-right">Сумма</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="o in data.recent_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-6 py-2.5">
-                    <NuxtLink :to="`/orders/${o.id}`" class="font-medium text-primary hover:underline whitespace-nowrap">
-                      {{ formatOrderNumber(o.seq, o.id) }}
-                    </NuxtLink>
-                  </td>
-                  <td class="px-4 py-2.5 text-ink-muted whitespace-nowrap">{{ formatDate(o.created_at) }}</td>
-                  <td class="px-4 py-2.5"><span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span></td>
-                  <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ formatMoney(o.total_amount, 'BYN') }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        <EmptyState
+          v-else-if="!data?.top_products.length"
+          icon="heroicons:shopping-bag"
+          title="Пока нет данных"
+          description="Товары из ваших заявок появятся в этом списке."
+        />
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
+                <th class="px-6 py-2.5 font-medium">Артикул</th>
+                <th class="px-4 py-2.5 font-medium">Наименование</th>
+                <th class="px-4 py-2.5 font-medium text-right whitespace-nowrap">Кол-во</th>
+                <th class="px-6 py-2.5 font-medium text-right whitespace-nowrap">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in data.top_products" :key="p.product_id" class="border-t border-border hover:bg-canvas/60">
+                <td class="px-6 py-2.5 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
+                <td class="px-4 py-2.5 max-w-56 truncate" :title="p.name">{{ p.name }}</td>
+                <td class="px-4 py-2.5 text-right">{{ p.qty }}</td>
+                <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ formatMoney(p.revenue_byn, 'BYN') }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <!-- Заявки в работе + цены избранного + новинки -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
+      <!-- Последние заявки: полная ширина -->
+      <div class="panel overflow-hidden mb-8">
+        <h3 class="font-semibold px-6 py-4">Последние заявки</h3>
+        <div v-if="loading" class="px-6 pb-6">
+          <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
+        </div>
+        <EmptyState
+          v-else-if="!data?.recent_orders.length"
+          icon="heroicons:clock"
+          title="Заявок пока нет"
+          description="История ваших заявок будет здесь."
+        />
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
+                <th class="px-6 py-2.5 font-medium">№</th>
+                <th class="px-4 py-2.5 font-medium">Дата</th>
+                <th class="px-4 py-2.5 font-medium">Статус</th>
+                <th class="px-6 py-2.5 font-medium text-right">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="o in data.recent_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+                <td class="px-6 py-2.5">
+                  <NuxtLink :to="`/orders/${o.id}`" class="font-medium text-primary hover:underline whitespace-nowrap">
+                    {{ formatOrderNumber(o.seq, o.id) }}
+                  </NuxtLink>
+                </td>
+                <td class="px-4 py-2.5 text-ink-muted whitespace-nowrap">{{ formatDate(o.created_at) }}</td>
+                <td class="px-4 py-2.5"><span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span></td>
+                <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ formatMoney(o.total_amount, 'BYN') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Заявки в работе + изменения цен избранного: ряд из двух колонок -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
         <div class="panel overflow-hidden">
           <h3 class="font-semibold px-6 py-4">Заявки в работе</h3>
           <div v-if="loading" class="px-6 pb-6">
@@ -431,40 +433,15 @@ onMounted(load)
           </div>
         </div>
 
-        <div class="card overflow-hidden">
-          <h3 class="font-semibold px-6 py-4">Последние поступления</h3>
-          <div v-if="loading" class="px-6 pb-6 space-y-3">
-            <div v-for="i in 3" :key="i" class="skeleton h-16 w-full" />
-          </div>
-          <EmptyState
-            v-else-if="!data?.new_arrivals.length"
-            icon="heroicons:sparkles"
-            title="Пока нет новинок"
-            description="Новые товары каталога появятся здесь."
-          />
-          <div v-else class="px-6 pb-6 space-y-4">
-            <NuxtLink v-for="p in data.new_arrivals" :key="p.id" :to="`/catalog/${p.sku}`" class="flex gap-3 group">
-              <div class="w-16 h-16 shrink-0 bg-canvas rounded-card flex items-center justify-center overflow-hidden">
-                <img
-                  v-if="thumbOf(p.photo_key)"
-                  :src="thumbOf(p.photo_key)!"
-                  :alt="p.name"
-                  class="w-full h-full object-contain"
-                  loading="lazy"
-                >
-                <Icon v-else name="heroicons:photo" class="w-6 h-6 text-ink-faint" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-medium line-clamp-2 group-hover:text-primary">{{ p.name }}</p>
-                <p class="text-xs text-ink-faint mb-1">Артикул: {{ p.sku }}</p>
-                <div class="flex items-baseline gap-2">
-                  <span :class="[p.has_discount ? 'text-primary' : '', 'text-sm font-bold']">{{ formatMoney(p.client_price, p.currency) }}</span>
-                  <span v-if="p.has_discount" class="badge-primary text-[10px]">Скидка</span>
-                </div>
-              </div>
-            </NuxtLink>
-          </div>
-        </div>
+      </div>
+
+      <!-- Акции + новинки: карусели товаров (библиотеки не нужны — нативный скролл со snap) -->
+      <div
+        v-if="!loading && (data?.promos?.length || data?.new_arrivals?.length)"
+        class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8"
+      >
+        <ProductCarousel v-if="data?.promos?.length" title="Акции" icon="heroicons:tag" :items="data.promos" />
+        <ProductCarousel v-if="data?.new_arrivals?.length" title="Новинки" icon="heroicons:sparkles" :items="data.new_arrivals" />
       </div>
     </template>
   </div>

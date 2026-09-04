@@ -327,8 +327,8 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Инфо -->
-        <div>
+        <!-- Инфо (липкий блок покупки на десктопе) -->
+        <div class="lg:sticky lg:top-[88px] lg:self-start">
           <h1 class="text-3xl font-display font-bold mb-1">{{ product.name }}</h1>
           <p class="text-sm text-ink-muted mt-1 mb-4">Артикул: {{ product.sku }}</p>
 

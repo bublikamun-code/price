@@ -174,3 +174,25 @@ async def fetch_new_arrivals(db: AsyncSession, *, limit: int = 5) -> list:
         .limit(limit)
     )
     return list((await db.execute(stmt)).all())
+
+
+async def fetch_promos(db: AsyncSession, *, limit: int = 10) -> list:
+    """Товары со скидкой клиента (персональная фиксированная цена, §8/§17).
+
+    Источник блока «Акции» клиентского дашборда: override_price NOT NULL —
+    цена по договору ниже базовой розницы.
+    """
+    stmt = (
+        select(Product, Series.photo_key.label("photo_key"))
+        .select_from(Product)
+        .outerjoin(Series, Series.id == Product.series_id)
+        .where(
+            Product.deleted_at.is_(None),
+            Product.override_price.is_not(None),
+            Product.override_valid_until.is_(None)
+            | (Product.override_valid_until > func.now()),
+        )
+        .order_by(Product.updated_at.desc(), Product.id.desc())
+        .limit(limit)
+    )
+    return list((await db.execute(stmt)).all())

@@ -78,6 +78,16 @@ const page = ref(1)
 const priceMode = ref<'discount' | 'retail'>('discount')
 const viewMode = ref<'grid' | 'list'>('grid')
 
+// Видимость панели фильтров:
+// - десктоп (lg+): aside тогглится кнопкой, по умолчанию показан
+// - мобильный (<lg): aside открыт только как шторка (drawerOpen), по умолчанию закрыт
+const desktopFiltersVisible = ref(true)
+const drawerOpen = ref(false)
+function toggleFilters() {
+  if (window.innerWidth >= 1024) desktopFiltersVisible.value = !desktopFiltersVisible.value
+  else drawerOpen.value = true
+}
+
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
 async function load() {
@@ -225,6 +235,11 @@ onMounted(load)
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2 justify-end">
+        <!-- Фильтры: на десктопе тоггл панели, на мобильном — открытие шторки -->
+        <button class="btn-ghost py-2" @click="toggleFilters">
+          <Icon name="heroicons:funnel" class="w-4 h-4" />
+          Фильтры
+        </button>
         <!-- Переключатель цены -->
         <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
           <button
@@ -302,10 +317,30 @@ onMounted(load)
     <div v-if="exportError" class="badge-warning w-full justify-center py-3 mb-6">{{ exportError }}</div>
 
     <div class="flex gap-6">
-      <!-- Фильтры -->
-      <aside class="hidden lg:block w-64 shrink-0">
-        <div class="card p-5 sticky top-[88px]">
-          <h3 class="font-semibold mb-4">Фильтры</h3>
+      <!-- Оверлей мобильной шторки фильтров -->
+      <div
+        v-if="drawerOpen"
+        class="fixed inset-0 z-40 bg-ink/40 lg:hidden"
+        @click="drawerOpen = false"
+      />
+
+      <!-- Фильтры: на десктопе — липкая колонка (тоггл кнопкой), на мобильном — шторка слева -->
+      <aside
+        class="w-72 lg:w-64 shrink-0 lg:sticky lg:top-[88px] lg:self-start"
+        :class="[
+          drawerOpen
+            ? 'fixed inset-y-0 left-0 z-50 bg-canvas overflow-y-auto p-4'
+            : 'hidden',
+          desktopFiltersVisible ? 'lg:block' : 'lg:hidden',
+        ]"
+      >
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold">Фильтры</h3>
+            <button class="btn-ghost p-1.5 lg:hidden" aria-label="Закрыть фильтры" @click="drawerOpen = false">
+              <Icon name="heroicons:x-mark" class="w-5 h-5" />
+            </button>
+          </div>
 
           <div class="mb-5">
             <label class="label">Поиск</label>
@@ -372,14 +407,14 @@ onMounted(load)
         <!-- Плитка -->
         <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           <article v-for="p in products" :key="p.id" class="card card-hover p-5 flex flex-col">
-            <!-- Фото -->
-            <div class="aspect-[4/3] md:aspect-square bg-canvas rounded-card mb-4 flex items-center justify-center overflow-hidden">
+            <!-- Фото: квадратное окошко без полей, фото на всю ширину -->
+            <div class="aspect-square bg-surface rounded-card mb-4 flex items-center justify-center overflow-hidden">
               <img
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key)!"
                 :alt="p.name"
                 loading="lazy"
-                class="w-full h-full object-contain"
+                class="w-full h-full object-cover"
               >
               <Icon v-else name="heroicons:photo" class="w-10 h-10 text-ink-faint" />
             </div>
@@ -441,30 +476,30 @@ onMounted(load)
         <!-- Список -->
         <div v-else class="card overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="w-full text-sm table-fixed min-w-[640px]">
+            <table class="w-full text-sm table-fixed">
               <thead>
                 <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
                   <th class="px-2 py-2 font-medium w-[11%]">Артикул</th>
                   <th class="px-2 py-2 font-medium w-[30%]">Наименование</th>
-                  <th class="px-2 py-2 font-medium w-[11%]">Бренд</th>
-                  <th class="px-2 py-2 font-medium w-[10%]">Серия</th>
-                  <th class="px-2 py-2 font-medium w-[10%]">Наличие</th>
-                  <th class="px-2 py-2 font-medium text-right w-[11%]">Цена</th>
-                  <th class="px-2 py-2 font-medium text-center w-[9%] whitespace-nowrap">Кол-во</th>
-                  <th class="px-2 py-2 font-medium text-right w-[5%]" />
+                  <th class="px-2 py-2 font-medium w-[11%] hidden sm:table-cell">Бренд</th>
+                  <th class="px-2 py-2 font-medium w-[10%] hidden sm:table-cell">Серия</th>
+                  <th class="px-2 py-2 font-medium w-[10%] hidden sm:table-cell">Наличие</th>
+                  <th class="px-2 py-2 font-medium text-right w-[16%] sm:w-[11%]">Цена</th>
+                  <th class="px-2 py-2 font-medium text-center w-[18%] sm:w-[9%] whitespace-nowrap">Кол-во</th>
+                  <th class="px-2 py-2 font-medium text-right w-[12%] sm:w-[5%]" />
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
+                  <td class="px-2 py-2 font-mono text-xs max-w-0 truncate" :title="p.sku">{{ p.sku }}</td>
                   <td class="px-2 py-2 truncate" :title="p.name">
                     <NuxtLink :to="`/catalog/${p.sku}`" class="font-medium hover:text-primary transition-colors">
                       {{ p.name }}
                     </NuxtLink>
                   </td>
-                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate">{{ p.brand?.name || '—' }}</td>
-                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate">{{ p.series?.name || '—' }}</td>
-                  <td class="px-2 py-2">
+                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate hidden sm:table-cell">{{ p.brand?.name || '—' }}</td>
+                  <td class="px-2 py-2 text-ink-muted whitespace-nowrap truncate hidden sm:table-cell">{{ p.series?.name || '—' }}</td>
+                  <td class="px-2 py-2 hidden sm:table-cell">
                     <span class="badge whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
                       {{ stockLabel[p.stock_status] || p.stock_status }}
                     </span>
@@ -484,7 +519,7 @@ onMounted(load)
                       type="number"
                       min="1"
                       :value="getQty(p.sku)"
-                      class="input py-1.5 w-14 text-center"
+                      class="input py-1.5 w-12 sm:w-14 text-center"
                       @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
                     >
                   </td>

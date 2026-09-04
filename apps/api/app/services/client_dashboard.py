@@ -24,6 +24,7 @@ from app.schemas.dashboard import (
     ClientNewArrival,
     ClientOrdersByDayItem,
     ClientPriceChange,
+    ClientPromo,
     ClientQuickActions,
     ClientRecentOrder,
     ClientStatusCount,
@@ -43,6 +44,7 @@ TOP_PRODUCTS_LIMIT = 5
 RECENT_ORDERS_LIMIT = 5
 FAVORITES_LIMIT = 10
 NEW_ARRIVALS_LIMIT = 5
+PROMOS_LIMIT = 10
 
 _TWO_PLACES = Decimal("0.01")
 _MSK = ZoneInfo("Europe/Minsk")
@@ -101,6 +103,7 @@ class ClientDashboardService:
         last_order_id = await repo.fetch_last_order_id(self.db, client_id=client_id)
         price_changes = await self._favorite_price_changes()
         new_arrivals = await self._new_arrivals()
+        promos = await self._promos()
 
         # Ровно DAYS_WINDOW календарных дней включая сегодня, по возрастанию,
         # без дней — нули (zero-fill).
@@ -150,6 +153,7 @@ class ClientDashboardService:
             ],
             favorite_price_changes=price_changes,
             new_arrivals=new_arrivals,
+            promos=promos,
             quick_actions=ClientQuickActions(repeat_order_id=last_order_id),
         )
 
@@ -224,6 +228,25 @@ class ClientDashboardService:
             pr = await self.pricing.price_product(product, self.user, "fixed")
             out.append(
                 ClientNewArrival(
+                    id=product.id,
+                    sku=product.sku,
+                    name=product.name,
+                    photo_key=photo_key,
+                    client_price=Decimal(str(pr["client_price"])),
+                    currency=pr["currency"],
+                    has_discount=pr["has_discount"],
+                )
+            )
+        return out
+
+    async def _promos(self) -> list[ClientPromo]:
+        """Товары со скидкой клиента (персональная цена) для блока «Акции»."""
+        rows = await repo.fetch_promos(self.db, limit=PROMOS_LIMIT)
+        out: list[ClientPromo] = []
+        for product, photo_key in rows:
+            pr = await self.pricing.price_product(product, self.user, "fixed")
+            out.append(
+                ClientPromo(
                     id=product.id,
                     sku=product.sku,
                     name=product.name,

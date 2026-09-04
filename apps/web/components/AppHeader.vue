@@ -194,6 +194,17 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
               </span>
               <Icon name="heroicons:chevron-down" class="w-3.5 h-3.5 text-ink-faint" />
             </button>
+            <!-- Меню профиля: внутри relative-обёртки, иначе absolute улетает
+                 вниз страницы (positioned-предок — вся страница, а не шапка) -->
+            <div v-if="profileOpen" class="absolute right-0 top-full mt-2 w-56 card p-2 z-50">
+              <div class="px-3 py-2 border-b border-border mb-1">
+                <p class="text-sm font-medium text-ink truncate">{{ auth.user?.name }}</p>
+                <p class="text-xs text-ink-faint truncate">{{ auth.user?.email }}</p>
+              </div>
+              <NuxtLink to="/profile" class="nav-link" @click="profileOpen = false">Профиль</NuxtLink>
+              <NuxtLink to="/notifications" class="nav-link" @click="profileOpen = false">Уведомления</NuxtLink>
+              <button class="nav-link w-full text-left text-danger" @click="auth.logout()">Выйти</button>
+            </div>
           </div>
         </template>
 
@@ -287,15 +298,6 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
 
   <!-- Закрытие по клику вне меню: прозрачный оверлей под меню -->
   <div v-if="profileOpen" class="fixed inset-0 z-40" @click="profileOpen = false" />
-  <div v-if="profileOpen" class="absolute right-0 top-full mt-2 w-56 card p-2 z-50">
-    <div class="px-3 py-2 border-b border-border mb-1">
-      <p class="text-sm font-medium text-ink truncate">{{ auth.user?.name }}</p>
-      <p class="text-xs text-ink-faint truncate">{{ auth.user?.email }}</p>
-    </div>
-    <NuxtLink to="/profile" class="nav-link" @click="profileOpen = false">Профиль</NuxtLink>
-    <NuxtLink to="/notifications" class="nav-link" @click="profileOpen = false">Уведомления</NuxtLink>
-    <button class="nav-link w-full text-left text-danger" @click="auth.logout()">Выйти</button>
-  </div>
 </template>
 
 <style scoped>

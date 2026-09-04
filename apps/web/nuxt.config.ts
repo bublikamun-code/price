@@ -22,6 +22,9 @@ export default defineNuxtConfig({
     preference: 'dark',   // новый дизайн — тёмный по умолчанию
     fallback: 'dark',
     classSuffix: '',      // класс `dark` на <html> (селекторы в main.css)
+    // Новый ключ: в браузерах пользователей остался старый 'nuxt-color-mode'='light'
+    // от прошлого светлого дизайна, он перекрывал дефолт 'dark'. Начинаем чисто.
+    storageKey: 'nuxt-color-mode-v2',
   },
 
   runtimeConfig: {

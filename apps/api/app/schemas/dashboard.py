@@ -76,6 +76,10 @@ class ClientNewArrival(BaseModel):
     has_discount: bool
 
 
+class ClientPromo(ClientNewArrival):
+    """Товар со скидкой клиента (блок «Акции») — тот же шейп, что «Новинки»."""
+
+
 class ClientQuickActions(BaseModel):
     repeat_order_id: uuid.UUID | None = None  # последняя заявка клиента (любой статус)
 
@@ -89,4 +93,5 @@ class ClientDashboardOut(BaseModel):
     active_orders: list[ClientActiveOrder]
     favorite_price_changes: list[ClientPriceChange]
     new_arrivals: list[ClientNewArrival]
+    promos: list[ClientPromo] = []  # товары со скидкой клиента (блок «Акции»)
     quick_actions: ClientQuickActions
