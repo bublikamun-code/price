@@ -20,11 +20,17 @@ from app.services.cache import get_session_cached, set_session_cached
 
 
 def _extract_access_token(request: Request) -> str | None:
-    """Достаём access-токен из Authorization: Bearer ... либо из cookie."""
+    """Достаём access-токен из Authorization: Bearer ... либо из cookie.
+
+    Фронт хранит JWT в cookie `auth_token` (useAuth.persistCookie) — её и
+    ждём в первую очередь: без этого <img>/EventSource, которые не могут
+    послать заголовок Authorization, получали 401 и фото не отображались.
+    `access_token` оставлен как fallback для старых клиентов/мини-приложения.
+    """
     auth = request.headers.get("Authorization")
     if auth and auth.lower().startswith("bearer "):
         return auth.split(" ", 1)[1].strip()
-    return request.cookies.get("access_token")
+    return request.cookies.get("auth_token") or request.cookies.get("access_token")
 
 
 def _extract_refresh_token(request: Request) -> str | None:
