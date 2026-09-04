@@ -96,13 +96,18 @@ log "OK: $TITLE"
 # Smoke-тест дизайна: отдаваемый HTML обязан содержать тёмные токены.
 # Это маркер того, что задеплоен тёмный дизайн, а не светлый откат.
 # PM2 reload грациозный: старый процесс может ещё отвечать первые секунды,
-# поэтому поллим до 90 секунд, а не проверяем один раз.
+# а фронт-прокси хостера может кэшировать HTML — поэтому поллим до 4 минут
+# и логируем КАЖДУЮ неудачную итерацию (код/размер/маркер), чтобы при провале
+# было видно, ЧТО именно отвечало в окне ожидания.
 SMOKED=0
-for i in $(seq 1 30); do
-  if curl -s --max-time 15 "$SITE_URL/login" | grep -q -- '--color-canvas:10 10 10'; then
+for i in $(seq 1 80); do
+  S_CODE="$(curl -s -o "$TMP/smoke.html" -w '%{http_code}' --max-time 15 "$SITE_URL/login" || echo 000)"
+  S_MARK="$(grep -c -- '--color-canvas:10 10 10' "$TMP/smoke.html" 2>/dev/null || echo 0)"
+  if [ "$S_MARK" -ge 1 ]; then
     SMOKED=1
     break
   fi
+  log "smoke iter=$i: http=$S_CODE bytes=$(wc -c < "$TMP/smoke.html" 2>/dev/null || echo 0) marker=$S_MARK"
   sleep 3
 done
 if [ "$SMOKED" = "1" ]; then
