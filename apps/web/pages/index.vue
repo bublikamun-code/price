@@ -175,9 +175,10 @@ onMounted(() => {
 
     <!-- Дашборд авторизованного клиента (тот же layout: AppHeader + container-app) -->
     <section v-else-if="isClient" class="container-app py-8 lg:py-12">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
-        <!-- Левая колонка (2/3): заявки + баннеры -->
-        <div class="md:col-span-2 grid gap-5 content-start">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start lg:items-stretch">
+        <!-- Левая колонка (2/3): заявки + баннеры. Баннеры растягиваются,
+             чтобы нижняя граница колонки совпадала с правой (Быстрые действия). -->
+        <div class="md:col-span-2 grid gap-5 content-start lg:h-full lg:flex lg:flex-col">
         <!-- Последние заявки -->
         <div v-if="!ordersFailed" class="card p-5">
           <div class="flex items-center justify-between gap-3 mb-4">
@@ -212,7 +213,7 @@ onMounted(() => {
         </div>
 
         <!-- Баннеры: Акции и Новинки (приоритет — баннеры, запасной вариант — товары дашборда) -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 lg:flex-1 lg:min-h-0">
           <HomeBanner
             title="Акции"
             icon="heroicons:tag"
