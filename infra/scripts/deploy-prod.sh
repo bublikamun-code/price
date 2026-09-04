@@ -109,8 +109,15 @@ if [ "$SMOKED" = "1" ]; then
   log "smoke: тёмная тема на месте"
 else
   log "СМОК ПРОВАЛ: тёмный дизайн не обнаружен. Диагностика ответа /login:"
-  curl -s --max-time 15 "$SITE_URL/login" | head -c 600 || true
+  BODY="$(curl -s --max-time 15 "$SITE_URL/login" || true)"
+  echo "$BODY" | head -c 600
   echo
+  log "color-canvas токены в ответе:"
+  echo "$BODY" | grep -o -- '--color-canvas:[^;}]*' | sort -u | head -10 || true
+  log "title ответа: $(echo "$BODY" | grep -oE '<title>[^<]*' | head -1 || true)"
+  if [ "${DEPLOY_NO_ROLLBACK:-0}" = "1" ]; then
+    die "DEPLOY_NO_ROLLBACK=1: новый .output ОСТАВЛЕН на сервере для ручной диагностики"
+  fi
   log "откатываю .output и перезапускаю"
   $SSH "$REMOTE" "set -e; [ -d $PP/app/web/.output.prev ] && rm -rf $PP/app/web/.output && mv $PP/app/web/.output.prev $PP/app/web/.output && $PP/bin/start-all.sh && echo 'rollback ok'" \
     || die "не удалось выполнить авто-откат — верни .output вручную на сервере"
