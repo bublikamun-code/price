@@ -21,7 +21,8 @@ async function toggleFav(sku: string) {
 }
 
 type Sort = 'name' | '-name' | 'price' | '-price' | 'sku'
-const PER_PAGE = 12
+// 9 = 3 ряда плитки: пагинация помещается в экран без скролла
+const PER_PAGE = 9
 
 const sortOptions = [
   { value: 'name', label: 'Название А→Я' },
@@ -107,7 +108,6 @@ selectedSeries.value = idsFromQuery('series')
 const selectedStock = ref<string>('') // '' | IN_STOCK | PREORDER
 const sort = ref<Sort>('name')
 const page = ref(1)
-const priceMode = ref<'discount' | 'retail'>('discount')
 const viewMode = ref<'grid' | 'list'>('grid')
 
 // Видимость панели фильтров:
@@ -272,94 +272,84 @@ onMounted(load)
 
 <template>
   <div>
-    <!-- Заголовок + тулбар -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Каталог</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          <template v-if="!loading">Показано {{ products.length }} из {{ total }}</template>
-          <template v-else>Загрузка…</template>
-        </p>
-      </div>
-      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-        <!-- Мобильный ряд 1: фильтры | цена | вид (на десктопе обёртки растворяются) -->
-        <div class="flex items-center gap-2 justify-between sm:contents">
-          <!-- Фильтры: кнопка только на мобильном (иконка) и планшете (с текстом);
-              на десктопе панель всегда видна -->
-          <button class="btn-ghost py-2 px-2 sm:px-3 lg:hidden" title="Фильтры" @click="toggleFilters">
-            <Icon name="heroicons:funnel" class="w-4 h-4" />
-            <span class="hidden sm:inline">Фильтры</span>
-          </button>
-          <!-- Переключатель цены -->
-          <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
-            <button
-              class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
-              :class="priceMode === 'discount' ? 'bg-primary text-white' : 'text-ink-muted'"
-              @click="priceMode = 'discount'"
-            >Со скидкой</button>
-            <button
-              class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
-              :class="priceMode === 'retail' ? 'bg-primary text-white' : 'text-ink-muted'"
-              @click="priceMode = 'retail'"
-            >Розница</button>
-          </div>
-          <!-- Переключатель вида -->
-          <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
-            <button
-              class="p-1.5 rounded-pill transition-colors"
-              :class="viewMode === 'grid' ? 'bg-primary text-white' : 'text-ink-muted'"
-              title="Плитка"
-              @click="viewMode = 'grid'"
-            >
-              <Icon name="heroicons:squares-2x2" class="w-4 h-4" />
-            </button>
-            <button
-              class="p-1.5 rounded-pill transition-colors"
-              :class="viewMode === 'list' ? 'bg-primary text-white' : 'text-ink-muted'"
-              title="Список"
-              @click="viewMode = 'list'"
-            >
-              <Icon name="heroicons:list-bullet" class="w-4 h-4" />
-            </button>
-          </div>
+    <!-- Заголовок + тулбар: карточка в стиле остальных блоков, поднята к
+         верхней границе меню (sidebar), отступ до контента чуть больше -->
+    <div class="card p-4 sm:p-5 -mt-2 lg:-mt-4 mb-8">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold">Каталог</h1>
+          <p class="text-sm text-ink-muted mt-1">
+            <template v-if="!loading">Показано {{ products.length }} из {{ total }}</template>
+            <template v-else>Загрузка…</template>
+          </p>
         </div>
-        <!-- Мобильный ряд 2: сортировка (тянется) | экспорт -->
-        <div class="flex items-center gap-2 sm:contents">
-          <!-- Сортировка -->
-          <BaseSelect v-model="sort" :options="sortOptions" class="flex-1 sm:flex-none sm:min-w-[180px]" @change="applyFilters" />
-          <!-- Экспорт каталога под текущие фильтры -->
-          <div class="relative">
-            <button
-              class="btn-ghost py-2"
-              :disabled="exporting"
-              @click="exportMenuOpen = !exportMenuOpen"
-            >
-              <span
-                v-if="exporting"
-                class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
-              />
-              <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
-              {{ exporting ? 'Готовим файл…' : 'Экспорт' }}
+        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <!-- Мобильный ряд 1: фильтры | вид (на десктопе обёртки растворяются) -->
+          <div class="flex items-center gap-2 justify-between sm:contents">
+            <!-- Фильтры: кнопка только на мобильном (иконка) и планшете (с текстом);
+                на десктопе панель всегда видна -->
+            <button class="btn-ghost py-2 px-2 sm:px-3 lg:hidden" title="Фильтры" @click="toggleFilters">
+              <Icon name="heroicons:funnel" class="w-4 h-4" />
+              <span class="hidden sm:inline">Фильтры</span>
             </button>
-            <div v-if="exportMenuOpen && !exporting" class="absolute right-0 mt-2 card p-1.5 w-44 z-20">
+            <!-- Переключатель вида -->
+            <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
               <button
-                class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
-                @click="startExport('csv')"
+                class="p-1.5 rounded-pill transition-colors"
+                :class="viewMode === 'grid' ? 'bg-primary text-white' : 'text-ink-muted'"
+                title="Плитка"
+                @click="viewMode = 'grid'"
               >
-                CSV (Excel)
+                <Icon name="heroicons:squares-2x2" class="w-4 h-4" />
               </button>
               <button
-                class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
-                @click="startExport('xlsx')"
+                class="p-1.5 rounded-pill transition-colors"
+                :class="viewMode === 'list' ? 'bg-primary text-white' : 'text-ink-muted'"
+                title="Список"
+                @click="viewMode = 'list'"
               >
-                XLSX
+                <Icon name="heroicons:list-bullet" class="w-4 h-4" />
               </button>
+            </div>
+          </div>
+          <!-- Мобильный ряд 2: сортировка (тянется) | экспорт -->
+          <div class="flex items-center gap-2 sm:contents">
+            <!-- Сортировка -->
+            <BaseSelect v-model="sort" :options="sortOptions" class="flex-1 sm:flex-none sm:min-w-[180px]" @change="applyFilters" />
+            <!-- Экспорт каталога под текущие фильтры -->
+            <div class="relative">
               <button
-                class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
-                @click="startExport('pdf')"
+                class="btn-ghost py-2"
+                :disabled="exporting"
+                @click="exportMenuOpen = !exportMenuOpen"
               >
-                PDF
+                <span
+                  v-if="exporting"
+                  class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
+                />
+                <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
+                {{ exporting ? 'Готовим файл…' : 'Экспорт' }}
               </button>
+              <div v-if="exportMenuOpen && !exporting" class="absolute right-0 mt-2 card p-1.5 w-44 z-20">
+                <button
+                  class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+                  @click="startExport('csv')"
+                >
+                  CSV (Excel)
+                </button>
+                <button
+                  class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+                  @click="startExport('xlsx')"
+                >
+                  XLSX
+                </button>
+                <button
+                  class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+                  @click="startExport('pdf')"
+                >
+                  PDF
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -377,9 +367,10 @@ onMounted(load)
         @click="drawerOpen = false"
       />
 
-      <!-- Фильтры: на десктопе — липкая колонка (всегда видна), на мобильном — шторка слева -->
+      <!-- Фильтры: на десктопе — колонка на всю высоту каталога (нижняя граница
+          совпадает с границей таблицы/карточек), на мобильном — шторка слева -->
       <aside
-        class="w-72 lg:w-64 shrink-0 lg:sticky lg:top-[88px] lg:self-start"
+        class="w-72 lg:w-64 shrink-0"
         :class="[
           drawerOpen
             ? 'fixed inset-y-0 left-0 z-50 bg-canvas overflow-y-auto p-4'
@@ -387,7 +378,7 @@ onMounted(load)
           'lg:block',
         ]"
       >
-        <div class="card p-5">
+        <div class="card p-5 h-full flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="font-semibold">Фильтры</h3>
             <button class="btn-ghost p-1.5 lg:hidden" aria-label="Закрыть фильтры" @click="drawerOpen = false">
@@ -449,7 +440,7 @@ onMounted(load)
             <BaseSelect v-model="selectedStock" :options="stockOptions" class="min-w-[150px]" @change="applyFilters" />
           </div>
 
-          <button class="btn-ghost w-full justify-center" @click="resetFilters">Сбросить</button>
+          <button class="btn-ghost w-full justify-center mt-auto" @click="resetFilters">Сбросить</button>
         </div>
       </aside>
 
@@ -506,7 +497,7 @@ onMounted(load)
             </div>
 
             <div class="flex-1 min-w-0 flex flex-col">
-              <div class="flex items-start justify-between gap-2 mb-1">
+              <div class="flex flex-wrap items-center gap-2 mb-1">
                 <span v-if="p.brand" class="badge-info">{{ p.brand.name }}</span>
                 <span class="shrink-0 whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
                   {{ stockLabel[p.stock_status] || p.stock_status }}
@@ -530,12 +521,12 @@ onMounted(load)
               </div>
 
               <div class="mt-auto">
-                <div v-if="priceMode === 'discount' && p.has_discount" class="flex items-baseline gap-2 mb-2 sm:mb-3">
+                <div v-if="p.has_discount" class="flex items-baseline gap-2 mb-2 sm:mb-3">
                   <span class="text-lg sm:text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
                   <span class="text-xs sm:text-sm text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
                 </div>
                 <div v-else class="mb-2 sm:mb-3">
-                  <span class="text-lg sm:text-xl font-bold">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                  <span class="text-lg sm:text-xl font-bold">{{ formatMoney(p.client_price, p.currency) }}</span>
                 </div>
                 <div class="flex items-stretch gap-2">
                   <input
@@ -601,12 +592,12 @@ onMounted(load)
                     </span>
                   </td>
                   <td class="px-1 sm:px-2 py-2 text-right max-w-0">
-                    <template v-if="priceMode === 'discount' && p.has_discount">
+                    <template v-if="p.has_discount">
                       <!-- На мобильном валюта и старая цена скрыты, чтобы сумма не налезала на соседние колонки -->
                       <span class="font-bold text-primary block truncate text-xs sm:text-sm">{{ formatMoney(p.client_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
                       <span class="hidden sm:block text-xs text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
                     </template>
-                    <span v-else class="font-bold block truncate text-xs sm:text-sm">{{ formatMoney(p.retail_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
+                    <span v-else class="font-bold block truncate text-xs sm:text-sm">{{ formatMoney(p.client_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
                   </td>
                   <td class="px-1 sm:px-2 py-2 text-center">
                     <input

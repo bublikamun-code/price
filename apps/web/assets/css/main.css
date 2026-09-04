@@ -156,10 +156,10 @@
 
   /* Чипы/бейджи */
   .chip {
-    @apply inline-flex items-center gap-1 px-3 py-1 rounded-pill text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-pill text-xs font-medium whitespace-nowrap;
   }
   .badge {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-xs font-medium whitespace-nowrap;
   }
   .badge-success { @apply badge bg-success-soft text-success-text; }
   .badge-warning { @apply badge bg-warning-soft text-warning-text; }
@@ -254,6 +254,13 @@
 .dark .badge-primary {
   background-color: #fafafa;
   color: #262626;
+}
+/* Товарные фото (в исходниках — белый фон) в тёмной теме слепят белым
+   прямоугольником на тёмной карточке. Инверсия + поворот оттенка: белый фон
+   уходит в тёмный, цвета товара сохраняются. Класс .no-dark-invert —
+   для графики, где инверсия недопустима (баннеры, превью в админке). */
+.dark img.object-contain:not(.no-dark-invert) {
+  filter: invert(1) hue-rotate(180deg);
 }
 /* Ад-хок связки bg-primary text-white в страницах (переключатели вида/цены,
    пагинация, табы фильтров) — та же инверсия, что у .btn-primary выше,

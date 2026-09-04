@@ -234,7 +234,7 @@ onMounted(load)
       <div v-for="b in banners" :key="b.id" class="card p-5 flex flex-col">
         <div class="flex items-start gap-4 mb-4">
           <div class="shrink-0 w-20 h-20 bg-surface rounded-card border border-border overflow-hidden flex items-center justify-center">
-            <img v-if="b.image_key" :src="urlOf(b.image_key)" :alt="b.title" class="w-full h-full object-contain">
+            <img v-if="b.image_key" :src="urlOf(b.image_key)" :alt="b.title" class="w-full h-full object-contain no-dark-invert">
             <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
           </div>
           <div class="min-w-0">
@@ -343,7 +343,7 @@ onMounted(load)
             >
             <div class="flex items-center gap-4">
               <div class="shrink-0 w-20 h-20 bg-surface rounded-card border border-border overflow-hidden flex items-center justify-center">
-                <img v-if="form.image_key" :src="urlOf(form.image_key)" alt="Превью баннера" class="w-full h-full object-contain">
+                <img v-if="form.image_key" :src="urlOf(form.image_key)" alt="Превью баннера" class="w-full h-full object-contain no-dark-invert">
                 <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
               </div>
               <button type="button" class="btn-outline text-sm py-2" :disabled="uploadingImage" @click="pickImage">

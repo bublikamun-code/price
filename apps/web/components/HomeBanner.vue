@@ -61,7 +61,7 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
         v-if="banner?.image_key"
         :src="urlOf(banner.image_key)"
         :alt="banner.title"
-        class="w-full h-full object-contain"
+        class="w-full h-full object-contain no-dark-invert"
         loading="lazy"
       >
       <div v-else class="w-full h-full flex items-center justify-center">
@@ -90,7 +90,7 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
         v-if="banner.image_key"
         :src="urlOf(banner.image_key)"
         :alt="banner.title"
-        class="w-full h-full object-contain"
+        class="w-full h-full object-contain no-dark-invert"
         loading="lazy"
       >
       <div v-else class="w-full h-full flex items-center justify-center">
