@@ -108,7 +108,10 @@ done
 if [ "$SMOKED" = "1" ]; then
   log "smoke: тёмная тема на месте"
 else
-  log "СМОК ПРОВАЛ: тёмный дизайн не обнаружен — откатываю .output и перезапускаю"
+  log "СМОК ПРОВАЛ: тёмный дизайн не обнаружен. Диагностика ответа /login:"
+  curl -s --max-time 15 "$SITE_URL/login" | head -c 600 || true
+  echo
+  log "откатываю .output и перезапускаю"
   $SSH "$REMOTE" "set -e; [ -d $PP/app/web/.output.prev ] && rm -rf $PP/app/web/.output && mv $PP/app/web/.output.prev $PP/app/web/.output && $PP/bin/start-all.sh && echo 'rollback ok'" \
     || die "не удалось выполнить авто-откат — верни .output вручную на сервере"
   die "деплой откачен: новый билд не содержал тёмную тему (светлый дизайн из git?)"
