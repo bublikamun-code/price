@@ -111,13 +111,11 @@ const priceMode = ref<'discount' | 'retail'>('discount')
 const viewMode = ref<'grid' | 'list'>('grid')
 
 // Видимость панели фильтров:
-// - десктоп (lg+): aside тогглится кнопкой, по умолчанию показан
+// - десктоп (lg+): панель всегда показана (кнопки скрытия нет)
 // - мобильный (<lg): aside открыт только как шторка (drawerOpen), по умолчанию закрыт
-const desktopFiltersVisible = ref(true)
 const drawerOpen = ref(false)
 function toggleFilters() {
-  if (window.innerWidth >= 1024) desktopFiltersVisible.value = !desktopFiltersVisible.value
-  else drawerOpen.value = true
+  drawerOpen.value = true
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
@@ -284,8 +282,8 @@ onMounted(load)
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2 justify-end">
-        <!-- Фильтры: на десктопе тоггл панели, на мобильном — открытие шторки -->
-        <button class="btn-ghost py-2" @click="toggleFilters">
+        <!-- Фильтры: кнопка только на мобильном (открывает шторку); на десктопе панель всегда видна -->
+        <button class="btn-ghost py-2 lg:hidden" @click="toggleFilters">
           <Icon name="heroicons:funnel" class="w-4 h-4" />
           Фильтры
         </button>
@@ -373,14 +371,14 @@ onMounted(load)
         @click="drawerOpen = false"
       />
 
-      <!-- Фильтры: на десктопе — липкая колонка (тоггл кнопкой), на мобильном — шторка слева -->
+      <!-- Фильтры: на десктопе — липкая колонка (всегда видна), на мобильном — шторка слева -->
       <aside
         class="w-72 lg:w-64 shrink-0 lg:sticky lg:top-[88px] lg:self-start"
         :class="[
           drawerOpen
             ? 'fixed inset-y-0 left-0 z-50 bg-canvas overflow-y-auto p-4'
             : 'hidden',
-          desktopFiltersVisible ? 'lg:block' : 'lg:hidden',
+          'lg:block',
         ]"
       >
         <div class="card p-5">

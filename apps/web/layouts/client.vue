@@ -5,6 +5,18 @@
 useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 const route = useRoute()
 const auth = useAuth()
+
+// Скрываемое боковое меню: иконки-only режим, состояние запоминается.
+const SIDEBAR_KEY = 'pp.sidebar.collapsed'
+const collapsed = ref(false)
+onMounted(() => {
+  collapsed.value = localStorage.getItem(SIDEBAR_KEY) === '1'
+})
+function toggleSidebar() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(SIDEBAR_KEY, collapsed.value ? '1' : '0')
+}
+
 const navItems = [
   { to: '/', label: 'Главная', icon: 'heroicons:home' },
   { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
@@ -34,21 +46,33 @@ function isActive(to: string) {
   <div class="min-h-screen flex flex-col bg-canvas">
     <AppHeader />
     <div class="flex-1 flex">
-      <!-- Sidebar (desktop) -->
-      <aside class="hidden lg:flex flex-col w-64 shrink-0 border-r border-border bg-surface p-4 sticky top-[72px] h-[calc(100vh-72px)]">
-        <nav class="flex flex-col gap-1">
+      <!-- Sidebar (desktop): можно свернуть до иконок — тоггл запоминается -->
+      <aside
+        class="hidden lg:flex flex-col shrink-0 border-r border-border bg-surface p-4 sticky top-[72px] h-[calc(100vh-72px)] transition-[width] duration-200"
+        :class="collapsed ? 'w-16 items-center' : 'w-64'"
+      >
+        <button
+          class="btn-ghost p-2 mb-2 self-end"
+          :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+          :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+          @click="toggleSidebar"
+        >
+          <Icon :name="collapsed ? 'heroicons:chevron-right' : 'heroicons:chevron-left'" class="w-4 h-4" />
+        </button>
+        <nav class="flex flex-col gap-1 w-full" :class="collapsed ? 'items-center' : ''">
           <NuxtLink
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
             class="nav-link"
-            :class="{ 'nav-link-active': isActive(item.to) }"
+            :class="[collapsed ? 'justify-center px-0 py-2.5' : '', isActive(item.to) ? 'nav-link-active' : '']"
+            :title="collapsed ? item.label : ''"
           >
-            <Icon :name="item.icon" class="w-5 h-5" />
-            <span>{{ item.label }}</span>
+            <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
+            <span v-if="!collapsed">{{ item.label }}</span>
           </NuxtLink>
         </nav>
-        <div class="mt-auto pt-4">
+        <div v-if="!collapsed" class="mt-auto pt-4">
           <ManagerCard :manager="auth.user?.manager" />
         </div>
       </aside>
