@@ -71,6 +71,21 @@ const filesLoading = ref(true)
 const filesFailed = ref(false)
 const lastFile = ref<FileAsset | null>(null)
 
+// Акции/новинки: GET /api/v1/dashboard — берём только карусели товаров.
+const promosLoading = ref(true)
+const promos = ref<ClientNewArrival[]>([])
+const newArrivals = ref<ClientNewArrival[]>([])
+
+interface ClientNewArrival {
+  id: string
+  sku: string
+  name: string
+  photo_key: string | null
+  client_price: string
+  currency: string
+  has_discount: boolean
+}
+
 // Новости: GET /api/v1/news — последние 5 штук для дашборда и лендинга.
 const newsLoading = ref(true)
 const newsFailed = ref(false)
@@ -116,6 +131,15 @@ async function loadDashboard() {
     .finally(() => { filesLoading.value = false })
 
   loadNews()
+
+  // Карусели товаров: акции (товары со скидкой) и новинки.
+  request<{ new_arrivals?: ClientNewArrival[]; promos?: ClientNewArrival[] }>('/api/v1/dashboard')
+    .then((res) => {
+      promos.value = res.promos ?? []
+      newArrivals.value = res.new_arrivals ?? []
+    })
+    .catch(() => {})
+    .finally(() => { promosLoading.value = false })
 }
 
 onMounted(() => {
@@ -260,6 +284,18 @@ onMounted(() => {
             </NuxtLink>
           </nav>
         </div>
+        </div>
+      </div>
+
+      <!-- Акции и новинки: товары со скидкой и недавно добавленные (карусели) -->
+      <div v-if="promosLoading || promos.length || newArrivals.length" class="mt-8">
+        <div v-if="promosLoading" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div class="card p-5"><div class="skeleton h-40 w-full"/></div>
+          <div class="card p-5"><div class="skeleton h-40 w-full"/></div>
+        </div>
+        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <ProductCarousel v-if="promos.length" title="Акции" icon="heroicons:tag" :items="promos" />
+          <ProductCarousel v-if="newArrivals.length" title="Новинки" icon="heroicons:sparkles" :items="newArrivals" />
         </div>
       </div>
 
