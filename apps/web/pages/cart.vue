@@ -28,15 +28,6 @@ async function changeQty(item: CartItemRead, delta: number) {
   }
 }
 
-async function saveNote(item: CartItemRead, e: Event) {
-  const note = (e.target as HTMLInputElement).value
-  try {
-    await update(item.sku, { note })
-  } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось сохранить заметку')
-  }
-}
-
 async function removeItem(item: CartItemRead) {
   removingSku.value = item.sku
   error.value = ''
@@ -127,15 +118,6 @@ onMounted(refresh)
                 <Icon v-else name="heroicons:trash" class="w-4 h-4" />
               </button>
             </div>
-
-            <!-- Заметка -->
-            <input
-              :value="item.note"
-              type="text"
-              placeholder="Заметка к позиции…"
-              class="input py-1.5 mt-2 text-xs"
-              @blur="saveNote(item, $event)"
-            >
 
             <!-- Цена + stepper -->
             <div class="flex items-center justify-between gap-3 mt-3">
