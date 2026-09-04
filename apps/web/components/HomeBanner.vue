@@ -55,7 +55,8 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
       <Icon name="heroicons:arrow-right" class="w-5 h-5 shrink-0 text-ink-faint" />
     </div>
 
-    <div class="aspect-[4/5] lg:aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface rounded-card overflow-hidden border border-border">
+    <!-- Фото только на десктопе; на мобильном карточка короткая — заголовок + текст -->
+    <div class="hidden lg:block aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface rounded-card overflow-hidden border border-border">
       <img
         v-if="banner?.image_key"
         :src="urlOf(banner.image_key)"
@@ -84,7 +85,7 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
       <Icon name="heroicons:arrow-right" class="w-5 h-5 shrink-0 text-ink-faint" />
     </div>
 
-    <div class="aspect-[4/5] lg:aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface rounded-card overflow-hidden border border-border">
+    <div class="hidden lg:block aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface rounded-card overflow-hidden border border-border">
       <img
         v-if="banner.image_key"
         :src="urlOf(banner.image_key)"
@@ -117,7 +118,7 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
       <Icon name="heroicons:arrow-right" class="w-5 h-5 shrink-0 text-ink-faint" />
     </div>
 
-    <div class="aspect-[4/5] lg:aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface rounded-card overflow-hidden border border-border">
+    <div class="hidden lg:block aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface rounded-card overflow-hidden border border-border">
       <img
         v-if="thumbOf(fallback.photo_key)"
         :src="thumbOf(fallback.photo_key)!"

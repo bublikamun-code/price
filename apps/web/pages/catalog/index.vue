@@ -281,81 +281,86 @@ onMounted(load)
           <template v-else>Загрузка…</template>
         </p>
       </div>
-      <div class="flex flex-wrap items-center gap-2 justify-end">
-        <!-- Фильтры: кнопка только на мобильном (открывает шторку); на десктопе панель всегда видна -->
-        <button class="btn-ghost py-2 lg:hidden" @click="toggleFilters">
-          <Icon name="heroicons:funnel" class="w-4 h-4" />
-          Фильтры
-        </button>
-        <!-- Переключатель цены -->
-        <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
-          <button
-            class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
-            :class="priceMode === 'discount' ? 'bg-primary text-white' : 'text-ink-muted'"
-            @click="priceMode = 'discount'"
-          >Со скидкой</button>
-          <button
-            class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
-            :class="priceMode === 'retail' ? 'bg-primary text-white' : 'text-ink-muted'"
-            @click="priceMode = 'retail'"
-          >Розница</button>
-        </div>
-        <!-- Сортировка -->
-        <BaseSelect v-model="sort" :options="sortOptions" class="min-w-[180px]" @change="applyFilters" />
-        <!-- Экспорт каталога под текущие фильтры -->
-        <div class="relative">
-          <button
-            class="btn-ghost py-2"
-            :disabled="exporting"
-            @click="exportMenuOpen = !exportMenuOpen"
-          >
-            <span
-              v-if="exporting"
-              class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
-            />
-            <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
-            {{ exporting ? 'Готовим файл…' : 'Экспорт' }}
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+        <!-- Мобильный ряд 1: фильтры | цена | вид (на десктопе обёртки растворяются) -->
+        <div class="flex items-center gap-2 justify-between sm:contents">
+          <!-- Фильтры: кнопка только на мобильном (открывает шторку); на десктопе панель всегда видна -->
+          <button class="btn-ghost py-2 lg:hidden" @click="toggleFilters">
+            <Icon name="heroicons:funnel" class="w-4 h-4" />
+            Фильтры
           </button>
-          <div v-if="exportMenuOpen && !exporting" class="absolute right-0 mt-2 card p-1.5 w-44 z-20">
+          <!-- Переключатель цены -->
+          <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
             <button
-              class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
-              @click="startExport('csv')"
+              class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
+              :class="priceMode === 'discount' ? 'bg-primary text-white' : 'text-ink-muted'"
+              @click="priceMode = 'discount'"
+            >Со скидкой</button>
+            <button
+              class="px-3 py-1.5 rounded-pill text-sm font-medium whitespace-nowrap transition-colors shrink-0"
+              :class="priceMode === 'retail' ? 'bg-primary text-white' : 'text-ink-muted'"
+              @click="priceMode = 'retail'"
+            >Розница</button>
+          </div>
+          <!-- Переключатель вида -->
+          <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
+            <button
+              class="p-1.5 rounded-pill transition-colors"
+              :class="viewMode === 'grid' ? 'bg-primary text-white' : 'text-ink-muted'"
+              title="Плитка"
+              @click="viewMode = 'grid'"
             >
-              CSV (Excel)
+              <Icon name="heroicons:squares-2x2" class="w-4 h-4" />
             </button>
             <button
-              class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
-              @click="startExport('xlsx')"
+              class="p-1.5 rounded-pill transition-colors"
+              :class="viewMode === 'list' ? 'bg-primary text-white' : 'text-ink-muted'"
+              title="Список"
+              @click="viewMode = 'list'"
             >
-              XLSX
-            </button>
-            <button
-              class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
-              @click="startExport('pdf')"
-            >
-              PDF
+              <Icon name="heroicons:list-bullet" class="w-4 h-4" />
             </button>
           </div>
         </div>
-
-        <!-- Переключатель вида -->
-        <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
-          <button
-            class="p-1.5 rounded-pill transition-colors"
-            :class="viewMode === 'grid' ? 'bg-primary text-white' : 'text-ink-muted'"
-            title="Плитка"
-            @click="viewMode = 'grid'"
-          >
-            <Icon name="heroicons:squares-2x2" class="w-4 h-4" />
-          </button>
-          <button
-            class="p-1.5 rounded-pill transition-colors"
-            :class="viewMode === 'list' ? 'bg-primary text-white' : 'text-ink-muted'"
-            title="Список"
-            @click="viewMode = 'list'"
-          >
-            <Icon name="heroicons:list-bullet" class="w-4 h-4" />
-          </button>
+        <!-- Мобильный ряд 2: сортировка (тянется) | экспорт -->
+        <div class="flex items-center gap-2 sm:contents">
+          <!-- Сортировка -->
+          <BaseSelect v-model="sort" :options="sortOptions" class="flex-1 sm:flex-none sm:min-w-[180px]" @change="applyFilters" />
+          <!-- Экспорт каталога под текущие фильтры -->
+          <div class="relative">
+            <button
+              class="btn-ghost py-2"
+              :disabled="exporting"
+              @click="exportMenuOpen = !exportMenuOpen"
+            >
+              <span
+                v-if="exporting"
+                class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
+              />
+              <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
+              {{ exporting ? 'Готовим файл…' : 'Экспорт' }}
+            </button>
+            <div v-if="exportMenuOpen && !exporting" class="absolute right-0 mt-2 card p-1.5 w-44 z-20">
+              <button
+                class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+                @click="startExport('csv')"
+              >
+                CSV (Excel)
+              </button>
+              <button
+                class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+                @click="startExport('xlsx')"
+              >
+                XLSX
+              </button>
+              <button
+                class="w-full text-left px-3 py-2 rounded-card text-sm hover:bg-canvas transition-colors"
+                @click="startExport('pdf')"
+              >
+                PDF
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -562,19 +567,19 @@ onMounted(load)
           <div class="overflow-x-auto">
             <table class="w-full text-sm table-fixed">
               <thead>
-                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                  <th class="px-2 py-2 font-medium w-[12%]">Артикул</th>
-                  <th class="px-2 py-2 font-medium w-[35%]">Наименование</th>
+                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border text-[11px] sm:text-xs">
+                  <th class="px-1 sm:px-2 py-2 font-medium w-[15%] sm:w-[12%] truncate">Арт.</th>
+                  <th class="px-1 sm:px-2 py-2 font-medium w-[31%] sm:w-[35%] truncate">Наименование</th>
                   <th class="px-2 py-2 font-medium w-[10%] hidden sm:table-cell">Наличие</th>
-                  <th class="px-2 py-2 font-medium text-right w-[16%] sm:w-[14%]">Цена</th>
-                  <th class="px-2 py-2 font-medium text-center w-[20%] sm:w-[19%] whitespace-nowrap">Кол-во</th>
-                  <th class="px-2 py-2 font-medium text-right w-[12%] sm:w-[8%]" />
+                  <th class="px-1 sm:px-2 py-2 font-medium text-right w-[20%] sm:w-[14%]">Цена</th>
+                  <th class="px-1 sm:px-2 py-2 font-medium text-center w-[18%] sm:w-[19%] whitespace-nowrap">Кол-во</th>
+                  <th class="px-1 sm:px-2 py-2 font-medium text-right w-[16%] sm:w-[8%]" />
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-2 py-2 font-mono text-xs max-w-0 truncate" :title="p.sku">{{ p.sku }}</td>
-                  <td class="px-2 py-2 truncate" :title="p.name">
+                  <td class="px-1 sm:px-2 py-2 font-mono text-[11px] sm:text-xs max-w-0 truncate" :title="p.sku">{{ p.sku }}</td>
+                  <td class="px-1 sm:px-2 py-2 max-w-0 truncate" :title="p.name">
                     <NuxtLink :to="`/catalog/${p.sku}`" class="font-medium hover:text-primary transition-colors">
                       {{ p.name }}
                     </NuxtLink>
@@ -594,25 +599,26 @@ onMounted(load)
                       Осталось {{ p.stock_qty }} шт
                     </span>
                   </td>
-                  <td class="px-2 py-2 text-right whitespace-nowrap">
+                  <td class="px-1 sm:px-2 py-2 text-right max-w-0">
                     <template v-if="priceMode === 'discount' && p.has_discount">
-                      <span class="font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
-                      <span class="block text-xs text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                      <!-- На мобильном валюта и старая цена скрыты, чтобы сумма не налезала на соседние колонки -->
+                      <span class="font-bold text-primary block truncate text-xs sm:text-sm">{{ formatMoney(p.client_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
+                      <span class="hidden sm:block text-xs text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
                     </template>
-                    <span v-else class="font-bold">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                    <span v-else class="font-bold block truncate text-xs sm:text-sm">{{ formatMoney(p.retail_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
                   </td>
-                  <td class="px-2 py-2 text-center">
+                  <td class="px-1 sm:px-2 py-2 text-center">
                     <input
                       type="number"
                       min="1"
                       :value="getQty(p.sku)"
-                      class="input py-1.5 w-12 sm:w-14 text-center"
+                      class="input py-1.5 w-9 sm:w-14 text-center"
                       @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
                     >
                   </td>
-                  <td class="px-2 py-2 text-right">
+                  <td class="px-1 sm:px-2 py-2 text-right">
                     <button
-                      class="btn-primary p-1.5"
+                      class="btn-primary p-1 sm:p-1.5"
                       :class="addedSku !== p.sku && inCartQty(p.sku) > 0 ? '!bg-success' : ''"
                       :disabled="addingSku === p.sku"
                       :title="inCartQty(p.sku) > 0 ? `В корзине: ${inCartQty(p.sku)} шт — кол-во меняется в соседнем поле` : 'В корзину'"

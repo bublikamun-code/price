@@ -227,13 +227,14 @@ onMounted(load)
           </div>
         </template>
         <template v-else-if="data">
-          <!-- min-w-0 + break-words: длинные суммы («3 690,00 BYN») не вылезают за карточку на 359px -->
-          <div v-for="k in kpiTiles" :key="k.label" class="card p-4 sm:p-5 min-w-0">
-            <div class="flex items-center justify-between gap-2 mb-3">
+          <!-- Каркас flex-col + фиксированная высота подписи: иконки на одной линии,
+               числа прибиты к низу — плитки ряда не «пляшут» на мобильном -->
+          <div v-for="k in kpiTiles" :key="k.label" class="card p-4 sm:p-5 min-w-0 h-full flex flex-col">
+            <div class="flex items-start justify-between gap-2 mb-2 sm:mb-3 min-h-[2rem] sm:min-h-[2.25rem]">
               <span class="text-xs sm:text-sm text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
               <span :class="`badge-${k.tone} shrink-0`"><Icon :name="k.icon" class="w-3.5 h-3.5" /></span>
             </div>
-            <p class="text-xl sm:text-3xl font-bold break-words" :title="k.value">{{ k.value }}</p>
+            <p class="text-xl sm:text-3xl font-bold break-words mt-auto" :title="k.value">{{ k.value }}</p>
           </div>
         </template>
       </div>

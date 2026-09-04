@@ -10,7 +10,7 @@ const bottomNavItems = [
   { to: '/', label: 'Главная', icon: 'heroicons:home' },
   { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
   { to: '/orders', label: 'Заявки', icon: 'heroicons:clipboard-document-list' },
-  { to: '/dashboard', label: 'Меню', icon: 'heroicons:bars-3' },
+  { to: '/dashboard', label: 'Аналитика', icon: 'heroicons:bars-3' },
 ]
 
 function isActive(to: string) {
