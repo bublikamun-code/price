@@ -3,9 +3,22 @@
 import type { AuthUser } from '~/composables/useAuth'
 
 const auth = useAuth()
-const { refresh: refreshCart } = useCart()
+const { refresh: refreshCart, count: cartCount } = useCart()
 const { init: initFavorites } = useFavorites()
 const { unreadCount } = useNotifications()
+
+// Пульс значка корзины при добавлении позиции (count растёт).
+const cartPulse = ref(false)
+let cartPulseTimer: ReturnType<typeof setTimeout> | undefined
+watch(cartCount, (n, prev) => {
+  if (n <= (prev ?? 0)) return
+  cartPulse.value = false
+  requestAnimationFrame(() => {
+    cartPulse.value = true
+    clearTimeout(cartPulseTimer)
+    cartPulseTimer = setTimeout(() => { cartPulse.value = false }, 700)
+  })
+})
 
 const searchOpen = ref(false)
 const profileOpen = ref(false)
@@ -97,6 +110,22 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
 
           <NuxtLink v-if="auth.isClient" to="/favorites" class="btn-ghost p-2.5" title="Избранное">
             <Icon name="heroicons:heart" class="w-5 h-5" />
+          </NuxtLink>
+
+          <NuxtLink
+            v-if="auth.isClient"
+            to="/cart"
+            class="btn-ghost p-2.5 relative"
+            :class="{ 'cart-pop': cartPulse }"
+            title="Корзина"
+          >
+            <Icon name="heroicons:shopping-cart" class="w-5 h-5" />
+            <span
+              v-if="cartCount"
+              class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-primary text-white text-[10px] font-semibold rounded-pill flex items-center justify-center"
+            >
+              {{ cartCount > 99 ? '99+' : cartCount }}
+            </span>
           </NuxtLink>
 
           <button
@@ -309,5 +338,15 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* Пульс значка корзины при добавлении товара */
+.cart-pop {
+  animation: cart-pop 0.7s ease;
+}
+@keyframes cart-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
 }
 </style>

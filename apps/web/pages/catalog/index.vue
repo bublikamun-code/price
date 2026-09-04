@@ -43,21 +43,42 @@ const total = ref(0)
 const filters = ref<FiltersOut>({ brands: [], series: [], stock: [] })
 
 // Корзина: добавление товара прямо из карточки.
+// Синк с корзиной: товар, уже лежащий в ней, показывает своё количество,
+// изменение кол-ва в карточке меняет его и в корзине (и наоборот).
 const cart = useCart()
 const qtyMap = reactive<Record<string, number>>({})
 const addingSku = ref<string | null>(null)
 const addedSku = ref<string | null>(null)
+function inCartQty(sku: string): number {
+  return cart.cart.value?.items.find(i => i.sku === sku)?.quantity ?? 0
+}
 function getQty(sku: string): number {
-  return qtyMap[sku] ?? 1
+  const inCart = inCartQty(sku)
+  return inCart > 0 ? inCart : qtyMap[sku] ?? 1
 }
 function setQty(sku: string, v: number) {
-  qtyMap[sku] = Math.max(1, Math.floor(v) || 1)
+  const qty = Math.max(1, Math.floor(v) || 1)
+  if (inCartQty(sku) > 0) {
+    // Уже в корзине — меняем количество там (страница /cart и значок в шапке
+    // читают тот же module-level ref, обновятся сами).
+    cart.update(sku, { quantity: qty }).catch((e) => {
+      error.value = getErrorMessage(e, 'Не удалось изменить количество')
+    })
+  } else {
+    qtyMap[sku] = qty
+  }
 }
 async function addToCart(p: ProductCard) {
   if (addingSku.value) return
   addingSku.value = p.sku
   try {
-    await cart.add({ sku: p.sku, quantity: getQty(p.sku) })
+    if (inCartQty(p.sku) > 0) {
+      // POST /cart/items на бэкенде инкрементирует кол-во, поэтому для товара
+      // в корзине ставим целевое значение через PUT, а не добавляем поверх.
+      await cart.update(p.sku, { quantity: getQty(p.sku) })
+    } else {
+      await cart.add({ sku: p.sku, quantity: getQty(p.sku) })
+    }
     addedSku.value = p.sku
     setTimeout(() => {
       if (addedSku.value === p.sku) addedSku.value = null
@@ -433,7 +454,7 @@ onMounted(load)
         <template v-if="loading">
           <div v-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
             <div v-for="i in 6" :key="i" class="card p-5">
-              <div class="skeleton aspect-square mb-4 rounded-card"/>
+              <div class="skeleton h-28 sm:h-52 mb-4 rounded-card"/>
               <div class="skeleton h-4 w-1/3 mb-3"/>
               <div class="skeleton h-5 w-3/4 mb-2"/>
               <div class="skeleton h-4 w-1/2 mb-4"/>
@@ -455,8 +476,9 @@ onMounted(load)
              корзина справа, всё помещается без скролла), на sm+ — вертикальная -->
         <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
           <article v-for="p in products" :key="p.id" class="card card-hover p-3 sm:p-5 flex flex-row sm:flex-col gap-3 sm:gap-0">
-            <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю ширину карточки -->
-            <div class="relative w-28 h-28 sm:w-full sm:aspect-square shrink-0 bg-surface rounded-card sm:mb-4 flex items-center justify-center overflow-hidden">
+            <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю
+                 ширину карточки, единая высота у всех (object-contain) -->
+            <div class="relative w-28 h-28 sm:w-full sm:h-52 shrink-0 bg-surface rounded-card sm:mb-4 flex items-center justify-center overflow-hidden">
               <img
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key)!"
@@ -520,13 +542,15 @@ onMounted(load)
                   >
                   <button
                     class="btn-primary flex-1 min-w-0 whitespace-nowrap px-2 sm:px-4 py-2 text-xs sm:text-sm"
+                    :class="addedSku !== p.sku && inCartQty(p.sku) > 0 ? '!bg-success' : ''"
                     :disabled="addingSku === p.sku"
+                    :title="inCartQty(p.sku) > 0 ? `В корзине: ${inCartQty(p.sku)} шт` : 'В корзину'"
                     @click="addToCart(p)"
                   >
                     <span v-if="addingSku === p.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-                    <Icon v-else-if="addedSku === p.sku" name="heroicons:check" class="w-4 h-4" />
+                    <Icon v-else-if="addedSku === p.sku || inCartQty(p.sku) > 0" name="heroicons:check" class="w-4 h-4" />
                     <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
-                    <span class="hidden min-[400px]:inline">{{ addedSku === p.sku ? 'Добавлено' : 'В корзину' }}</span>
+                    <span class="hidden min-[400px]:inline">{{ addedSku === p.sku ? 'Добавлено' : (inCartQty(p.sku) > 0 ? `В корзине · ${inCartQty(p.sku)}` : 'В корзину') }}</span>
                   </button>
                 </div>
               </div>
@@ -590,11 +614,13 @@ onMounted(load)
                   <td class="px-2 py-2 text-right">
                     <button
                       class="btn-primary p-1.5"
+                      :class="addedSku !== p.sku && inCartQty(p.sku) > 0 ? '!bg-success' : ''"
                       :disabled="addingSku === p.sku"
+                      :title="inCartQty(p.sku) > 0 ? `В корзине: ${inCartQty(p.sku)} шт — кол-во меняется в соседнем поле` : 'В корзину'"
                       @click="addToCart(p)"
                     >
                       <span v-if="addingSku === p.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-                      <Icon v-else-if="addedSku === p.sku" name="heroicons:check" class="w-4 h-4" />
+                      <Icon v-else-if="addedSku === p.sku || inCartQty(p.sku) > 0" name="heroicons:check" class="w-4 h-4" />
                       <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
                     </button>
                   </td>
