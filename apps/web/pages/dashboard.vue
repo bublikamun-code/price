@@ -186,7 +186,7 @@ onMounted(load)
     <ManagerCard :manager="auth.user?.manager" class="mb-6" />
 
     <!-- Ошибка: полноэкранная, если данных нет; иначе над контентом -->
-    <div v-if="error && !data" class="panel p-12 text-center">
+    <div v-if="error && !data" class="card p-12 text-center">
       <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-danger" />
       <p class="text-ink-muted mb-4">{{ error }}</p>
       <button class="btn-primary" @click="load">Повторить</button>
@@ -196,7 +196,7 @@ onMounted(load)
       <div v-if="error" class="badge-danger mb-6">{{ error }}</div>
 
       <!-- Быстрые действия -->
-      <div class="panel p-5 mb-8">
+      <div class="card p-5 mb-8">
         <h3 class="font-semibold mb-4">Быстрые действия</h3>
         <div v-if="loading" class="flex flex-wrap gap-3">
           <div class="skeleton h-10 w-40" />
@@ -261,7 +261,7 @@ onMounted(load)
           <p v-if="chart && chart.total === 0" class="text-xs text-ink-faint mt-2 text-center">За последние 30 дней заявок не было</p>
         </div>
 
-        <div class="panel p-6">
+        <div class="card p-6">
           <h3 class="font-semibold mb-4">Статусы заявок</h3>
           <div v-if="loading" class="space-y-3">
             <div v-for="i in 5" :key="i" class="skeleton h-8 w-full" />
@@ -282,7 +282,7 @@ onMounted(load)
       </div>
 
       <!-- Топ-5 товаров: полная ширина -->
-      <div class="panel overflow-hidden mb-8">
+      <div class="card overflow-hidden mb-8">
         <h3 class="font-semibold px-6 py-4">Топ-5 товаров</h3>
         <div v-if="loading" class="px-6 pb-6">
           <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
@@ -316,7 +316,7 @@ onMounted(load)
       </div>
 
       <!-- Последние заявки: полная ширина -->
-      <div class="panel overflow-hidden mb-8">
+      <div class="card overflow-hidden mb-8">
         <h3 class="font-semibold px-6 py-4">Последние заявки</h3>
         <div v-if="loading" class="px-6 pb-6">
           <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
@@ -355,7 +355,7 @@ onMounted(load)
 
       <!-- Заявки в работе + изменения цен избранного: ряд из двух колонок -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-        <div class="panel overflow-hidden">
+        <div class="card overflow-hidden">
           <h3 class="font-semibold px-6 py-4">Заявки в работе</h3>
           <div v-if="loading" class="px-6 pb-6">
             <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
