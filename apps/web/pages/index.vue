@@ -355,6 +355,7 @@ onMounted(() => {
           </NuxtLink>
         </div>
       </div>
+      </div>
       </main>
     </section>
 
