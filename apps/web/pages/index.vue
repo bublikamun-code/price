@@ -175,9 +175,10 @@ onMounted(() => {
 
     <!-- Дашборд авторизованного клиента: тот же сайдбар, что и в client layout,
          — переход в каталог доступен с главной без блока избранного -->
-    <section v-else-if="isClient" class="lg:flex">
+    <section v-else-if="isClient" class="lg:flex lg:justify-center">
+      <div class="container-app lg:flex">
       <AppSidebar />
-      <div class="flex-1 min-w-0 px-4 sm:px-6 lg:px-0 py-8 lg:py-12">
+      <main class="flex-1 min-w-0 py-8 lg:py-12">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start lg:items-stretch">
         <!-- Левая колонка (2/3): заявки + баннеры. Баннеры растягиваются,
              чтобы нижняя граница колонки совпадала с правой (Быстрые действия). -->
@@ -354,6 +355,7 @@ onMounted(() => {
           </NuxtLink>
         </div>
       </div>
+      </main>
       </div>
     </section>
 
