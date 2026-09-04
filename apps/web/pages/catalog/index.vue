@@ -284,10 +284,11 @@ onMounted(load)
       <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
         <!-- Мобильный ряд 1: фильтры | цена | вид (на десктопе обёртки растворяются) -->
         <div class="flex items-center gap-2 justify-between sm:contents">
-          <!-- Фильтры: кнопка только на мобильном (открывает шторку); на десктопе панель всегда видна -->
-          <button class="btn-ghost py-2 lg:hidden" @click="toggleFilters">
+          <!-- Фильтры: кнопка только на мобильном (иконка) и планшете (с текстом);
+              на десктопе панель всегда видна -->
+          <button class="btn-ghost py-2 px-2 sm:px-3 lg:hidden" title="Фильтры" @click="toggleFilters">
             <Icon name="heroicons:funnel" class="w-4 h-4" />
-            Фильтры
+            <span class="hidden sm:inline">Фильтры</span>
           </button>
           <!-- Переключатель цены -->
           <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
@@ -612,7 +613,7 @@ onMounted(load)
                       type="number"
                       min="1"
                       :value="getQty(p.sku)"
-                      class="input py-1.5 w-9 sm:w-14 text-center"
+                      class="input py-1.5 w-12 sm:w-14 text-center"
                       @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
                     >
                   </td>
