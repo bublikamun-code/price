@@ -200,6 +200,15 @@ onMounted(() => {
           </ul>
         </div>
 
+        <!-- Акции и новинки: два равных блока под «Последние заявки» -->
+        <div v-if="promosLoading || promos.length || newArrivals.length" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div v-if="promosLoading" class="card p-5"><div class="skeleton h-40 w-full"/></div>
+          <div v-if="promosLoading" class="card p-5"><div class="skeleton h-40 w-full"/></div>
+          <ProductCarousel v-if="!promosLoading && promos.length" title="Акции" icon="heroicons:tag" :items="promos" />
+          <ProductCarousel v-if="!promosLoading && newArrivals.length" title="Новинки" icon="heroicons:sparkles" :items="newArrivals" />
+        </div>
+        </div>
+
         <!-- Правая колонка: избранное, файлы, быстрые действия -->
         <div class="grid sm:grid-cols-2 lg:grid-cols-1 gap-5 md:col-span-2 lg:col-span-1 content-start">
         <!-- Избранное -->
@@ -288,14 +297,6 @@ onMounted(() => {
         </div>
         </div>
 
-        <!-- Акции и новинки: два равных блока под «Последние заявки» -->
-        <div v-if="promosLoading || promos.length || newArrivals.length" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <div v-if="promosLoading" class="card p-5"><div class="skeleton h-40 w-full"/></div>
-          <div v-if="promosLoading" class="card p-5"><div class="skeleton h-40 w-full"/></div>
-          <ProductCarousel v-if="!promosLoading && promos.length" title="Акции" icon="heroicons:tag" :items="promos" />
-          <ProductCarousel v-if="!promosLoading && newArrivals.length" title="Новинки" icon="heroicons:sparkles" :items="newArrivals" />
-        </div>
-        </div>
       </div>
 
       <!-- Новости и обновления (в самом низу, полная ширина) -->
