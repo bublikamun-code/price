@@ -313,7 +313,8 @@ onUnmounted(() => {
       <div class="grid lg:grid-cols-2 gap-8">
         <!-- Фото -->
         <div class="order-1 lg:order-none">
-          <div class="card aspect-square overflow-hidden bg-surface-2 flex items-center justify-center relative">
+          <!-- Фото: компактнее, чтобы под ним без скролла помещалось описание -->
+          <div class="card aspect-square lg:aspect-[4/3] overflow-hidden bg-surface-2 flex items-center justify-center relative">
             <img
               v-if="mainPhoto"
               :src="mainPhoto"
