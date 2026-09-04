@@ -194,6 +194,10 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
               </span>
               <Icon name="heroicons:chevron-down" class="w-3.5 h-3.5 text-ink-faint" />
             </button>
+            <!-- Оверлей закрытия — внутри той же relative-обёртки: на уровне
+                 document он z-40 равен шапке и перекрывал пункты меню кликом.
+                 Здесь он ниже меню (z-50) в общем контексте шапки. -->
+            <div v-if="profileOpen" class="fixed inset-0" @click="profileOpen = false" />
             <!-- Меню профиля: внутри relative-обёртки, иначе absolute улетает
                  вниз страницы (positioned-предок — вся страница, а не шапка) -->
             <div v-if="profileOpen" class="absolute right-0 top-full mt-2 w-56 card p-2 z-50">
@@ -295,9 +299,6 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
       </div>
     </div>
   </Teleport>
-
-  <!-- Закрытие по клику вне меню: прозрачный оверлей под меню -->
-  <div v-if="profileOpen" class="fixed inset-0 z-40" @click="profileOpen = false" />
 </template>
 
 <style scoped>

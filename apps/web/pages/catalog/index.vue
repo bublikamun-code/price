@@ -100,6 +100,17 @@ function toggleFilters() {
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
+// Сворачиваемые списки в фильтрах: длинные перечни брендов/серий режем
+// до FILTER_COLLAPSED штук с кнопкой «Показать все».
+const FILTER_COLLAPSED = 6
+const expandedFilters = reactive<Record<string, boolean>>({})
+function visibleFilterItems<T extends { id: string }>(items: T[], key: string): T[] {
+  return expandedFilters[key] ? items : items.slice(0, FILTER_COLLAPSED)
+}
+function hiddenFilterCount<T extends { id: string }>(items: T[], key: string): number {
+  return expandedFilters[key] ? 0 : Math.max(0, items.length - FILTER_COLLAPSED)
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -367,18 +378,38 @@ onMounted(load)
 
           <div v-if="filters.brands.length" class="mb-5">
             <label class="label">Производитель</label>
-            <label v-for="b in filters.brands" :key="b.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
+            <label v-for="b in visibleFilterItems(filters.brands, 'brands')" :key="b.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
               <input v-model="selectedBrands" type="checkbox" :value="b.id" class="rounded border-border" @change="applyFilters" >
               {{ b.name }}
             </label>
+            <button
+              v-if="hiddenFilterCount(filters.brands, 'brands')"
+              class="btn-ghost text-xs py-1 mt-1 text-primary"
+              @click="expandedFilters.brands = true"
+            >Показать все ({{ filters.brands.length }})</button>
+            <button
+              v-else-if="filters.brands.length > FILTER_COLLAPSED && expandedFilters.brands"
+              class="btn-ghost text-xs py-1 mt-1 text-primary"
+              @click="expandedFilters.brands = false"
+            >Скрыть</button>
           </div>
 
           <div v-if="filters.series.length" class="mb-5">
             <label class="label">Серия</label>
-            <label v-for="s in filters.series" :key="s.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
+            <label v-for="s in visibleFilterItems(filters.series, 'series')" :key="s.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
               <input v-model="selectedSeries" type="checkbox" :value="s.id" class="rounded border-border" @change="applyFilters" >
               {{ s.name }}
             </label>
+            <button
+              v-if="hiddenFilterCount(filters.series, 'series')"
+              class="btn-ghost text-xs py-1 mt-1 text-primary"
+              @click="expandedFilters.series = true"
+            >Показать все ({{ filters.series.length }})</button>
+            <button
+              v-else-if="filters.series.length > FILTER_COLLAPSED && expandedFilters.series"
+              class="btn-ghost text-xs py-1 mt-1 text-primary"
+              @click="expandedFilters.series = false"
+            >Скрыть</button>
           </div>
 
           <div class="mb-5">
@@ -414,11 +445,12 @@ onMounted(load)
           <p>Ничего не найдено. Измените условия поиска или сбросьте фильтры.</p>
         </div>
 
-        <!-- Плитка -->
-        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-          <article v-for="p in products" :key="p.id" class="card card-hover p-5 flex flex-col">
-            <!-- Фото: квадратное окошко без полей, фото на всю ширину -->
-            <div class="relative aspect-square bg-surface rounded-card mb-4 flex items-center justify-center overflow-hidden">
+        <!-- Плитка: на мобильном — горизонтальная карточка (фото слева, цена и
+             корзина справа, всё помещается без скролла), на sm+ — вертикальная -->
+        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
+          <article v-for="p in products" :key="p.id" class="card card-hover p-3 sm:p-5 flex flex-row sm:flex-col gap-3 sm:gap-0">
+            <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю ширину карточки -->
+            <div class="relative w-28 h-28 sm:w-full sm:aspect-square shrink-0 bg-surface rounded-card sm:mb-4 flex items-center justify-center overflow-hidden">
               <img
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key)!"
@@ -426,69 +458,71 @@ onMounted(load)
                 loading="lazy"
                 class="w-full h-full object-cover"
               >
-              <Icon v-else name="heroicons:photo" class="w-10 h-10 text-ink-faint" />
+              <Icon v-else name="heroicons:photo" class="w-8 h-8 sm:w-10 sm:h-10 text-ink-faint" />
               <button
-                class="absolute top-2 right-2 z-10 btn-ghost p-1.5 rounded-full bg-surface/80 backdrop-blur"
+                class="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 btn-ghost p-1 sm:p-1.5 rounded-full bg-surface/80 backdrop-blur"
                 :class="favorites.isFav(p.sku) ? 'text-danger' : 'text-ink-muted'"
                 :title="favorites.isFav(p.sku) ? 'Убрать из избранного' : 'В избранное'"
                 @click="toggleFav(p.sku)"
               >
                 <Icon
                   :name="favorites.isFav(p.sku) ? 'heroicons:heart-solid' : 'heroicons:heart'"
-                  class="w-5 h-5"
+                  class="w-4 h-4 sm:w-5 sm:h-5"
                 />
               </button>
             </div>
 
-            <div class="flex items-start justify-between gap-2 mb-1">
-              <span v-if="p.brand" class="badge-info">{{ p.brand.name }}</span>
-              <span class="shrink-0 whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
-                {{ stockLabel[p.stock_status] || p.stock_status }}
-              </span>
-              <!-- Мало на складе: точный остаток известен и мал (0 < qty <= 5) -->
-              <span v-if="p.stock_qty != null && p.stock_qty > 0 && p.stock_qty <= 5" class="badge-warning whitespace-nowrap">
-                Осталось {{ p.stock_qty }} шт
-              </span>
-            </div>
-            <NuxtLink :to="`/catalog/${p.sku}`" class="block font-semibold text-base mb-1 line-clamp-2 hover:text-primary transition-colors">
-              {{ p.name }}
-            </NuxtLink>
-            <p class="text-xs text-ink-faint mb-3">Артикул: {{ p.sku }}<span v-if="p.series"> · {{ p.series.name }}</span></p>
+            <div class="flex-1 min-w-0 flex flex-col">
+              <div class="flex items-start justify-between gap-2 mb-1">
+                <span v-if="p.brand" class="badge-info">{{ p.brand.name }}</span>
+                <span class="shrink-0 whitespace-nowrap" :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">
+                  {{ stockLabel[p.stock_status] || p.stock_status }}
+                </span>
+                <!-- Мало на складе: точный остаток известен и мал (0 < qty <= 5) -->
+                <span v-if="p.stock_qty != null && p.stock_qty > 0 && p.stock_qty <= 5" class="badge-warning whitespace-nowrap">
+                  Осталось {{ p.stock_qty }} шт
+                </span>
+              </div>
+              <NuxtLink :to="`/catalog/${p.sku}`" class="block font-semibold text-sm sm:text-base mb-1 line-clamp-2 hover:text-primary transition-colors">
+                {{ p.name }}
+              </NuxtLink>
+              <p class="text-xs text-ink-faint mb-2 sm:mb-3">Артикул: {{ p.sku }}<span v-if="p.series"> · {{ p.series.name }}</span></p>
 
-            <!-- Характеристики: стабильная сетка 2 колонки, фиксированный порядок полей -->
-            <div v-if="attrChips(p).length" class="grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
-              <div v-for="c in attrChips(p)" :key="c.label" class="flex items-baseline gap-1 text-xs min-w-0">
-                <span class="text-ink-faint shrink-0">{{ c.label }}:</span>
-                <span class="font-medium truncate">{{ c.value }}</span>
+              <!-- Характеристики: стабильная сетка 2 колонки, фиксированный порядок полей -->
+              <div v-if="attrChips(p).length" class="hidden sm:grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
+                <div v-for="c in attrChips(p)" :key="c.label" class="flex items-baseline gap-1 text-xs min-w-0">
+                  <span class="text-ink-faint shrink-0">{{ c.label }}:</span>
+                  <span class="font-medium truncate">{{ c.value }}</span>
+                </div>
               </div>
-            </div>
 
-            <div class="mt-auto">
-              <div v-if="priceMode === 'discount' && p.has_discount" class="flex items-baseline gap-2 mb-3">
-                <span class="text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
-                <span class="text-sm text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
-              </div>
-              <div v-else class="mb-3">
-                <span class="text-xl font-bold">{{ formatMoney(p.retail_price, p.currency) }}</span>
-              </div>
-              <div class="flex items-stretch gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  :value="getQty(p.sku)"
-                  class="input py-2 w-20 text-center shrink-0"
-                  @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
-                >
-                <button
-                  class="btn-primary flex-1 min-w-0 whitespace-nowrap px-4 py-2 text-sm"
-                  :disabled="addingSku === p.sku"
-                  @click="addToCart(p)"
-                >
-                  <span v-if="addingSku === p.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-                  <Icon v-else-if="addedSku === p.sku" name="heroicons:check" class="w-4 h-4" />
-                  <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
-                  {{ addedSku === p.sku ? 'Добавлено' : 'В корзину' }}
-                </button>
+              <div class="mt-auto">
+                <div v-if="priceMode === 'discount' && p.has_discount" class="flex items-baseline gap-2 mb-2 sm:mb-3">
+                  <span class="text-lg sm:text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
+                  <span class="text-xs sm:text-sm text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                </div>
+                <div v-else class="mb-2 sm:mb-3">
+                  <span class="text-lg sm:text-xl font-bold">{{ formatMoney(p.retail_price, p.currency) }}</span>
+                </div>
+                <div class="flex items-stretch gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    :value="getQty(p.sku)"
+                    class="input py-2 w-14 sm:w-20 text-center shrink-0"
+                    @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
+                  >
+                  <button
+                    class="btn-primary flex-1 min-w-0 whitespace-nowrap px-2 sm:px-4 py-2 text-xs sm:text-sm"
+                    :disabled="addingSku === p.sku"
+                    @click="addToCart(p)"
+                  >
+                    <span v-if="addingSku === p.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                    <Icon v-else-if="addedSku === p.sku" name="heroicons:check" class="w-4 h-4" />
+                    <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
+                    <span class="hidden min-[400px]:inline">{{ addedSku === p.sku ? 'Добавлено' : 'В корзину' }}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </article>

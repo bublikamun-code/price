@@ -255,6 +255,13 @@
   background-color: #fafafa;
   color: #262626;
 }
+/* Ад-хок связки bg-primary text-white в страницах (переключатели вида/цены,
+   пагинация, табы фильтров) — та же инверсия, что у .btn-primary выше,
+   иначе активный пункт белым по белому в тёмной теме. */
+.dark .bg-primary.text-white {
+  background-color: #fafafa;
+  color: #262626;
+}
 
 @layer utilities {
   .container-app {
