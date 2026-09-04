@@ -314,7 +314,7 @@ onUnmounted(() => {
         <!-- Фото -->
         <div class="order-1 lg:order-none">
           <!-- Фото: компактнее, чтобы под ним без скролла помещалось описание -->
-          <div class="card aspect-square lg:aspect-[4/3] overflow-hidden bg-surface-2 flex items-center justify-center relative">
+          <div class="card aspect-square lg:aspect-[4/3] overflow-hidden flex items-center justify-center relative">
             <img
               v-if="mainPhoto"
               :src="mainPhoto"
@@ -349,7 +349,7 @@ onUnmounted(() => {
               :key="key"
               type="button"
               :aria-label="`Фото ${i + 1}`"
-              class="w-20 h-20 rounded-card overflow-hidden border-2 bg-surface-2"
+              class="w-20 h-20 rounded-card overflow-hidden border-2 bg-surface"
               :class="i === activePhoto ? 'border-primary' : 'border-transparent hover:border-primary/50'"
               @click="activePhoto = i"
             >
