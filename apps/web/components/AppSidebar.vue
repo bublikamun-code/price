@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// Боковое меню клиента (desktop): сворачивается до иконок, состояние запоминается.
+// Боковое меню клиента (desktop): карточка, как остальные блоки портала.
+// Сворачивается до иконок (активный пункт — квадрат), состояние запоминается.
 // Используется в layout client.vue и на дашборде главной (pages/index.vue).
 const route = useRoute()
 const auth = useAuth()
@@ -32,33 +33,39 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <aside
-    class="hidden lg:flex flex-col shrink-0 border-r border-border bg-surface p-4 sticky top-[72px] h-[calc(100vh-72px)] transition-[width] duration-200"
-    :class="collapsed ? 'w-16 items-center' : 'w-64'"
-  >
-    <button
-      class="btn-ghost p-2 mb-2 self-end"
-      :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
-      :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
-      @click="toggleSidebar"
+  <aside class="hidden lg:block shrink-0 sticky top-[72px] self-start py-4 pl-4">
+    <div
+      class="card p-3 transition-[width] duration-200"
+      :class="collapsed ? 'w-[60px]' : 'w-60'"
     >
-      <Icon :name="collapsed ? 'heroicons:chevron-right' : 'heroicons:chevron-left'" class="w-4 h-4" />
-    </button>
-    <nav class="flex flex-col gap-1 w-full" :class="collapsed ? 'items-center' : ''">
-      <NuxtLink
-        v-for="item in navItems"
-        :key="item.to"
-        :to="item.to"
-        class="nav-link"
-        :class="[collapsed ? 'justify-center px-0 py-2.5' : '', isActive(item.to) ? 'nav-link-active' : '']"
-        :title="collapsed ? item.label : ''"
+      <button
+        class="btn-ghost p-2 mb-2 w-full flex"
+        :class="collapsed ? 'justify-center' : 'justify-end'"
+        :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+        :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+        @click="toggleSidebar"
       >
-        <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
-        <span v-if="!collapsed">{{ item.label }}</span>
-      </NuxtLink>
-    </nav>
-    <div v-if="!collapsed" class="mt-auto pt-4">
-      <ManagerCard :manager="auth.user?.manager" />
+        <Icon :name="collapsed ? 'heroicons:chevron-right' : 'heroicons:chevron-left'" class="w-4 h-4" />
+      </button>
+      <nav class="flex flex-col gap-1" :class="collapsed ? 'items-center' : ''">
+        <NuxtLink
+          v-for="item in navItems"
+          :key="item.to"
+          :to="item.to"
+          class="nav-link"
+          :class="[
+            collapsed ? 'w-10 h-10 justify-center px-0 py-0 shrink-0' : '',
+            isActive(item.to) ? 'nav-link-active' : '',
+          ]"
+          :title="collapsed ? item.label : ''"
+        >
+          <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
+          <span v-if="!collapsed">{{ item.label }}</span>
+        </NuxtLink>
+      </nav>
+      <div v-if="!collapsed" class="mt-3">
+        <ManagerCard :manager="auth.user?.manager" />
+      </div>
     </div>
   </aside>
 </template>
