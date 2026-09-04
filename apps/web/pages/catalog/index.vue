@@ -365,8 +365,9 @@ onMounted(load)
         @click="drawerOpen = false"
       />
 
-      <!-- Фильтры: на десктопе — компактная колонка по высоте содержимого,
-          на мобильном — шторка слева -->
+      <!-- Фильтры: в табличном виде — на всю высоту таблицы (Сбросить внизу),
+          в плиточном — компактная колонка по высоте содержимого; на мобильном
+          — шторка слева -->
       <aside
         class="w-72 lg:w-64 shrink-0"
         :class="[
@@ -374,9 +375,10 @@ onMounted(load)
             ? 'fixed inset-y-0 left-0 z-50 bg-canvas overflow-y-auto p-4'
             : 'hidden',
           'lg:block',
+          viewMode === 'grid' ? 'lg:self-start' : '',
         ]"
       >
-        <div class="card p-4">
+        <div class="card p-4" :class="viewMode === 'list' ? 'h-full flex flex-col' : ''">
           <div class="flex items-center justify-between mb-4">
             <h3 class="font-semibold">Фильтры</h3>
             <button class="btn-ghost p-1.5 lg:hidden" aria-label="Закрыть фильтры" @click="drawerOpen = false">
@@ -438,7 +440,11 @@ onMounted(load)
             <BaseSelect v-model="selectedStock" :options="stockOptions" class="min-w-[150px]" @change="applyFilters" />
           </div>
 
-          <button class="btn-ghost w-full justify-center" @click="resetFilters">Сбросить</button>
+          <button
+            class="btn-ghost w-full justify-center"
+            :class="viewMode === 'list' ? 'mt-auto' : ''"
+            @click="resetFilters"
+          >Сбросить</button>
         </div>
       </aside>
 
