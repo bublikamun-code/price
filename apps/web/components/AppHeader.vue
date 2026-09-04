@@ -23,7 +23,7 @@ watch(cartCount, (n, prev) => {
 const searchOpen = ref(false)
 const profileOpen = ref(false)
 const desktopSearchOpen = ref(false)
-const mobileSearchTop = ref(56)
+const mobileSearchTop = ref(72) // низ плавающей карточки шапки (12 + 56 + зазор)
 
 const STOCK_LABEL: Record<string, string> = {
   IN_STOCK: 'В наличии',
@@ -79,8 +79,11 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
 </script>
 
 <template>
-  <header class="sticky top-0 z-40 h-14 border-b border-border bg-surface">
-    <div class="w-full h-full flex items-center gap-2 py-1.5 px-4">
+  <header class="sticky top-0 z-40">
+    <!-- Шапка — карточка в стиле остальных блоков портала, «плавает»
+         над контентом при скролле -->
+    <div class="container-app py-3">
+      <div class="card flex items-center gap-2 px-4 h-14">
       <NuxtLink to="/" class="flex items-center gap-2 shrink-0">
         <span class="text-lg font-bold">
           <span class="text-primary">Price</span><span class="text-ink">Portal</span>
@@ -245,6 +248,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
           <NuxtLink to="/login" class="btn-primary">Войти</NuxtLink>
         </template>
       </nav>
+      </div>
     </div>
   </header>
 

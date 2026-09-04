@@ -272,10 +272,9 @@ onMounted(load)
 
 <template>
   <div>
-    <!-- Заголовок + тулбар: карточка в стиле остальных блоков, поднята к
-         верхней границе меню (sidebar), отступ до контента чуть больше -->
-    <div class="card p-4 sm:p-5 -mt-2 lg:-mt-4 mb-8">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <!-- Заголовок + тулбар: подняты к верхней границе меню (sidebar),
+         отступ до контента чуть больше -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 -mt-2 lg:-mt-4 mb-8">
         <div>
           <h1 class="text-2xl font-bold">Каталог</h1>
           <p class="text-sm text-ink-muted mt-1">
@@ -353,29 +352,10 @@ onMounted(load)
             </div>
           </div>
         </div>
-      </div>
     </div>
 
     <div v-if="error" class="badge-danger w-full justify-center py-3 mb-6">{{ error }}</div>
     <div v-if="exportError" class="badge-warning w-full justify-center py-3 mb-6">{{ exportError }}</div>
-
-    <!-- Пагинация сверху: кнопки переключения страниц видны без скролла
-        (дублирует нижнюю; работает на тех же обработчиках) -->
-    <nav v-if="!loading && totalPages > 1" class="flex flex-wrap items-center justify-center gap-1 mb-5">
-      <button class="btn-ghost p-2" :disabled="page <= 1" @click="goPage(page - 1)">
-        <Icon name="heroicons:chevron-left" class="w-5 h-5" />
-      </button>
-      <button
-        v-for="pgn in totalPages"
-        :key="pgn"
-        class="w-9 h-9 rounded-pill font-medium text-sm"
-        :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-        @click="goPage(pgn)"
-      >{{ pgn }}</button>
-      <button class="btn-ghost p-2" :disabled="page >= totalPages" @click="goPage(page + 1)">
-        <Icon name="heroicons:chevron-right" class="w-5 h-5" />
-      </button>
-    </nav>
 
     <div class="flex gap-6">
       <!-- Оверлей мобильной шторки фильтров -->
