@@ -80,7 +80,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
 
 <template>
   <header class="sticky top-0 z-40 h-14 border-b border-border bg-surface">
-    <div class="container-app h-full flex items-center gap-2 py-1.5">
+    <div class="w-full h-full flex items-center gap-2 py-1.5 px-4">
       <NuxtLink to="/" class="flex items-center gap-2 shrink-0">
         <span class="text-lg font-bold">
           <span class="text-primary">Price</span><span class="text-ink">Portal</span>
