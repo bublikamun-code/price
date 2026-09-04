@@ -63,6 +63,7 @@ async function refresh() {
 }
 
 // 4 обычных KPI-плитки (пятая — «Активных импортов» — ссылка на /manager/import).
+// Карточки каруселей «Акции»/«Новинки» шлют на поиск по SKU в админ-каталоге.
 const kpiTiles = computed(() => {
   if (!data.value) return []
   const k = data.value.kpi
@@ -108,6 +109,10 @@ function plural(n: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'заявка'
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'заявки'
   return 'заявок'
+}
+
+function catalogLink(item: { sku: string }): string {
+  return `/manager/catalog?q=${encodeURIComponent(item.sku)}`
 }
 
 onMounted(load)
@@ -289,6 +294,26 @@ onMounted(load)
             </tbody>
           </table>
         </div>
+      </div>
+      <!-- Акции + новинки: те же данные, что клиентский дашборд (карусели товаров) -->
+      <div
+        v-if="!loading && (data?.promos?.length || data?.new_arrivals?.length)"
+        class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-8"
+      >
+        <ProductCarousel
+          v-if="data?.promos?.length"
+          title="Акции"
+          icon="heroicons:tag"
+          :items="data.promos"
+          :item-link="catalogLink"
+        />
+        <ProductCarousel
+          v-if="data?.new_arrivals?.length"
+          title="Новинки"
+          icon="heroicons:sparkles"
+          :items="data.new_arrivals"
+          :item-link="catalogLink"
+        />
       </div>
     </template>
   </div>

@@ -8,7 +8,9 @@ useHead({ title: 'Избранное' })
 const { request } = useApi()
 const { thumbOf } = useProductPhoto()
 const cart = useCart()
-
+// Общее состояние избранного (каталог/карточка товара) — удаляем через него,
+// чтобы сердечки в каталоге не расходились со списком.
+const favs = useFavorites()
 const PER_PAGE = 12
 const loading = ref(true)
 const error = ref('')
@@ -40,7 +42,7 @@ async function removeFav(f: FavoriteRead) {
   removingSku.value = f.sku
   error.value = ''
   try {
-    await request(`/api/v1/favorites/${encodeURIComponent(f.sku)}`, { method: 'DELETE' })
+    await favs.remove(f.sku)
     await load()
   } catch (e) {
     error.value = getErrorMessage(e, 'Не удалось удалить из избранного')

@@ -10,7 +10,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.repositories import dashboard as client_repo
 from app.repositories import manager_catalog as repo
+from app.schemas.dashboard import ClientNewArrival, ClientPromo
 from app.schemas.manager_catalog import (
     DashboardKPI,
     DashboardOut,
@@ -24,6 +26,8 @@ from app.services.cache import cache
 CACHE_KEY = "manager:dashboard:v1"
 CACHE_TTL_SECONDS = 60
 DAYS_WINDOW = 30
+NEW_ARRIVALS_LIMIT = 5   # как в ClientDashboardService (§16 п.20-1)
+PROMOS_LIMIT = 10
 
 _MSK = ZoneInfo("Europe/Minsk")
 
@@ -60,6 +64,8 @@ class DashboardService:
         top_products = await repo.fetch_top_products(self.db, month_start=month_start)
         top_clients = await repo.fetch_top_clients(self.db, month_start=month_start)
         recent_orders = await repo.fetch_recent_orders(self.db)
+        new_arrivals = await self._new_arrivals()
+        promos = await self._promos()
 
         # Ровно DAYS_WINDOW календарных дней включая сегодня, по возрастанию,
         # без дней — нули (zero-fill).
@@ -103,4 +109,33 @@ class DashboardService:
                 )
                 for row in recent_orders
             ],
+            new_arrivals=new_arrivals,
+            promos=promos,
+        )
+
+    async def _new_arrivals(self) -> list[ClientNewArrival]:
+        """Последние поступления каталога (те же запросы, что клиентский дашборд)."""
+        rows = await client_repo.fetch_new_arrivals(self.db, limit=NEW_ARRIVALS_LIMIT)
+        return [self._carousel_item(product, photo_key) for product, photo_key in rows]
+
+    async def _promos(self) -> list[ClientPromo]:
+        """Товары со скидкой по договору (override_price) для блока «Акции»."""
+        rows = await client_repo.fetch_promos(self.db, limit=PROMOS_LIMIT)
+        return [
+            ClientPromo(**self._carousel_item(product, photo_key).model_dump())
+            for product, photo_key in rows
+        ]
+
+    @staticmethod
+    def _carousel_item(product, photo_key) -> ClientNewArrival:
+        # У менеджера нет персональной цены: в client_price кладём розничную
+        # (base_price, BYN); has_discount — товар со скидкой по договору.
+        return ClientNewArrival(
+            id=product.id,
+            sku=product.sku,
+            name=product.name,
+            photo_key=photo_key,
+            client_price=Decimal(str(product.base_price)),
+            currency="BYN",
+            has_discount=product.override_price is not None,
         )

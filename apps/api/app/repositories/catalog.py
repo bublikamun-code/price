@@ -11,7 +11,14 @@ from typing import Sequence
 from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.catalog import Brand, PriceHistory, PriceListVersion, Product, Series
+from app.models.catalog import (
+    Brand,
+    PriceHistory,
+    PriceListVersion,
+    Product,
+    ProductPhoto,
+    Series,
+)
 from app.models.enums import StockStatus
 from app.models.pricing import UserBrand
 
@@ -152,6 +159,43 @@ async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand | None:
 
 async def get_series(db: AsyncSession, series_id: uuid.UUID) -> Series | None:
     return await db.scalar(select(Series).where(Series.id == series_id))
+
+
+# ----------------------------- фото товаров -----------------------------
+
+async def list_product_photos(db: AsyncSession, product_id: uuid.UUID) -> list[str]:
+    """S3-ключи дополнительных фото товара в порядке показа (sort_order, created_at)."""
+    res = await db.scalars(
+        select(ProductPhoto.photo_key)
+        .where(ProductPhoto.product_id == product_id)
+        .order_by(ProductPhoto.sort_order, ProductPhoto.created_at)
+    )
+    return list(res.all())
+
+
+async def get_product_photo(
+    db: AsyncSession, *, product_id: uuid.UUID, photo_key: str
+) -> ProductPhoto | None:
+    """Фото товара по ключу (проверка принадлежности товару — в сервисе/роутере)."""
+    return await db.scalar(
+        select(ProductPhoto).where(
+            ProductPhoto.product_id == product_id, ProductPhoto.photo_key == photo_key
+        )
+    )
+
+
+async def add_product_photo(
+    db: AsyncSession, *, product_id: uuid.UUID, photo_key: str
+) -> ProductPhoto:
+    photo = ProductPhoto(product_id=product_id, photo_key=photo_key)
+    db.add(photo)
+    await db.flush()
+    return photo
+
+
+async def delete_product_photo(db: AsyncSession, photo: ProductPhoto) -> None:
+    await db.delete(photo)
+    await db.flush()
 
 
 async def fetch_filters(db: AsyncSession) -> dict:

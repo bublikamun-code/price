@@ -2,7 +2,8 @@
 // Горизонтальная карусель карточек товара (dashboard: «Акции», «Новинки»).
 // Нативный скролл с snap (на мобильном — свайп) + стрелки scrollBy по ширине видимой зоны.
 // Данные: элементы шейпа { id, sku, name, photo_key, client_price, currency, has_discount }
-// из GET /api/v1/dashboard (new_arrivals / promos). Клик по карточке → /catalog/[sku].
+// из GET /api/v1/dashboard (new_arrivals / promos). Клик по карточке → /catalog/[sku]
+// (переопределяется пропом itemLink — менеджерский дашборд шлёт на /manager/catalog).
 interface ProductCarouselItem {
   id: string
   sku: string
@@ -17,6 +18,7 @@ const props = defineProps<{
   title: string
   icon: string
   items: ProductCarouselItem[]
+  itemLink?: (item: ProductCarouselItem) => string
 }>()
 
 const { thumbOf } = useProductPhoto()
@@ -64,7 +66,7 @@ function scrollByDir(dir: 1 | -1) {
       <NuxtLink
         v-for="p in props.items"
         :key="p.id"
-        :to="`/catalog/${p.sku}`"
+        :to="props.itemLink ? props.itemLink(p) : `/catalog/${p.sku}`"
         class="w-36 sm:w-40 shrink-0 snap-start group"
       >
         <div class="aspect-square bg-surface rounded-card overflow-hidden mb-2 border border-border">

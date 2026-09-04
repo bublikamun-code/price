@@ -218,6 +218,8 @@ async def get_product(
         if s:
             series = SeriesRef(id=s.id, name=s.name, brand_id=s.brand_id, photo_key=s.photo_key)
 
+    photos = await repo.list_product_photos(db, product.id)
+
     result = ProductDetail(
         id=product.id,
         sku=product.sku,
@@ -227,6 +229,7 @@ async def get_product(
         stock_status=product.stock_status,
         stock_qty=product.stock_qty,
         photo_key=series.photo_key if series else None,
+        photos=photos,
         attributes=product.attributes or {},
         override_price=float(product.override_price) if product.override_price is not None else None,
         **prices,

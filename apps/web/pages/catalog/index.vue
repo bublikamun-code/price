@@ -10,6 +10,16 @@ useHead({ title: 'Каталог' })
 const { request } = useApi()
 const route = useRoute()
 
+// Избранное: сердечко в карточке (ленивая загрузка списка — внутри isFav/toggle).
+const favorites = useFavorites()
+async function toggleFav(sku: string) {
+  try {
+    await favorites.toggle(sku)
+  } catch (e) {
+    error.value = getErrorMessage(e, 'Не удалось обновить избранное')
+  }
+}
+
 type Sort = 'name' | '-name' | 'price' | '-price' | 'sku'
 const PER_PAGE = 12
 
@@ -408,7 +418,7 @@ onMounted(load)
         <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           <article v-for="p in products" :key="p.id" class="card card-hover p-5 flex flex-col">
             <!-- Фото: квадратное окошко без полей, фото на всю ширину -->
-            <div class="aspect-square bg-surface rounded-card mb-4 flex items-center justify-center overflow-hidden">
+            <div class="relative aspect-square bg-surface rounded-card mb-4 flex items-center justify-center overflow-hidden">
               <img
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key)!"
@@ -417,6 +427,17 @@ onMounted(load)
                 class="w-full h-full object-cover"
               >
               <Icon v-else name="heroicons:photo" class="w-10 h-10 text-ink-faint" />
+              <button
+                class="absolute top-2 right-2 z-10 btn-ghost p-1.5 rounded-full bg-surface/80 backdrop-blur"
+                :class="favorites.isFav(p.sku) ? 'text-danger' : 'text-ink-muted'"
+                :title="favorites.isFav(p.sku) ? 'Убрать из избранного' : 'В избранное'"
+                @click="toggleFav(p.sku)"
+              >
+                <Icon
+                  :name="favorites.isFav(p.sku) ? 'heroicons:heart-solid' : 'heroicons:heart'"
+                  class="w-5 h-5"
+                />
+              </button>
             </div>
 
             <div class="flex items-start justify-between gap-2 mb-1">

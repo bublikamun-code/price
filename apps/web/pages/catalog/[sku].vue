@@ -16,7 +16,7 @@ const route = useRoute()
 const overlayDown = ref(false)
 const { request } = useApi()
 // карточка/лайтбокс — large; миниатюры — thumb (§16 п.17)
-const { photoOf, thumbOf } = useProductPhoto()
+const { photoOf, thumbOf, urlOf } = useProductPhoto()
 
 const sku = computed(() => String(route.params.sku))
 
@@ -28,9 +28,33 @@ const history = ref<PriceHistoryItem[]>([])
 const siblings = ref<ProductCard[]>([])
 const lightbox = ref(false)
 
+// Галерея: основное фото + дополнительные S3-ключи (ProductDetail.photos)
+const gallery = computed(() =>
+  [product.value?.photo_key, ...(product.value?.photos ?? [])].filter(Boolean) as string[],
+)
+const activePhoto = ref(0)
+// URL активного фото (если gallery пуст — запасной вариант attributes.photo_url через photoOf)
+const mainPhoto = computed(() =>
+  gallery.value.length
+    ? urlOf(gallery.value[activePhoto.value])
+    : product.value ? photoOf(product.value) : null,
+)
+
 // Добавление в корзину прямо со страницы товара
 // (то же поведение, что в каталоге: спиннер → «Добавлено» на 1.5 с).
 const cart = useCart()
+// Избранное: кнопка под «В корзину» (ленивая загрузка списка — внутри isFav/toggle).
+const favorites = useFavorites()
+const favError = ref('')
+async function toggleFav() {
+  if (!product.value) return
+  favError.value = ''
+  try {
+    await favorites.toggle(product.value.sku)
+  } catch (e) {
+    favError.value = getErrorMessage(e, 'Не удалось обновить избранное')
+  }
+}
 const qty = ref(1)
 const adding = ref(false)
 const added = ref(false)
@@ -168,6 +192,7 @@ async function load() {
   history.value = []
   siblings.value = []
   lightbox.value = false
+  activePhoto.value = 0
   qty.value = 1
   qtyHint.value = ''
   try {
@@ -288,21 +313,52 @@ onUnmounted(() => {
       <div class="grid lg:grid-cols-2 gap-8">
         <!-- Фото -->
         <div>
-          <div class="card aspect-square overflow-hidden bg-surface-2 flex items-center justify-center">
+          <div class="card aspect-square overflow-hidden bg-surface-2 flex items-center justify-center relative">
             <img
-              v-if="photoOf(product)"
-              :src="photoOf(product)!"
+              v-if="mainPhoto"
+              :src="mainPhoto"
               :alt="product.name"
               class="w-full h-full object-cover cursor-zoom-in"
               @click="lightbox = true"
             >
             <Icon v-else name="heroicons:photo" class="w-20 h-20 text-ink-faint" />
+            <button
+              v-if="gallery.length > 1"
+              type="button"
+              aria-label="Предыдущее фото"
+              class="absolute left-2 top-1/2 -translate-y-1/2 btn-ghost p-1.5 bg-black/30 text-white rounded-full hover:bg-black/50"
+              @click="activePhoto = (activePhoto - 1 + gallery.length) % gallery.length"
+            >
+              <Icon name="heroicons:chevron-left" class="w-6 h-6" />
+            </button>
+            <button
+              v-if="gallery.length > 1"
+              type="button"
+              aria-label="Следующее фото"
+              class="absolute right-2 top-1/2 -translate-y-1/2 btn-ghost p-1.5 bg-black/30 text-white rounded-full hover:bg-black/50"
+              @click="activePhoto = (activePhoto + 1) % gallery.length"
+            >
+              <Icon name="heroicons:chevron-right" class="w-6 h-6" />
+            </button>
           </div>
-          <!-- Миниатюры (одно фото → одна) -->
-          <div v-if="photoOf(product)" class="flex gap-3 mt-3">
-            <div class="w-20 h-20 rounded-card overflow-hidden border-2 border-primary bg-surface-2">
-              <img :src="thumbOf(product.photo_key)!" :alt="product.name" class="w-full h-full object-cover" >
-            </div>
+          <!-- Миниатюры галереи -->
+          <div v-if="gallery.length" class="flex flex-wrap gap-3 mt-3">
+            <button
+              v-for="(key, i) in gallery"
+              :key="key"
+              type="button"
+              :aria-label="`Фото ${i + 1}`"
+              class="w-20 h-20 rounded-card overflow-hidden border-2 bg-surface-2"
+              :class="i === activePhoto ? 'border-primary' : 'border-transparent hover:border-primary/50'"
+              @click="activePhoto = i"
+            >
+              <img
+                :src="thumbOf(key)!"
+                :alt="`${product.name} — фото ${i + 1}`"
+                :loading="i === 0 ? undefined : 'lazy'"
+                class="w-full h-full object-cover"
+              >
+            </button>
           </div>
 
           <!-- Описание (под фото) -->
@@ -470,6 +526,18 @@ onUnmounted(() => {
             </div>
             <p v-if="qtyHint" class="text-xs text-warning mt-1.5">{{ qtyHint }}</p>
             <div v-if="cartError" class="badge-danger justify-center py-2 mt-2">{{ cartError }}</div>
+            <button
+              class="btn-outline w-full mt-3"
+              :class="{ 'text-danger': favorites.isFav(product.sku) }"
+              @click="toggleFav"
+            >
+              <Icon
+                :name="favorites.isFav(product.sku) ? 'heroicons:heart-solid' : 'heroicons:heart'"
+                class="w-4 h-4"
+              />
+              {{ favorites.isFav(product.sku) ? 'В избранном' : 'В избранное' }}
+            </button>
+            <div v-if="favError" class="badge-danger justify-center py-2 mt-2">{{ favError }}</div>
           </div>
         </div>
       </div>
@@ -477,12 +545,12 @@ onUnmounted(() => {
 
     <!-- Lightbox -->
     <div
-      v-if="lightbox && product && photoOf(product)"
+      v-if="lightbox && product && mainPhoto"
       class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) lightbox = false; overlayDown = false"
     >
       <img
-        :src="photoOf(product)!"
+        :src="mainPhoto"
         :alt="product.name"
         class="max-h-[90vh] max-w-[90vw] object-contain"
       >

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import StockStatus
 from app.schemas import MetaPage
+from app.schemas.dashboard import ClientNewArrival, ClientPromo
 
 
 # --------------------------------------------------------- дашборд (фича G)
@@ -52,6 +53,10 @@ class DashboardOut(BaseModel):
     top_products: list[TopProductItem]
     top_clients: list[TopClientItem]
     recent_orders: list[RecentOrderItem]
+    # Акции/новинки: тот же шейп, что клиентский дашборд (§16 п.20-1). У менеджера
+    # в client_price — розничная цена BYN (персональной скидки нет).
+    new_arrivals: list[ClientNewArrival] = []
+    promos: list[ClientPromo] = []
 
 
 # ------------------------------------------------------------- товары (п.20-2)
@@ -119,3 +124,8 @@ class BrandRenameIn(BaseModel):
 class SeriesPhotoOut(BaseModel):
     photo_key: str
     photo_url: str
+
+
+class ProductPhotoOut(BaseModel):
+    """Ответ на загрузку доп. фото товара (201, §6): только ключ нового фото."""
+    photo_key: str

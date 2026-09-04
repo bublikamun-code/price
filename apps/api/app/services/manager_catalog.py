@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.models.catalog import Brand
 from app.models.user import User
 from app.repositories import audit as audit_repo
+from app.repositories import catalog as catalog_repo
 from app.repositories import manager_catalog as repo
 from app.repositories.catalog import PHOTO_KEY_PREFIX, _slugify, get_brand, get_series
 from app.schemas.manager_catalog import (
@@ -27,15 +29,21 @@ from app.schemas.manager_catalog import (
     ManagerProductPatchIn,
     ManagerProductRead,
     ManagerSeriesRef,
+    ProductPhotoOut,
     SeriesPhotoOut,
 )
 from app.services import storage
 from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
 
+log = get_logger("app.services.manager_catalog")
+
 # Геометрия фото серий — зеркалит tasks/photo_zip.py (webp large/thumb, q=82).
 LARGE_SIZE = (1200, 1200)   # fit без кропа
 THUMB_SIZE = (400, 400)
 WEBP_QUALITY = 82
+
+# Префикс ключей доп. фото товаров (§6): ``photos-product/{product_id}/{uuid8}.webp``.
+PRODUCT_PHOTO_KEY_PREFIX = "photos-product/"
 
 
 class NotFoundError(ValueError):
@@ -295,3 +303,90 @@ class ManagerCatalogService:
             photo_key=key_large,
             photo_url=f"/api/v1/files/photo?key={key_large}",
         )
+
+    # -------------------------------------------------------- фото товара
+    async def upload_product_photo(
+        self, manager: User, product_id: uuid.UUID, raw: bytes
+    ) -> ProductPhotoOut:
+        """Обработать и залить доп. фото товара (webp large+thumb), записать в БД.
+
+        Ключ: ``photos-product/{product_id}/{uuid8}.webp`` (thumb — ``…_thumb.webp``)
+        в бакете ``photos-series``; обработка — та же, что для фото серий
+        (``_process_image``). Основное фото товара (``series.photo_key``) не трогаем.
+        """
+        product = await repo.get_active_product(self.db, product_id)
+        if product is None:
+            raise NotFoundError("Товар не найден")
+
+        try:
+            large, thumb = await run_in_threadpool(_process_image, raw)
+        except Exception as exc:
+            raise InvalidImageError("Файл не является корректным изображением") from exc
+
+        stem = uuid.uuid4().hex[:8]
+        key_large = f"{PRODUCT_PHOTO_KEY_PREFIX}{product_id}/{stem}.webp"
+        key_thumb = f"{PRODUCT_PHOTO_KEY_PREFIX}{product_id}/{stem}_thumb.webp"
+        await run_in_threadpool(
+            storage.upload_fileobj,
+            settings.s3_bucket_photos,
+            key_large,
+            io.BytesIO(large),
+            content_type="image/webp",
+        )
+        await run_in_threadpool(
+            storage.upload_fileobj,
+            settings.s3_bucket_photos,
+            key_thumb,
+            io.BytesIO(thumb),
+            content_type="image/webp",
+        )
+
+        await catalog_repo.add_product_photo(
+            self.db, product_id=product.id, photo_key=key_large
+        )
+        await audit_repo.create_audit(
+            self.db,
+            actor_id=manager.id,
+            action="product.photo.add",
+            target_type="product",
+            target_id=product.id,
+            after={"photo_key": key_large},
+        )
+        await self.db.commit()
+        await invalidate_tags(CATALOG_TAG, FILTERS_TAG)
+        return ProductPhotoOut(photo_key=key_large)
+
+    async def delete_product_photo(
+        self, manager: User, product_id: uuid.UUID, photo_key: str
+    ) -> None:
+        """Удалить доп. фото товара: запись в БД + объекты (large/thumb) из S3."""
+        product = await repo.get_active_product(self.db, product_id)
+        if product is None:
+            raise NotFoundError("Товар не найден")
+        photo = await catalog_repo.get_product_photo(
+            self.db, product_id=product.id, photo_key=photo_key
+        )
+        if photo is None:
+            raise NotFoundError("Фото не найдено")
+
+        await catalog_repo.delete_product_photo(self.db, photo)
+        await audit_repo.create_audit(
+            self.db,
+            actor_id=manager.id,
+            action="product.photo.delete",
+            target_type="product",
+            target_id=product.id,
+            before={"photo_key": photo_key},
+        )
+        await self.db.commit()
+        await invalidate_tags(CATALOG_TAG, FILTERS_TAG)
+        # Объекты S3 — после commit, best effort: запись уже удалена, дальше
+        # не критично (§16 п.18: DeleteObject идемпотентен).
+        thumb_key = photo_key.removesuffix(".webp") + "_thumb.webp"
+        for key in (photo_key, thumb_key):
+            try:
+                await run_in_threadpool(
+                    storage.delete_object, settings.s3_bucket_photos, key
+                )
+            except storage.StorageError as exc:
+                log.warning("product_photo.s3_delete_failed", key=key, error=str(exc))

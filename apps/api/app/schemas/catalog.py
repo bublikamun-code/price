@@ -45,6 +45,8 @@ class ProductCard(BaseModel):
 class ProductDetail(ProductCard):
     """Детальная карточка (соседи по серии добавляются отдельно)."""
     override_price: float | None = None
+    # Дополнительные фото товара (S3-ключи ``photos-product/…``, без основного photo_key)
+    photos: list[str] = []
 
 
 class PriceHistoryItem(BaseModel):

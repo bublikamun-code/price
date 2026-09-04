@@ -6,7 +6,14 @@
 
 Схема — см. ARCHITECTURE_PLAN.md §5.
 """
-from app.models.catalog import Brand, PriceHistory, PriceListVersion, Product, Series
+from app.models.catalog import (
+    Brand,
+    PriceHistory,
+    PriceListVersion,
+    Product,
+    ProductPhoto,
+    Series,
+)
 from app.models.file import FileAsset
 from app.models.news import News
 from app.models.order import Cart, CartItem, Order, OrderItem
@@ -33,6 +40,7 @@ __all__ = [
     "Brand",
     "Series",
     "Product",
+    "ProductPhoto",
     "PriceListVersion",
     "PriceHistory",
     # pricing

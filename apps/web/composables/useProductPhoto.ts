@@ -26,5 +26,11 @@ export function useProductPhoto() {
     return photoUrl(v)
   }
 
-  return { photoOf, thumbOf }
+  /** Полный URL произвольного ключа (http-URL как есть, S3-ключ — через редирект).
+   * Для галереи доп. фото (ProductDetail.photos), где ключ подаётся отдельно. */
+  function urlOf(key: string): string {
+    return photoUrl(key)
+  }
+
+  return { photoOf, thumbOf, urlOf }
 }

@@ -112,6 +112,8 @@ export interface ProductCard {
 
 export interface ProductDetail extends ProductCard {
   override_price: number | null
+  /** S3-ключи дополнительных фото (основное photo_key не входит) — галерея в карточке товара. */
+  photos?: string[]
 }
 
 export interface MetaPage {
@@ -573,6 +575,21 @@ export interface DashboardData {
   top_products: TopProductItem[]
   top_clients: TopClientItem[]
   recent_orders: RecentOrderItem[]
+  // Акции/новинки (поля новые — бэкенд может ещё не отдавать).
+  new_arrivals?: DashboardCarouselItem[]
+  promos?: DashboardCarouselItem[]
+}
+
+// Товар каруселей «Акции»/«Новинки» дашборда (шейп ClientNewArrival/ClientPromo,
+// app/schemas/dashboard.py). У менеджера в client_price — розничная цена BYN.
+export interface DashboardCarouselItem {
+  id: string
+  sku: string
+  name: string
+  photo_key: string | null
+  client_price: string
+  currency: string
+  has_discount: boolean
 }
 
 // Товар в панели менеджера (GET /manager/products): виден и ARCHIVED.

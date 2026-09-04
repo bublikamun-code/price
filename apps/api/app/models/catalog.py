@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
     func,
     text,
 )
@@ -122,6 +123,30 @@ class Product(Base, TimestampMixin, UUIDPrimaryKey):
             postgresql_using="gin",
             postgresql_ops={"sku": "gin_trgm_ops"},
         ),
+    )
+
+
+class ProductPhoto(Base, TimestampMixin, UUIDPrimaryKey):
+    """Дополнительное фото товара (галерея, §6).
+
+    Ключи хранятся в том же бакете, что и фото серий (``photos-series``):
+    ``photos-product/{product_id}/{uuid8}.webp`` (+ ``…_thumb.webp``).
+    Основное фото товара — ``series.photo_key``, здесь только дополнительные.
+    """
+
+    __tablename__ = "product_photos"
+
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    photo_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "product_id", "photo_key", name="uq_product_photos_product_key"
+        ),
+        Index("ix_product_photos_product", "product_id"),
     )
 
 
