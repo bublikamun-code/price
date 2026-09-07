@@ -275,6 +275,7 @@ const { thumbOf } = useProductPhoto()
 function attrChips(p: ProductCard): { label: string; value: string }[] {
   const a = p.attributes || {}
   const out: { label: string; value: string }[] = []
+  if (a.model) out.push({ label: 'Модель', value: String(a.model) })
   if (a.modules != null) out.push({ label: 'Модули', value: String(a.modules) })
   if (a.color) out.push({ label: 'Цвет', value: String(a.color) })
   if (a.ip_rating) out.push({ label: 'IP', value: String(a.ip_rating) })

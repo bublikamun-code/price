@@ -131,7 +131,8 @@ class ProductPhoto(Base, TimestampMixin, UUIDPrimaryKey):
 
     Ключи хранятся в том же бакете, что и фото серий (``photos-series``):
     ``photos-product/{product_id}/{uuid8}.webp`` (+ ``…_thumb.webp``).
-    Основное фото товара — ``series.photo_key``, здесь только дополнительные.
+    В списках каталога личное фото имеет приоритет над ``series.photo_key``
+    (см. repositories/catalog.py::_catalog_rows_stmt).
     """
 
     __tablename__ = "product_photos"

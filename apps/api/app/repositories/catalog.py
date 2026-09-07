@@ -57,7 +57,18 @@ def _apply_catalog_filters(stmt, filters: CatalogFilters):
 
 
 def _catalog_rows_stmt(user_id: uuid.UUID):
-    """Базовый select каталога: товар + бренд/серия + скидка клиента."""
+    """Базовый select каталога: товар + бренд/серия + скидка клиента.
+
+    Фото товара: личное (первое ProductPhoto по sort_order/created_at),
+    иначе — фото серии (у серий из одного фото это даёт разные фото товаров).
+    """
+    first_photo = (
+        select(ProductPhoto.photo_key)
+        .where(ProductPhoto.product_id == Product.id)
+        .order_by(ProductPhoto.sort_order.asc(), ProductPhoto.created_at.asc())
+        .limit(1)
+        .scalar_subquery()
+    )
     return (
         select(
             Product,
@@ -66,7 +77,7 @@ def _catalog_rows_stmt(user_id: uuid.UUID):
             Brand.slug.label("brand_slug"),
             Series.id.label("series_id"),
             Series.name.label("series_name"),
-            Series.photo_key.label("photo_key"),
+            func.coalesce(first_photo, Series.photo_key).label("photo_key"),
             UserBrand.discount_percent.label("discount_percent"),
         )
         .outerjoin(Brand, Brand.id == Product.brand_id)
