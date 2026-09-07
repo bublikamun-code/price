@@ -77,6 +77,22 @@ async def get_by_telegram_id(db: AsyncSession, telegram_id: int) -> User | None:
     return await db.scalar(select(User).where(User.telegram_id == telegram_id))
 
 
+async def fetch_manager_telegram_ids(db: AsyncSession) -> list[int]:
+    """chat_id активных менеджеров с привязанным Telegram (§20).
+
+    Используется для TG-рассылки сводок менеджерам: env-чат
+    TELEGRAM_MANAGER_CHAT_ID дополняется привязанными аккаунтами.
+    """
+    res = await db.execute(
+        select(User.telegram_id).where(
+            User.role == UserRole.MANAGER,
+            User.is_active.is_(True),
+            User.telegram_id.isnot(None),
+        )
+    )
+    return [row[0] for row in res.all()]
+
+
 async def email_exists(db: AsyncSession, email: str) -> bool:
     row = await db.scalar(select(User.id).where(func.lower(User.email) == email.lower()))
     return row is not None
@@ -90,6 +106,7 @@ async def create_user(
     full_name: str,
     company: str | None,
     phone: str | None,
+    must_change_password: bool = False,
 ) -> User:
     user = User(
         email=email,
@@ -99,6 +116,7 @@ async def create_user(
         phone=phone,
         role=UserRole.CLIENT,
         is_active=True,
+        must_change_password=must_change_password,
     )
     db.add(user)
     await db.flush()

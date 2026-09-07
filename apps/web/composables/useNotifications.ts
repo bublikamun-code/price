@@ -87,5 +87,19 @@ export function useNotifications() {
     streamHadDrop = false
   }
 
-  return { unreadCount, refresh, startPolling, startStream, stopStream }
+  /**
+   * Сброс module-state при выходе/смене пользователя (вызывается из useAuth):
+   * бейдж прежнего пользователя в 0, стрим и poll-таймер остановлены.
+   * Poll-fallback перезапустится через startPolling()/startStream() для новой сессии.
+   */
+  function resetState(): void {
+    unreadCount.value = 0
+    stopStream()
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  return { unreadCount, refresh, startPolling, startStream, stopStream, resetState }
 }

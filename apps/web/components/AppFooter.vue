@@ -52,6 +52,9 @@ const COMPANY_COPYRIGHT_YEAR = 2026
             Разделы
           </h3>
           <nav class="flex flex-col gap-2 text-sm">
+            <NuxtLink to="/brands" class="hover:text-white transition-colors">
+              Бренды
+            </NuxtLink>
             <NuxtLink to="/catalog" class="hover:text-white transition-colors">
               Каталог
             </NuxtLink>

@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     web_app_url: str = ""                # напр. https://portal.example.by
     manager_notify_email: str = ""       # пусто → письмо о новой заявке не шлём
+    smtp_tls: bool = True                # STARTTLS после connect (SMTP_TLS=0 → без TLS, напр. локальный mailhog)
 
     @property
     def password_reset_ttl_min(self) -> int:
@@ -185,6 +186,10 @@ class Settings(BaseSettings):
     # Флаг Secure у кук аутентификации (access/refresh/csrf): prod — true,
     # куки уходят только по HTTPS (COOKIE_SECURE=true в prod-compose, §16 п.30)
     cookie_secure: bool = False
+    # Grace-окно ротации refresh-токена (сек, аудит P0-1): старый токен после
+    # ротации принимается в пределах окна — параллельные refresh (несколько
+    # вкладок) не рвут сессию; после окна — обычный 401 (reuse-detection).
+    refresh_grace_seconds: int = 60
     # CSP в enforcing-режиме (§16 п.30): браузер блокирует нарушения политики.
     # 'unsafe-inline' в script/style — для инлайн-скриптов гидратации Nuxt SSR.
     # Пустая строка = заголовок выключен.

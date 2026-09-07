@@ -20,11 +20,6 @@ from app.core.config import settings
 from app.core.deps import validate_csrf
 
 try:
-    from app.api import miniapp
-except ImportError:
-    miniapp = None  # type: ignore[assignment]
-
-try:
     from app.api.v1.integrations import one_c
 except ImportError:
     one_c = None  # type: ignore[assignment]
@@ -188,9 +183,10 @@ app.include_router(api_router)
 # 1С: subroute /api/integrations/1c/** — отдельный include на app, вне /api/v1
 if one_c is not None:
     app.include_router(one_c.router, prefix="/api")
-# Telegram Mini App: subroute /api/m/v1/**
-if miniapp is not None:
-    app.include_router(miniapp.router, prefix="/api")
+# Telegram Mini App: subroute /api/m/v1/** (fail-fast: модуль обязателен)
+from app.api import miniapp
+
+app.include_router(miniapp.router, prefix="/api")
 
 
 # ---------- Root ----------

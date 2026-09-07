@@ -64,6 +64,7 @@ class FiltersOut(BaseModel):
     brands: list[BrandRef]
     series: list[SeriesRef]
     stock: list[str]
+    models: list[str] = []
 
 
 class ExportStartOut(BaseModel):

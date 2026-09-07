@@ -131,6 +131,7 @@ export interface FiltersOut {
   brands: BrandRef[]
   series: SeriesRef[]
   stock: string[]
+  models?: string[]
 }
 
 // Экспорт каталога (CSV/XLSX/PDF). См. §6 + app/api/v1/catalog.py, §16 п.16, п.25.

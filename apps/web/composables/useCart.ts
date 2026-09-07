@@ -55,5 +55,16 @@ export function useCart() {
     return cart.value
   }
 
-  return { cart, data, count, loading, lastAdded, refresh, add, update, remove, clear }
+  /**
+   * Сброс module-state при выходе/смене пользователя (вызывается из useAuth):
+   * без него счётчик и всплывающая корзина показывали бы данные прежнего пользователя.
+   * Не путать с clear() — та очищает корзину на сервере.
+   */
+  function resetState(): void {
+    cart.value = null
+    loading.value = false
+    lastAdded.value = null
+  }
+
+  return { cart, data, count, loading, lastAdded, refresh, add, update, remove, clear, resetState }
 }

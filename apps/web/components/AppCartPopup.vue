@@ -27,7 +27,7 @@ function close() {
     <Transition name="cart-popup">
       <div
         v-if="visible && lastAdded"
-        class="fixed right-4 bottom-20 lg:bottom-4 z-50 card p-3 shadow-card w-[320px] max-w-[calc(100vw-2rem)]"
+        class="fixed right-4 bottom-20 lg:bottom-4 z-50 glass p-3 w-[320px] max-w-[calc(100vw-2rem)]"
         role="status"
       >
         <div class="flex items-start gap-3">

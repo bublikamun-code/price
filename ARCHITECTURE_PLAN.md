@@ -167,6 +167,26 @@ Text muted        : #9CA3AF
 - Mobile-first breakpoints: 640 / 768 / 1024 / 1280.
 - На мобильных — bottom-sheet для фильтров, sticky-корзина внизу.
 
+### Liquid Glass — двухуровневое стекло (2026-09-05)
+> Реализация в `apps/web/assets/css/main.css` (токены `--glass-*`, `--ambient-*`) и
+> `tailwind.config.ts` (`glass`, `glass-border`, стеклянные `shadow-card`). Палитра
+> не менялась — материал берётся из `--color-surface` с альфой.
+
+- **Уровень 1 — `.glass` («живое» стекло):** `backdrop-filter: blur(20px) saturate(1.6)`
+  + полупрозрачный фон (`--glass-a-strong`). Только плавающие элементы, под которыми
+  прокручивается контент: шапка (AppHeader), нижняя навигация (AppBottomNav, miniapp),
+  попап корзины, тосты, дропдауны (BaseSelect), sticky-пагинация каталога, панели поиска.
+  Fallback `@supports not (backdrop-filter)` → плотный фон.
+- **Уровень 2 — `.card` («статичное» стекло):** полупрозрачный фон (`--glass-a`) +
+  световая кромка (блики в `shadow-card`: верх `--glass-spec-top`, кольцо
+  `--glass-spec-ring`, низ `--glass-spec-bot`), **без** backdrop-filter — нулевая
+  цена для GPU на сетках каталога. Выход в плотный вид — утилита `.card-solid`.
+- **Ambient-фон:** `body::before` — 3 фиксированных радиальных пятна (`--ambient-1..3`,
+  альфа `--ambient-a`: ~0.10 light / ~0.22 dark), на которых стекло «читается».
+- **Плотными остаются:** `.btn-primary`, активный `.nav-link-active` (с тонким верхним
+  бликом), AppFooter. Оверлеи модалок — `bg-black/50 backdrop-blur-sm`.
+- Тёмная тема: те же классы, значения альф и бликов — в `.dark`-переопределениях токенов.
+
 ---
 
 ## 4. Арххитектура системы (High-Level)

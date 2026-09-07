@@ -7,13 +7,12 @@
     ``type`` / ``brand_id`` + пагинация §6;
   * ``GET /files/{id}/download`` — presigned-URL (TTL 5 мин); нет файла
     или недоступен по visibility → 404;
-  * ``GET /files/photo?key=photos-series/...`` — фото серии/товара.
-    Раньше был 307-редирект на presigned URL внешнего S3-эндпоинта,
-    но его TLS-сертификат не покрывает имя хоста статики (managed-nginx
-    хостера отдаёт дефолтный ``*.hoster.by``) → браузер блокировал фото
-    (ERR_CERT_COMMON_NAME_INVALID). Поэтому содержимое теперь отдаёт
-    сам API (фото — сжатые webp ≤1200px, десятки–сотни КБ), с
-    ``Cache-Control: private`` на срок жизни бывшего presigned TTL.
+  * ``GET /files/photo?key=photos-series/...`` — фото серии/товара:
+    307-редирект на presigned URL (TTL ``s3_presign_ttl_seconds``, §16 п.18).
+    Прим.: для ПУБЛИЧНОЙ витрины брендов (``/public/photo``, api/v1/public.py)
+    редирект не подходит — TLS-сертификат внешнего S3-хоста не покрывает имя
+    хоста статики и браузер блокирует переход, поэтому там содержимое отдаёт
+    сам API. Здесь авторизованный клиент получает ссылку как на прочие файлы.
 
 Ключ фото валидируется: обязательный «голый» путь без схемы и без ``..``
 (path traversal), иначе 400.
@@ -21,8 +20,9 @@
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -123,21 +123,20 @@ async def download_file(
 async def get_photo(
     key: str = Query(description="S3-ключ фото (например photos-series/serie-a.webp)"),
     _user: User = Depends(get_current_user),
-) -> Response:
-    """Фото из бакета ``photos-series`` через API (см. docstring модуля:
-    внешний S3-эндпоинт недоступен браузерам из-за невалидного TLS)."""""
+) -> RedirectResponse:
+    """Фото серии/товара: 307 на presigned URL (TTL 5 мин, §16 п.18).
+
+    Ключ валидируется ДО генерации ссылки: «голый» путь без схемы и без
+    ``..`` — иначе 400. Хранилище недоступно → 502. Для публичной витрины
+    (``/public/photo``) — свой стриминг, см. docstring модуля.
+    """
     valid_key = _validate_photo_key(key)
     try:
-        data = await run_in_threadpool(
-            storage.get_bytes, settings.s3_bucket_photos, valid_key
+        url = await run_in_threadpool(
+            storage.presigned_get, settings.s3_bucket_photos, valid_key
         )
     except storage.StorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
-    media_type = "image/webp" if valid_key.endswith(".webp") else "application/octet-stream"
-    return Response(
-        content=data,
-        media_type=media_type,
-        headers={"Cache-Control": f"private, max-age={settings.s3_presign_ttl_seconds}"},
-    )
+    return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

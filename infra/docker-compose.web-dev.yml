@@ -1,0 +1,18 @@
+# ============================================================
+#  Override: web в DEV-режиме (Nuxt dev server с хот-релоадом).
+#  Включить:   make web-dev
+#  Выключить:  make web-prod  (prod-режим — по умолчанию в docker-compose.yml)
+#  (равнозначно: docker compose -f infra/docker-compose.yml
+#   -f infra/docker-compose.web-dev.yml --env-file .env up -d --build web)
+#  Нужен и для `make test-e2e` — playwright установлен в dev-контейнере web.
+# ============================================================
+services:
+  web:
+    build:
+      target: dev
+    volumes:
+      - ../apps/web:/app            # исходники с хот-релоадом
+      - /app/node_modules           # анонимный том: зависимости внутри контейнера
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    healthcheck:
+      start_period: 120s            # dev: npm install при старте занимает время

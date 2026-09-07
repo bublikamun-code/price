@@ -431,7 +431,7 @@ onMounted(() => {
 
         <div v-if="applyAllError" class="badge-danger mb-3">{{ applyAllError }}</div>
 
-        <div v-if="discountRows.length" class="max-h-96 overflow-y-auto border border-border/60 rounded-card">
+        <div v-if="discountRows.length" class="max-h-96 overflow-y-auto scrollbar-none border border-border/60 rounded-card">
           <table class="w-full text-sm">
             <thead class="sticky top-0">
               <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">

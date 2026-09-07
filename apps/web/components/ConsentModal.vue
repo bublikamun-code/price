@@ -36,7 +36,7 @@ async function accept() {
         role="dialog"
       >
         <div class="absolute inset-0" aria-hidden="true" />
-        <div class="relative w-full max-w-xl max-h-[90vh] overflow-y-auto card p-6 sm:p-8 shadow-card">
+        <div class="relative w-full max-w-xl max-h-[90vh] overflow-y-auto scrollbar-none card p-6 sm:p-8 shadow-card">
           <h1 class="text-2xl font-bold text-center mb-2">Согласие на обработку персональных данных</h1>
           <p class="text-sm text-ink-muted text-center mb-6">
             Для работы портала нам нужно ваше согласие. Краткая выжимка политики:

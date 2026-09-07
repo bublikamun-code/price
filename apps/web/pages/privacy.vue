@@ -81,6 +81,17 @@ useHead({ title: 'Политика конфиденциальности' })
           </p>
         </section>
 
+        <section>
+          <h2 class="text-lg font-semibold mb-2">8. Файлы cookie</h2>
+          <p class="text-sm text-ink-muted leading-relaxed">
+            Портал использует только необходимые (строго функциональные) файлы cookie:
+            идентификация сессии входа, защита форм (CSRF) и хранение ваших настроек
+            интерфейса на устройстве. Аналитические и рекламные cookie не используются.
+            Информация о принятом решении по cookie сохраняется в памяти вашего браузера
+            (localStorage) и не передаётся third-party-сервисам.
+          </p>
+        </section>
+
         <section class="border-t border-border pt-6">
           <h2 class="text-lg font-semibold mb-2">Реквизиты компании (Оператора)</h2>
           <ul class="flex flex-col gap-1">

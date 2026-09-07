@@ -20,7 +20,7 @@ from __future__ import annotations
 import io
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from openpyxl import Workbook
@@ -36,6 +36,10 @@ from app.tasks.export_catalog import run_export
 log = get_logger("app.services.export")
 
 JOB_TTL_SECONDS = 24 * 60 * 60  # стейт job'а живёт сутки (§16 п.16)
+
+# RUNNING дольше этого срока = воркер мёртв (hard time limit задачи — 30 мин,
+# workers.py): отдаём клиенту FAILED вместо опроса до суточного TTL ключа.
+STALE_RUNNING_AFTER_SECONDS = 30 * 60
 
 # Статусы job'а (§6): QUEUED (создан) → RUNNING (воркер взял) → DONE/FAILED.
 STATUS_QUEUED = "QUEUED"
@@ -116,11 +120,35 @@ async def start_order_pdf(*, user: User, order) -> str:
 
 
 async def get_job(user_id, job_id) -> dict[str, Any] | None:
-    """Стейт job'а для владельца. ``None`` — нет ключа, Redis лежит или чужой."""
+    """Стейт job'а для владельца. ``None`` — нет ключа, Redis лежит или чужой.
+
+    Стейт живёт только в Redis: если воркер умер, RUNNING никто не переведёт.
+    Зависший RUNNING (``started_at``/``created_at`` старше дедлайна) на чтении
+    перезаписывается FAILED («задача прервана»), чтобы клиент не поллил до TTL.
+    """
     state = await safe_get_job(job_id)
     if state is None or state.get("user_id") != str(user_id):
         return None
+    if state.get("status") == STATUS_RUNNING and _running_stale(state):
+        state.update(status=STATUS_FAILED, error="Задача прервана: воркер не ответил")
+        await safe_set_job(job_id, state)
+        log.warning("export.job_stale_marked_failed", job_id=str(state.get("job_id")))
     return state
+
+
+def _running_stale(state: dict[str, Any]) -> bool:
+    """RUNNING начат раньше дедлайна? Отсчёт от ``started_at`` (fallback —
+    ``created_at`` для ключей, записанных до появления heartbeat-поля)."""
+    raw = state.get("started_at") or state.get("created_at")
+    if not raw:
+        return False
+    try:
+        started = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    return datetime.now(UTC) - started > timedelta(seconds=STALE_RUNNING_AFTER_SECONDS)
 
 
 async def set_job_state(job_id, **fields: Any) -> None:

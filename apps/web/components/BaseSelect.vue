@@ -13,12 +13,11 @@ const props = withDefaults(
     placeholder?: string
     id?: string
   }>(),
-  { options: () => [] },
+  { options: () => [], modelValue: null, placeholder: '', id: undefined },
 )
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: SelectOption['value']): void
-  (e: 'change', value: SelectOption['value']): void
+  (e: 'update:modelValue' | 'change', value: SelectOption['value']): void
 }>()
 
 const open = ref(false)
@@ -61,13 +60,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     </button>
     <div
       v-if="open"
-      class="absolute z-50 mt-1.5 w-full min-w-max bg-surface border border-border rounded-btn shadow-card-hover p-1.5 max-h-60 overflow-auto"
+      class="absolute z-50 mt-1.5 w-full min-w-max glass rounded-[18px] p-1.5 max-h-60 overflow-auto"
     >
       <button
         v-for="o in options"
         :key="o.value"
         type="button"
-        class="w-full text-left px-3 py-2 rounded-btn text-sm transition-colors whitespace-nowrap"
+        class="w-full text-left px-3 py-2 rounded-[18px] text-sm transition-colors whitespace-nowrap"
         :class="modelValue === o.value ? 'bg-ink/5 text-ink font-semibold border-l-2 border-primary' : 'text-ink hover:bg-surface-2'"
         @click="select(o)"
       >

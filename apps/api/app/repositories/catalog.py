@@ -4,9 +4,9 @@
 Возвращает «сырые» строки; расчёт цен — в PricingService.
 """
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Sequence
 
 from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,9 +29,10 @@ class CatalogFilters:
     brand_ids: Sequence[uuid.UUID] | None = None
     series_ids: Sequence[uuid.UUID] | None = None
     stock: StockStatus | None = None
+    model: str | None = None  # атрибут «Щит распределительный» / «Щит мультимедиа» / «Аксессуары»
 
     def has_any(self) -> bool:
-        return any([self.q, self.brand_ids, self.series_ids, self.stock])
+        return any([self.q, self.brand_ids, self.series_ids, self.stock, self.model])
 
 
 def _like_escape(s: str) -> str:
@@ -50,6 +51,8 @@ def _apply_catalog_filters(stmt, filters: CatalogFilters):
         stmt = stmt.where(Product.series_id.in_(filters.series_ids))
     if filters.stock:
         stmt = stmt.where(Product.stock_status == filters.stock)
+    if filters.model:
+        stmt = stmt.where(Product.attributes["model"].as_string() == filters.model)
     return stmt
 
 
@@ -153,6 +156,29 @@ async def get_by_skus(db: AsyncSession, skus: Sequence[str]) -> dict[str, Produc
     return {p.sku: p for p in res.all()}
 
 
+async def get_by_skus_for_update(
+    db: AsyncSession, skus: Sequence[str]
+) -> dict[str, Product]:
+    """Товары по артикулам одним IN-запросом с блокировкой строк (FOR UPDATE).
+
+    Для оформления заявки (аудит 2026-09-06): проверка остатка и вставка
+    заявки должны выполняться под блокировкой строк products — иначе два
+    параллельных заказа читают один и тот же остаток и «продают» его дважды.
+    ``ORDER BY id`` задаёт детерминированный порядок захвата блокировок
+    (два конкурентных заказа не взаимоблокируются). Семантика как у
+    ``get_by_skus``: ``{sku: Product}``, без удалённых.
+    """
+    if not skus:
+        return {}
+    res = await db.scalars(
+        select(Product)
+        .where(Product.sku.in_(skus), Product.deleted_at.is_(None))
+        .order_by(Product.id)
+        .with_for_update()
+    )
+    return {p.sku: p for p in res.all()}
+
+
 async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand | None:
     return await db.scalar(select(Brand).where(Brand.id == brand_id))
 
@@ -217,12 +243,22 @@ async def fetch_filters(db: AsyncSession) -> dict:
             .distinct()
         )
     ).all()
+    visible = Product.deleted_at.is_(None), Product.stock_status != StockStatus.ARCHIVED
+    models = (
+        await db.execute(
+            select(Product.attributes["model"].as_string())
+            .where(*visible, Product.attributes["model"].is_not(None))
+            .distinct()
+        )
+    ).scalars().all()
+    models = sorted(m for m in models if m)
     return {
         "brands": [{"id": str(b.id), "name": b.name} for b in brands],
         "series": [
             {"id": str(s.id), "name": s.name, "brand_id": str(s.brand_id)} for s in series
         ],
         "stock": [s[0].value for s in stocks],
+        "models": list(models),
     }
 
 

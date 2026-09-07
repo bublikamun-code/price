@@ -18,7 +18,9 @@ def notification_payload(notif) -> dict[str, Any]:
     """Сформировать payload для SSE — заглушка."""
     return {
         "id": str(notif.id) if hasattr(notif, "id") else "",
-        "type": notif.type.value if hasattr(notif, "type") else "",
+        # type может быть enum (NotificationType) или уже строкой (значение
+        # колонки) — в обоих случаях отдаём строковое имя.
+        "type": notif.type.value if hasattr(getattr(notif, "type", None), "value") else getattr(notif, "type", ""),
         "title": notif.title if hasattr(notif, "title") else "",
         "body": notif.body if hasattr(notif, "body") else "",
     }

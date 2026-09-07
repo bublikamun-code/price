@@ -59,11 +59,22 @@ class OrderService:
         currency_code = resolved.currency
         exchange_rate = float(resolved.rate) if resolved.rate is not None else 1.0
 
-        # 1) Валидация позиций и расчёт позиций «на лету» (до INSERT).
+        # 1) Товары одним IN-запросом с FOR UPDATE (аудит 2026-09-06):
+        #    проверка остатка ниже и INSERT заявки проходят под блокировкой
+        #    строк products — конкурентный заказ ждёт коммита первого и видит
+        #    актуальный остаток (ORDER BY id в репозитории — без deadlock).
+        skus = [ci.sku for ci in payload.items]
+        products = await catalog_repo.get_by_skus_for_update(self.db, skus)
+        # Батч-цены: курс разрешён один раз выше, скидки по всем брендам —
+        # одним запросом (было ~3 запроса на позицию).
+        prices = await self.pricing.price_products(
+            list(products.values()), user, payload.price_calc_mode, resolved=resolved
+        )
+
         new_items: list[OrderItem] = []
         total = 0.0
         for ci in payload.items:
-            product = await catalog_repo.get_by_sku(self.db, ci.sku)
+            product = products.get(ci.sku)
             if product is None:
                 raise ValueError(f"Товар {ci.sku} не найден")
             if product.stock_status == StockStatus.ARCHIVED:
@@ -72,10 +83,7 @@ class OrderService:
             # заказать больше доступного (NULL → остаток не отслеживается).
             if product.stock_qty is not None and ci.quantity > product.stock_qty:
                 raise StockExceededError(ci.sku, product.stock_qty)
-            pr = await self.pricing.price_product(
-                product, user, payload.price_calc_mode
-            )
-            unit_price = float(pr["client_price"])
+            unit_price = float(prices[product.id]["client_price"])
             total += unit_price * ci.quantity
             snapshot = {
                 "sku": product.sku,

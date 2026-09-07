@@ -58,6 +58,9 @@ export default <Partial<Config>>{
           muted: 'rgb(var(--color-ink-muted) / <alpha-value>)',
           faint: 'rgb(var(--color-ink-faint) / <alpha-value>)',
         },
+        // Liquid Glass: материал и световая кромка (уровни — см. main.css)
+        glass: 'rgb(var(--glass) / <alpha-value>)',
+        'glass-border': 'rgb(var(--glass-border-rgb) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
@@ -77,8 +80,10 @@ export default <Partial<Config>>{
         pill: '999px',
       },
       boxShadow: {
-        card: '0 0 0 1px hsla(0,0%,9%,.05), 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)',
-        'card-hover': '0 0 0 1px hsla(0,0%,9%,.08), 0 2px 6px rgba(0,0,0,.12), 0 2px 4px -2px rgba(0,0,0,.1)',
+        // Liquid Glass: внутренние блики (свет сверху, тень снизу, световое
+        // кольцо) + прежние наружные тени. Варианты бликов — токены тем.
+        card: 'inset 0 1px 0 0 rgb(255 255 255 / var(--glass-spec-top)), inset 0 0 0 1px rgb(255 255 255 / var(--glass-spec-ring)), inset 0 -1px 0 0 rgb(0 0 0 / var(--glass-spec-bot)), 0 0 0 1px hsla(0,0%,9%,.05), 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)',
+        'card-hover': 'inset 0 1px 0 0 rgb(255 255 255 / var(--glass-spec-top)), inset 0 0 0 1px rgb(255 255 255 / var(--glass-spec-ring)), inset 0 -1px 0 0 rgb(0 0 0 / var(--glass-spec-bot)), 0 0 0 1px hsla(0,0%,9%,.08), 0 2px 6px rgba(0,0,0,.12), 0 2px 4px -2px rgba(0,0,0,.1)',
       },
       transitionTimingFunction: {
         soft: 'cubic-bezier(0.4, 0, 0.2, 1)',

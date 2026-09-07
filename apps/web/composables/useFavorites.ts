@@ -10,11 +10,28 @@ const skus = ref<Set<string>>(new Set())
 const loading = ref(false)
 let loaded = false
 let promised: Promise<void> | null = null
+// Поколение состояния: resetState() инкрементирует его, и in-flight запрос
+// прежнего пользователя не пишет свои результаты в состояние нового.
+let generation = 0
 
 export function useFavorites() {
   const { request } = useApi()
 
   const count = computed(() => skus.value.size)
+
+  /**
+   * Сброс module-state при выходе/смене пользователя (вызывается из useAuth).
+   * Без него ensureLoaded() у нового пользователя делает ранний return
+   * (loaded=true от прежнего) — в UI остаётся чужое избранное.
+   */
+  function resetState(): void {
+    generation++
+    items.value = []
+    skus.value = new Set()
+    loading.value = false
+    loaded = false
+    promised = null
+  }
 
   function isFav(sku: string): boolean {
     void ensureLoaded()
@@ -24,21 +41,26 @@ export function useFavorites() {
   async function ensureLoaded(): Promise<void> {
     if (loaded) return
     if (!promised) {
+      const gen = generation
       promised = (async () => {
         loading.value = true
         try {
           const res = await request<FavoriteListPage>('/api/v1/favorites', {
             query: { page: 1, per_page: PER_PAGE },
           })
+          if (gen !== generation) return // состояние сброшено (logout/login) — не пишем
           items.value = res.data
           skus.value = new Set(res.data.map(i => i.sku))
         } catch {
+          if (gen !== generation) return
           // Тихо: избранное могло не загрузиться — сердечки будут пустыми.
           items.value = []
           skus.value = new Set()
         } finally {
-          loading.value = false
-          loaded = true
+          if (gen === generation) {
+            loading.value = false
+            loaded = true
+          }
         }
       })()
     }
@@ -86,5 +108,5 @@ export function useFavorites() {
     return adding
   }
 
-  return { items, skus, count, loading, isFav, ensureLoaded, refresh, remove, toggle, init: ensureLoaded }
+  return { items, skus, count, loading, isFav, ensureLoaded, refresh, remove, toggle, resetState, init: ensureLoaded }
 }

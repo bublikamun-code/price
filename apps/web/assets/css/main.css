@@ -36,6 +36,24 @@
   --color-danger-soft: 254 242 242;
   --color-danger-text: 153 27 27;
   --color-info-text: 23 23 23;
+
+  /* Liquid Glass — материал поверхностей (добавлено, палитру не трогаем).
+     --glass-a — статичное стекло (.card), --glass-a-strong — «живое» (.glass,
+     blur компенсирует прозрачность). Блики: сверху светлее, снизу темнее. */
+  --glass-a: 0.86;
+  --glass-a-strong: 0.66;
+  --glass: 255 255 255;
+  --glass-border-rgb: 229 229 229;
+  --glass-border-a: 0.9;
+  --glass-spec-top: 0.45;
+  --glass-spec-ring: 0.07;
+  --glass-spec-bot: 0.03;
+
+  /* Ambient-фон: 3 мягких пятна, на них «читается» стекло */
+  --ambient-a: 0.1;
+  --ambient-1: 148 163 184;
+  --ambient-2: 240 209 169;
+  --ambient-3: 137 165 149;
 }
 
 .dark {
@@ -64,6 +82,22 @@
   --color-danger-text: 252 165 165;
   --color-info-text: 250 250 250;
   color-scheme: dark;
+
+  /* Liquid Glass (dark): материал темнее и прозрачнее, кромка светится */
+  --glass-a: 0.78;
+  --glass-a-strong: 0.58;
+  --glass: 24 24 24;
+  --glass-border-rgb: 255 255 255;
+  --glass-border-a: 0.14;
+  --glass-spec-top: 0.12;
+  --glass-spec-ring: 0.1;
+  --glass-spec-bot: 0.22;
+
+  /* Ambient (dark): глубокие тона, заметнее, чем в light, но без неона */
+  --ambient-a: 0.22;
+  --ambient-1: 52 84 118;
+  --ambient-2: 118 82 40;
+  --ambient-3: 30 62 48;
 }
 
 @layer base {
@@ -74,6 +108,21 @@
 
   body {
     @apply bg-canvas text-ink font-sans antialiased;
+  }
+
+  /* Ambient-фон: фиксированные мягкие пятна (процент непрозрачности — токен
+     темы). Слой под контентом и не ловит события. Без него blur стекла
+     не на чем «читаться». */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(52rem 52rem at 8% -12%, rgb(var(--ambient-1) / var(--ambient-a)), transparent 62%),
+      radial-gradient(64rem 64rem at 105% 6%, rgb(var(--ambient-2) / var(--ambient-a)), transparent 55%),
+      radial-gradient(58rem 58rem at 50% 115%, rgb(var(--ambient-3) / var(--ambient-a)), transparent 65%);
   }
 
   /* clip, не hidden: не ломает position:sticky шапки */
@@ -101,16 +150,65 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-ink-faint;
   }
+
+  /* Клавиатурная навигация: единое мягкое кольцо фокуса (цвет — токен
+     темы). Элементы со своими ring-стилями (.btn, .input) перекрывают
+     это утилитой focus:outline-none — двойной рамки не будет. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--color-primary) / 0.7);
+    outline-offset: 2px;
+  }
+
+  /* Доступность: при системной настройке «уменьшить движение» гасим
+     все анимации и переходы (guard поверх Tailwind-анимаций и скелетонов). */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
-  /* Карточка-плитка — основной строительный блок UI */
+  /* Карточка-плитка — основной строительный блок UI.
+     Liquid Glass (уровень 2, «статичное» стекло): полупрозрачный материал
+     + световая кромка (блики в shadow-card / tailwind.config), БЕЗ
+     backdrop-filter — нулевая цена для GPU на сетках каталога. */
   .card {
-    @apply bg-surface rounded-card shadow-card border border-border
+    @apply rounded-card border border-border shadow-card
            transition-all duration-200 ease-soft;
+    background-color: rgb(var(--color-surface) / var(--glass-a));
+    border-color: rgb(var(--glass-border-rgb) / var(--glass-border-a));
   }
   .card-hover {
-    @apply hover:-translate-y-0.5 hover:shadow-card-hover;
+    @apply hover:-translate-y-0.5 hover:shadow-card-hover
+           transition duration-200 ease-soft;
+  }
+  /* Плотная (непрозрачная) карточка — выход для блоков поверх пёстрого
+     контента, где просвечивание мешает читаемости */
+  .card-solid {
+    background-color: rgb(var(--color-surface) / 1);
+    border-color: rgb(var(--color-border) / 1);
+  }
+
+  /* Liquid Glass (уровень 1, «живое» стекло) — только для плавающих
+     элементов, под которыми прокручивается контент: шапка, нижняя
+     навигация, попапы, тосты, дропдауны, sticky-полосы. */
+  .glass {
+    @apply rounded-card border shadow-card-hover
+           transition-all duration-200 ease-soft;
+    background-color: rgb(var(--color-surface) / var(--glass-a-strong));
+    border-color: rgb(var(--glass-border-rgb) / calc(var(--glass-border-a) + 0.1));
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    backdrop-filter: blur(20px) saturate(1.6);
+  }
+  /* Без поддержки backdrop-filter — почти плотный фон, читаемость важнее */
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass {
+      background-color: rgb(var(--color-surface) / 0.96);
+    }
   }
 
   /* Панель — рамка без фона/тени (описание и характеристики в карточке товара) */
@@ -127,6 +225,8 @@
   }
   .btn-primary {
     @apply btn bg-primary text-white px-5 hover:bg-primary-hover active:scale-[.98];
+    /* Стеклянная грань у плотной кнопки */
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
   }
   .btn-secondary {
     @apply btn bg-canvas text-ink hover:bg-surface-2;
@@ -214,6 +314,7 @@
   }
   .nav-link-active {
     @apply bg-primary text-white;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
   }
 
   /* Skeleton shimmer */
@@ -273,5 +374,17 @@
 @layer utilities {
   .container-app {
     @apply mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Прокрутка без видимого ползунка — для модалок и плавающих панелей,
+     где системный скроллбар перекрывает скруглённый край карточки.
+     Прокрутка (колесо/тач/клавиатура) полностью сохраняется. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }

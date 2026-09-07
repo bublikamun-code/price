@@ -6,12 +6,30 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Sequence,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 from app.models.enums import OrderStatus, pg_enum
+
+# PG-последовательность сквозных номеров заявок (nextval, аудит 2026-09-06):
+# миграция 0009 создаёт её на существующей БД с START = MAX(seq)+1.
+# Объявлена с metadata → Base.metadata.create_all (тестовая схема) создаёт
+# её автоматически. Выдаёт уникальные значения при конкурентном оформлении —
+# в отличие от MAX(seq)+1, падавшего по uq_orders_seq (см. §9).
+orders_seq_numbering = Sequence("orders_seq_seq", metadata=Base.metadata)
 
 
 class Cart(Base, TimestampMixin, UUIDPrimaryKey):
@@ -22,6 +40,12 @@ class Cart(Base, TimestampMixin, UUIDPrimaryKey):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(100), default="Корзина", nullable=False)
+
+    __table_args__ = (
+        # Одна корзина на пользователя: гонка check-then-insert в
+        # get_or_create_cart больше не создаёт дубли (миграция 0009).
+        UniqueConstraint("user_id", name="uq_carts_user_id"),
+    )
 
 
 class CartItem(Base, TimestampMixin, UUIDPrimaryKey):
@@ -77,10 +101,17 @@ class Order(Base, TimestampMixin, UUIDPrimaryKey):
     external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 1С (§18)
 
     # Сквозной номер заявки («№123» вместо обрезанного UUID). Присваивается
-    # при создании (MAX(seq)+1); для существующих строк — backfill миграцией.
+    # при создании из PG-последовательности orders_seq_seq (nextval —
+    # атомарно при конкурентном оформлении, миграция 0009); для существующих
+    # строк — backfill миграцией. Возможны «дыры» при откате транзакции.
     seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    __table_args__ = (UniqueConstraint("seq", name="uq_orders_seq"),)
+    __table_args__ = (
+        UniqueConstraint("seq", name="uq_orders_seq"),
+        # Созданы миграцией 0001; объявлены в модели ради alembic check.
+        Index("ix_orders_client_created", "client_id", "created_at"),
+        Index("ix_orders_status", "status"),
+    )
 
 
 class OrderItem(Base, UUIDPrimaryKey):

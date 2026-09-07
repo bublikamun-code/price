@@ -31,6 +31,7 @@ celery_app = Celery(
         "app.tasks.import_price_list",
         "app.tasks.fetch_nbrb_rates",
         "app.tasks.notifications",
+        "app.tasks.email",
         "app.tasks.export_catalog",
         "app.tasks.export_order_pdf",
         "app.tasks.photo_zip",
@@ -69,6 +70,13 @@ celery_app.conf.beat_schedule = {
     "metrics-push-queue-depth": {
         "task": "app.workers.metrics_push_queue_depth",
         "schedule": 30.0,
+    },
+    # Reconciler зависших импортов: PROCESSING старше 6 ч → FAILED (§7.2).
+    # Воркер умер → повторно доставленная задача уходит в «skipped», версию
+    # иначе никто не переведёт из PROCESSING.
+    "reconcile-stuck-imports": {
+        "task": "app.tasks.import_price_list.reconcile_stuck_imports",
+        "schedule": 900.0,  # каждые 15 минут
     },
 }
 

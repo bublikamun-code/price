@@ -75,11 +75,12 @@ async def get_version_prices(db: AsyncSession, version_id: uuid.UUID) -> list:
 async def get_digest_subscribers(db: AsyncSession) -> list:
     """Подписчики: opt-in активные клиенты (§20.4).
 
-    Возвращает пары ``(user_id, price_digest_sources)``.
+    Возвращает тройки ``(user_id, telegram_id, price_digest_sources)``;
+    ``telegram_id`` — chat_id для TG-доставки дайджеста (None если не привязан).
     """
     return (
         await db.execute(
-            select(User.id, User.price_digest_sources).where(
+            select(User.id, User.telegram_id, User.price_digest_sources).where(
                 User.price_digest_enabled.is_(True),
                 User.role == UserRole.CLIENT,
                 User.is_active.is_(True),

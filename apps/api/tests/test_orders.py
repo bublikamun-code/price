@@ -3,10 +3,12 @@
 Ключевая проверка: цена и курс замораживаются при оформлении и НЕ
 пересчитываются при последующих изменениях прайса/скидки/курса.
 """
+import asyncio
 import uuid
 
 from sqlalchemy import select
 
+from app.models.catalog import Product
 from app.models.enums import OrderStatus, StockStatus, UserRole
 from app.models.order import Order
 from tests.conftest import (
@@ -82,6 +84,116 @@ async def test_create_unknown_sku(api_client, session_factory):
 
 
 # =========================================================
+# SEQ — сквозные номера без дублей (аудит 2026-09-06: гонка MAX(seq)+1)
+# =========================================================
+async def test_order_seq_assigned_and_unique(api_client, session_factory):
+    sf = session_factory
+    await _seed(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    for _ in range(3):
+        r = await api_client.post("/api/v1/orders", json={
+            "items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"
+        })
+        assert r.status_code == 201, r.text
+
+    async with sf() as s:
+        seqs = (await s.execute(select(Order.seq))).scalars().all()
+    assert all(sq is not None for sq in seqs)
+    assert len(set(seqs)) == 3  # без дублей
+    assert sorted(seqs) == list(range(min(seqs), min(seqs) + 3))  # монотонно, шаг 1
+
+
+async def test_concurrent_orders_get_distinct_seq(api_client, session_factory):
+    """Два параллельных оформления: nextval выдаёт разные номера, обе заявки 201.
+
+    FOR UPDATE на строках товаров сериализует оформления: второй запрос ждёт
+    коммит первого и получает следующий nextval (раньше — uq_orders_seq → 500).
+    """
+    sf = session_factory
+    await _seed(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    async def _create():
+        return await api_client.post("/api/v1/orders", json={
+            "items": [{"sku": "A-1", "quantity": 1}], "delivery_point": "Склад Минск"
+        })
+
+    r1, r2 = await asyncio.gather(_create(), _create())
+    assert r1.status_code == 201, r1.text
+    assert r2.status_code == 201, r2.text
+    assert r1.json()["id"] != r2.json()["id"]
+
+    async with sf() as s:
+        seqs = (await s.execute(select(Order.seq))).scalars().all()
+    assert len(seqs) == 2
+    assert len(set(seqs)) == 2
+
+
+# =========================================================
+# OVERSELL — остатки при заказе (аудит 2026-09-06)
+# =========================================================
+async def test_order_exceeds_stock_returns_422(api_client, session_factory):
+    """Заказ больше остатка (stock_qty IS NOT NULL) → 422 StockExceededError."""
+    sf = session_factory
+    brand = await create_brand(sf, name="Alpha")
+    await create_product(sf, sku="S-1", name="Widget", brand=brand, base_price=10, stock_qty=5)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    r = await api_client.post("/api/v1/orders", json={
+        "items": [{"sku": "S-1", "quantity": 6}], "delivery_point": "Склад Минск"
+    })
+    assert r.status_code == 422
+    assert "S-1" in r.json()["detail"]
+
+
+async def test_order_with_null_stock_not_limited(api_client, session_factory):
+    """stock_qty IS NULL → остаток не отслеживается, заказ любой quantity проходит."""
+    sf = session_factory
+    brand = await create_brand(sf, name="Alpha")
+    await create_product(sf, sku="S-2", name="Widget", brand=brand, base_price=10, stock_qty=None)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    r = await api_client.post("/api/v1/orders", json={
+        "items": [{"sku": "S-2", "quantity": 1000}], "delivery_point": "Склад Минск"
+    })
+    assert r.status_code == 201, r.text
+
+
+async def test_second_order_on_last_unit_fails(api_client, session_factory):
+    """Последняя единица: после коммита изменения остатка (эффект транзакции,
+    владевшей блокировкой FOR UPDATE) второй заказ на то же количество → 422.
+
+    FOR UPDATE в create() сериализует оформления: конкурентная заявка видит
+    закоммиченный остаток, а не снимок, прочитанный до блокировки.
+    """
+    sf = session_factory
+    brand = await create_brand(sf, name="Alpha")
+    p = await create_product(sf, sku="S-3", name="Widget", brand=brand, base_price=10, stock_qty=1)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    payload = {"items": [{"sku": "S-3", "quantity": 1}], "delivery_point": "Склад Минск"}
+    r1 = await api_client.post("/api/v1/orders", json=payload)
+    assert r1.status_code == 201, r1.text
+
+    # Эффект параллельной транзакции, державшей блокировку строки (импорт
+    # прайса / патч менеджера уменьшили остаток и закоммитились).
+    async with sf() as s:
+        prod = await s.get(Product, p.id)
+        prod.stock_qty = 0
+        await s.commit()
+
+    r2 = await api_client.post("/api/v1/orders", json=payload)
+    assert r2.status_code == 422
+    assert "S-3" in r2.json()["detail"]
+
+
+# =========================================================
 # SNAPSHOT — цена замораживается
 # =========================================================
 async def test_price_snapshot_freezes_after_price_change(api_client, session_factory):
@@ -98,7 +210,6 @@ async def test_price_snapshot_freezes_after_price_change(api_client, session_fac
     assert frozen_unit_price == 90.0
 
     # Меняем прайс и убираем скидку ПОСЛЕ оформления.
-    from app.models.catalog import Product
     from app.models.pricing import UserBrand
     async with sf() as s:
         prod = await s.get(Product, p1.id)

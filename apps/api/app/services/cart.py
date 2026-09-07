@@ -29,6 +29,11 @@ class CartService:
         cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
         rows = await cart_repo.fetch_cart_items_detailed(self.db, cart_id=cart.id)
 
+        # Батч-цены на все товары корзины (аудит 2026-09-06, N+1): курс и
+        # скидки — один запрос на корзину, а не на каждую позицию.
+        products = [row[1] for row in rows if row[1] is not None]
+        prices = await self.pricing.price_products(products, user, "fixed")
+
         items: list[CartItemRead] = []
         total = 0.0
         for row in rows:
@@ -37,7 +42,7 @@ class CartService:
                 # Товар удалён (hard-delete через CASCADE невозможен при soft-delete,
                 # но защищаемся): позицию пропускаем в выдаче.
                 continue
-            pr = await self.pricing.price_product(product, user, "fixed")
+            pr = prices[product.id]
             unit_price = float(pr["client_price"])
             line_total = round(unit_price * item.quantity, 2)
             total += line_total

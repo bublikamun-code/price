@@ -4,6 +4,7 @@
 definePageMeta({ layout: 'auth' })
 useHead({ title: 'Вход' })
 
+const showContactModal = ref(false)
 const email = ref('')
 const password = ref('')
 const remember = ref(true)
@@ -147,7 +148,11 @@ function backToStep1() {
           <input v-model="remember" type="checkbox" class="rounded border-border" >
           Запомнить меня
         </label>
-        <a href="#" class="text-sm text-primary hover:underline">Связаться с менеджером</a>
+        <button
+          type="button"
+          class="text-sm text-primary hover:underline transition-colors duration-150"
+          @click="showContactModal = true"
+        >Связаться с менеджером</button>
       </div>
 
       <div v-if="errorMsg" class="badge-danger w-full justify-center py-2">
@@ -239,4 +244,6 @@ function backToStep1() {
       Нет доступа? Обратитесь к вашему менеджеру для создания учётной записи.
     </p>
   </div>
+
+<ManagerContactModal :show="showContactModal" @close="showContactModal = false" />
 </template>

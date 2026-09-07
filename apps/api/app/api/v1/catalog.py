@@ -53,6 +53,7 @@ async def list_products(
     q: str | None = Query(default=None, description="Поиск по артикулу/наименованию"),
     brand: list[uuid.UUID] | None = Query(default=None),
     series: list[uuid.UUID] | None = Query(default=None),
+    model: str | None = Query(default=None, description="Модель (Щит распределительный / Щит мультимедиа / Аксессуары)"),
     stock: Literal["IN_STOCK", "PREORDER"] | None = None,
     price_calc_mode: Literal["fixed", "nbrb_current"] = Query(
         default="fixed", description="fixed=по договору, nbrb_current=по текущему НБ РБ"
@@ -64,7 +65,7 @@ async def list_products(
     db: AsyncSession = Depends(get_db),
 ) -> CatalogPage:
     filters = repo.CatalogFilters(
-        q=q, brand_ids=brand, series_ids=series, stock=stock
+        q=q, brand_ids=brand, series_ids=series, stock=stock, model=model
     )
     key = catalog_key(
         user_id=user.id,
@@ -74,6 +75,7 @@ async def list_products(
             "brand": sorted(str(v) for v in (brand or [])),
             "series": sorted(str(v) for v in (series or [])),
             "stock": stock,
+            "model": model,
             "sort": sort,
             "page": page,
             "per_page": per_page,
@@ -275,6 +277,7 @@ async def start_catalog_export(
     q: str | None = Query(default=None, description="Поиск по артикулу/наименованию"),
     brand: list[uuid.UUID] | None = Query(default=None),
     series: list[uuid.UUID] | None = Query(default=None),
+    model: str | None = Query(default=None, description="Модель (Щит распределительный / Щит мультимедиа / Аксессуары)"),
     stock: Literal["IN_STOCK", "PREORDER"] | None = None,
     price_calc_mode: Literal["fixed", "nbrb_current"] = Query(
         default="fixed", description="fixed=по договору, nbrb_current=по текущему НБ РБ"
@@ -287,7 +290,7 @@ async def start_catalog_export(
     пользователя. Файл собирает Celery-задача: статус опрашивается через
     ``GET /catalog/export/{job_id}``. Лимит: 10 запусков/час на пользователя.
     """
-    filters = repo.CatalogFilters(q=q, brand_ids=brand, series_ids=series, stock=stock)
+    filters = repo.CatalogFilters(q=q, brand_ids=brand, series_ids=series, stock=stock, model=model)
     job_id = await export_service.start_export(
         user=user, filters=filters, format=format, price_calc_mode=price_calc_mode
     )
@@ -310,7 +313,9 @@ async def get_export_job(
         )
     url = None
     if state.get("status") == "DONE" and state.get("s3_key"):
-        url = f"/api/v1/catalog/export/{job_id}/download"
+        # §6 (канон): url — presigned-ссылка на файл в S3 (5 мин).
+        # Роут /export/{job_id}/download ниже оставлен как fallback-прокси.
+        url = storage.presigned_get(settings.s3_bucket_exports, state["s3_key"])
     return ExportJobOut(
         job_id=state["job_id"],
         status=state["status"],

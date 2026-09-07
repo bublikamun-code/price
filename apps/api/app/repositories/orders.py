@@ -1,12 +1,16 @@
 """Репозиторий заявок. См. ARCHITECTURE_PLAN.md §9."""
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import OrderStatus
 from app.models.order import Order, OrderItem
 from app.models.user import User
+
+# PG-последовательность сквозных номеров (создаётся миграцией 0009;
+# ORM-декларация — app.models.order.orders_seq_numbering).
+ORDERS_SEQ_NAME = "orders_seq_seq"
 
 
 async def get_order(db: AsyncSession, *, order_id: uuid.UUID) -> Order | None:
@@ -14,13 +18,15 @@ async def get_order(db: AsyncSession, *, order_id: uuid.UUID) -> Order | None:
 
 
 async def next_order_seq(db: AsyncSession) -> int:
-    """Следующий сквозной номер заявки: MAX(seq)+1.
+    """Следующий сквозной номер заявки: nextval('orders_seq_seq').
 
-    Масштаб портала небольшой — гонка некритична; уникальный индекс
-    ``uq_orders_seq`` страховка от дублей.
+    Ранее было MAX(seq)+1: два конкурентных оформления получали один номер и
+    второй падал по ``uq_orders_seq`` с 500 (аудит 2026-09-06). nextval
+    атомарен и не блокируется — дубли невозможны в принципе. «Дыры» в
+    нумерации при откате транзакции допустимы (номер сквозной, не
+    бухгалтерский).
     """
-    current = await db.scalar(select(func.coalesce(func.max(Order.seq), 0)))
-    return int(current or 0) + 1
+    return int(await db.scalar(text(f"SELECT nextval('{ORDERS_SEQ_NAME}')")))
 
 
 async def fetch_users_by_ids(

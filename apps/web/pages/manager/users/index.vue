@@ -179,7 +179,7 @@ onMounted(load)
             <tr
               v-for="u in users"
               :key="u.id"
-              class="border-t border-border hover:bg-canvas/60 cursor-pointer"
+              class="border-t border-border hover:bg-canvas/60 transition-colors duration-150 cursor-pointer"
               @click="navigateTo(`/manager/users/${u.id}`)"
             >
               <td class="px-4 py-3">
@@ -212,7 +212,7 @@ onMounted(load)
       <button
         v-for="pgn in totalPages"
         :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
+        class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
         :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
         @click="goPage(pgn)"
       >{{ pgn }}</button>
@@ -224,10 +224,10 @@ onMounted(load)
     <!-- Создание клиента -->
     <div
       v-if="showCreate"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeCreate(); overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" @submit.prevent="submitCreate">
+      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">
           <h3 class="font-semibold">Новый клиент</h3>
           <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="closeCreate">

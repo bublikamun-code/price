@@ -21,11 +21,17 @@ useSeoMeta({
   ogType: 'website',
 })
 
-const { isAuthenticated, isClient } = useAuth()
+// storeToRefs обязателен: деструктуризация Pinia-стора напрямую даёт
+// снапшот-булевы значения без реактивности — сессия, восстановленная ПОСЛЕ
+// монтирования (fetchMe в плагине auth.session), не была видна ни скрипту,
+// ни шаблону, и карточки дашборда оставались в скелетонах навсегда.
+const auth = useAuth()
+const { isAuthenticated, isClient } = storeToRefs(auth)
 
 // Если токен есть, а профиля нет (кука auth_user потерялась) — подтягиваем
 // профиль до отрисовки, чтобы залогиненный не увидел гостевой лендинг.
 const hydrating = ref(false)
+const showContactModal = ref(false)
 onMounted(async () => {
   const a = useAuth()
   if (!a.user && a.token) {
@@ -133,7 +139,7 @@ async function loadDashboard() {
     .catch(() => { filesFailed.value = true })
     .finally(() => { filesLoading.value = false })
 
-  loadNews()
+  requestNewsOnce()
 
   // Карусели товаров: акции (товары со скидкой) и новинки — запасной вариант баннеров.
   request<{ new_arrivals?: ClientNewArrival[]; promos?: ClientNewArrival[] }>('/api/v1/dashboard')
@@ -153,14 +159,99 @@ async function loadDashboard() {
     .catch(() => {})
 }
 
-onMounted(() => {
-  if (isAuthenticated && isClient) {
-    loadDashboard()
-  } else {
-    // Гости тоже видят блок новостей на лендинге.
-    loadNews()
+// Загрузка привязана к состоянию сессии через watch (а не onMounted): сессия
+// может восстановиться ПОСЛЕ монтирования страницы (refresh, потерянная кука
+// auth_user, гонка 401 → refresh в плагине auth.session). immediate-режим
+// покрывает и уже восстановленную сессию, и гостя при первом рендере.
+// Гварды ниже не дают задвоить запросы (сценарий: старт как «гость» без профиля
+// → loadNews, затем fetchMe подтвердил клиента → loadDashboard).
+let dashboardRequested = false
+let newsRequested = false
+
+function requestNewsOnce() {
+  if (newsRequested) return
+  newsRequested = true
+  loadNews()
+}
+
+// Витрина лендинга (публичные данные, без входа): бренды с фото и счётчиками.
+interface ShowcaseBrand { name: string; slug: string; photo?: string; seriesCount: number; productsCount: number }
+const showcaseLoading = ref(true)
+const showcaseFailed = ref(false)
+const showcaseBrands = ref<ShowcaseBrand[]>([])
+
+// Короткие описания брендов для витрины (копирайт лендинга).
+const BRAND_BLURBS: Record<string, string> = {
+  keaz: 'Электрощитовое оборудование: корпуса и боксы OptiBox Pro от 8 до 60 модулей.',
+  smartwatt: 'Стабилизаторы напряжения AVR: релейные, электромеханические, инверторные и симисторные.',
+  rostok: 'Реле напряжения, контроль фаз и защита техники от скачков сети.',
+}
+
+function brandBlurb(slug: string): string {
+  return BRAND_BLURBS[slug] ?? 'Каталог продукции бренда.'
+}
+
+function showcasePhotoUrl(key?: string): string | undefined {
+  if (!key) return undefined
+  // §16 п.17: http(s)-значения — внешние ссылки (напрямую), остальное — S3-ключи.
+  if (/^https?:\/\//.test(key)) return key
+  return `/api/v1/public/photo?key=${encodeURIComponent(key)}`
+}
+
+/** Русское склонение: pluralRu(3, 'бренд', 'бренда', 'брендов'). */
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
+  return many
+}
+
+// Клиентская загрузка (не useAsyncData): $api-перехватчик зовёт useCookie,
+// чей Nuxt-контекст внутри хендлера useAsyncData недоступен.
+async function loadShowcase() {
+  const { request } = useApi()
+  try {
+    const res = await request<{
+      data: { name: string; slug: string; photo?: string; series_count: number; products_count: number }[]
+    }>('/api/v1/public/brands')
+    showcaseBrands.value = res.data.map((b) => ({
+      name: b.name,
+      slug: b.slug,
+      photo: b.photo,
+      seriesCount: b.series_count,
+      productsCount: b.products_count,
+    }))
+  } catch {
+    showcaseFailed.value = true
+  } finally {
+    showcaseLoading.value = false
   }
-})
+}
+
+let showcaseRequested = false
+function requestShowcaseOnce() {
+  if (showcaseRequested) return
+  showcaseRequested = true
+  loadShowcase()
+}
+
+watch(
+  [isAuthenticated, isClient],
+  ([authed, clientRole]) => {
+    if (authed && clientRole) {
+      if (!dashboardRequested) {
+        dashboardRequested = true
+        loadDashboard()
+      }
+    } else {
+      // Гости и менеджеры тоже видят блоки новостей и продукции на лендинге.
+      requestNewsOnce()
+      requestShowcaseOnce()
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -383,8 +474,64 @@ onMounted(() => {
               to="/login"
               class="btn-primary px-6 py-3 text-base"
             >Войти в личный кабинет</NuxtLink>
-            <a href="#" class="btn-outline px-6 py-3 text-base">Связаться с менеджером</a>
+            <button
+              type="button"
+              class="btn-outline px-6 py-3 text-base"
+              @click="showContactModal = true"
+            >Связаться с менеджером</button>
           </div>
+        </div>
+      </section>
+
+      <!-- Наши бренды: витрина лендинга (публичные данные каталога) -->
+      <section v-if="!showcaseFailed" id="products" class="container-app py-12 lg:py-16">
+        <div class="mb-8">
+          <h2 class="text-2xl font-bold mb-2">Наши бренды</h2>
+          <p class="text-sm text-ink-muted max-w-2xl">
+            Открытый состав склада: номенклатура и характеристики каждого товара.
+            Персональные цены и оформление заявок — после входа в личный кабинет.
+          </p>
+        </div>
+
+        <div v-if="showcaseLoading" class="grid grid-cols-1 sm:grid-cols-3 gap-5" aria-hidden="true">
+          <div v-for="i in 3" :key="i" class="card overflow-hidden">
+            <div class="aspect-[4/3] animate-pulse bg-border/60" />
+            <div class="p-5 space-y-2"><div class="h-5 w-1/2 rounded bg-border/60 animate-pulse" /><div class="h-3 w-3/4 rounded bg-border/60 animate-pulse" /></div>
+          </div>
+        </div>
+
+        <div v-else class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          <NuxtLink
+            v-for="b in showcaseBrands"
+            :key="b.slug"
+            :to="`/brands/${b.slug}`"
+            class="card card-hover overflow-hidden group"
+          >
+            <div class="aspect-[4/3] bg-white flex items-center justify-center overflow-hidden">
+              <img
+                v-if="b.photo"
+                :src="showcasePhotoUrl(b.photo)"
+                :alt="`Продукция ${b.name}`"
+                class="w-full h-full object-contain p-4"
+                loading="lazy"
+              >
+              <Icon v-else name="heroicons:squares-2x2" class="w-12 h-12 text-ink-faint" />
+            </div>
+            <div class="p-5">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <h3 class="text-lg font-bold">{{ b.name }}</h3>
+                <Icon
+                  name="heroicons:arrow-right"
+                  class="w-5 h-5 text-ink-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-200"
+                />
+              </div>
+              <p class="text-sm text-ink-muted leading-relaxed mb-3">{{ brandBlurb(b.slug) }}</p>
+              <div class="text-xs text-ink-faint">
+                {{ b.seriesCount }} {{ pluralRu(b.seriesCount, 'серия', 'серии', 'серий') }}
+                · {{ b.productsCount }} {{ pluralRu(b.productsCount, 'наименование', 'наименования', 'наименований') }}
+              </div>
+            </div>
+          </NuxtLink>
         </div>
       </section>
 
@@ -431,7 +578,27 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- Как начать -->
+      <!-- О компании -->
+      <section class="container-app py-12 lg:py-16">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start">
+          <div>
+            <h2 class="text-2xl font-bold mb-4">О компании</h2>
+            <p class="text-sm text-ink-muted leading-relaxed mb-3">
+              ООО «Свет в доме» работает с юридическими лицами и ИП по договору:
+              согласовываем с каждым клиентом персональные цены и принимаем заявки
+              через личный кабинет — без звонков и переписок.
+            </p>
+            <p class="text-sm text-ink-muted leading-relaxed mb-5">
+              Состав склада открыт: любой посетитель может ознакомиться с брендами,
+              сериями и номенклатурой прямо на сайте. Цены и корзина — после входа,
+              данные по вашему договору выдаёт персональный менеджер.
+            </p>
+            <NuxtLink to="/brands" class="btn-secondary px-4 py-2 text-sm inline-flex">Весь каталог продукции</NuxtLink>
+          </div>
+
+        </div>
+      </section>
+
       <section class="bg-surface border-y border-border">
         <div class="container-app py-12 lg:py-16">
           <h2 class="text-2xl font-bold text-center mb-10">Как начать работу</h2>
@@ -453,4 +620,6 @@ v-for="(step, i) in [
       </section>
     </template>
   </div>
+
+<ManagerContactModal :show="showContactModal" @close="showContactModal = false" />
 </template>

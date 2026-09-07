@@ -53,11 +53,14 @@ services:
     volumes: !override []
     restart: always
 
-  bot:
-    build:
-      target: runtime
-    volumes: !override []
-    restart: always
+  # ---------- Telegram-бот ----------
+  # Возвращён 2026-09-06 вместе с реализацией long-polling бота
+  # (apps/api/app/bot/__main__.py).
+  # bot:
+  #   build:
+  #     target: runtime
+  #   volumes: !override []
+  #   restart: always
 
   web:
     build:

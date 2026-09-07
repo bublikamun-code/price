@@ -11,6 +11,7 @@
   rate — за `scale` единиц валюты к BYN (НБ РБ: для RUB scale=100).
   amount_currency = amount_byn * scale / rate
 """
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -100,6 +101,22 @@ class PricingService:
         )
         return _to_decimal(row) if row is not None else None
 
+    async def get_discounts_for_brands(self, user_id, brand_ids) -> dict:
+        """Скидки клиента по нескольким брендам одним IN-запросом.
+
+        Возвращает ``{brand_id: Decimal | None}`` только для брендов, где
+        скидка заведена (у остальных приоритет §8 — базовая цена).
+        """
+        ids = {b for b in brand_ids if b is not None}
+        if not ids:
+            return {}
+        res = await self.db.execute(
+            select(UserBrand.brand_id, UserBrand.discount_percent).where(
+                UserBrand.user_id == user_id, UserBrand.brand_id.in_(ids)
+            )
+        )
+        return {bid: _to_decimal(d) for bid, d in res.all()}
+
     async def get_latest_rate(self, currency: str) -> ExchangeRate | None:
         """Последний курс для валюты (по fetched_at)."""
         if currency.upper() == "BYN":
@@ -132,11 +149,11 @@ class PricingService:
         # Курса нет → показываем в BYN (degrade gracefully)
         return ResolvedRate("BYN", None, 1, "BYN")
 
-    async def price_product(self, product: Product, user, calc_mode: str) -> dict:
-        """Считает цены для одного товара под клиента. Возвращает dict для DTO."""
-        resolved = await self.resolve_rate(user, calc_mode)
-        discount = await self.get_discount_for_brand(user.id, product.brand_id)
-
+    def _price_one(
+        self, product: Product, resolved: ResolvedRate, discount: Decimal | None
+    ) -> dict:
+        """Цены одного товара при уже разрешённых курсе и скидке (общая часть
+        ``price_product`` / ``price_products``)."""
         base_byn = _to_decimal(product.base_price)
         client_byn = client_price_byn(product.base_price, product.override_price, discount)
 
@@ -147,4 +164,35 @@ class PricingService:
             "currency": resolved.currency,
             "rate_source": resolved.source,
             "has_discount": has_discount(base_byn, client_byn),
+        }
+
+    async def price_product(self, product: Product, user, calc_mode: str) -> dict:
+        """Считает цены для одного товара под клиента. Возвращает dict для DTO."""
+        resolved = await self.resolve_rate(user, calc_mode)
+        discount = await self.get_discount_for_brand(user.id, product.brand_id)
+        return self._price_one(product, resolved, discount)
+
+    async def price_products(
+        self,
+        products: Sequence[Product],
+        user,
+        calc_mode: str,
+        *,
+        resolved: ResolvedRate | None = None,
+    ) -> dict:
+        """Батч-расчёт цен: ``{product_id: dict}`` той же структуры, что
+        ``price_product``.
+
+        N+1 (аудит 2026-09-06): курс разрешается один раз на батч
+        (``resolved`` можно передать уже посчитанный), скидки по всем брендам
+        — одним IN-запросом. Формулы/округление — те же чистые функции §8/§17.
+        """
+        if resolved is None:
+            resolved = await self.resolve_rate(user, calc_mode)
+        discounts = await self.get_discounts_for_brands(
+            user.id, [p.brand_id for p in products]
+        )
+        return {
+            p.id: self._price_one(p, resolved, discounts.get(p.brand_id))
+            for p in products
         }

@@ -171,10 +171,10 @@ onMounted(load)
     <!-- Создание менеджера -->
     <div
       v-if="showCreate"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeCreate(); overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" @submit.prevent="submitCreate">
+      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">
           <h3 class="font-semibold">Новый менеджер</h3>
           <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="closeCreate">
@@ -212,7 +212,7 @@ onMounted(load)
     <!-- Подтверждение блокировки / разблокировки -->
     <div
       v-if="confirmTarget"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) cancelToggle(); overlayDown = false"
     >
       <div class="card max-w-md w-full p-6">

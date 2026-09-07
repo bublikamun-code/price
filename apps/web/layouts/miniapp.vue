@@ -33,7 +33,7 @@ function isActive(to: string) {
       <slot />
     </main>
 
-    <nav class="fixed bottom-0 inset-x-0 z-40 bg-surface/95 backdrop-blur border-t border-border" style="padding-bottom: env(safe-area-inset-bottom)">
+    <nav class="fixed bottom-0 inset-x-0 z-40 glass rounded-none border-t border-border" style="padding-bottom: env(safe-area-inset-bottom)">
       <div class="max-w-md mx-auto grid grid-cols-4">
         <NuxtLink
           v-for="item in NAV"

@@ -59,7 +59,12 @@ def validate_csrf(request: Request) -> None:
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return
-    if not (request.cookies.get("access_token") or request.cookies.get("refresh_token")):
+    # Аудит 2026-09-06: фронт аутентифицируется не-httpOnly кукой auth_token
+    # (useAuth.persistCookie) — она так же ambient, как httpOnly access_token,
+    # поэтому требует того же CSRF-гейта. Имена кук фронта заданы в
+    # apps/web/composables/useAuth.ts (persistCookie) и плагине api.ts.
+    _AUTH_COOKIES = ("access_token", "refresh_token", "auth_token")
+    if not any(request.cookies.get(name) for name in _AUTH_COOKIES):
         return
     cookie_token = request.cookies.get(settings.csrf_cookie_name)
     header_token = request.headers.get(settings.csrf_header_name)

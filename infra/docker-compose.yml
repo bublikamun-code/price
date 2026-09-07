@@ -105,8 +105,12 @@ services:
       - ../apps/api:/app            # хот-релоад
     ports:
       - "8000:8000"
+    # --proxy-headers/--forwarded-allow-ips: реальный IP клиента из X-Forwarded-For
+    # (ставит nginx), иначе пер-IP rate-limit'ы (login 5/15min) глобальные → DoS.
+    # Вступает в силу при следующем пересоздании api (make up).
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      --proxy-headers --forwarded-allow-ips=*
     healthcheck:                # наследуется prod-overlay'ем (gunicorn на том же порту)
       test: ["CMD", "python", "-c", "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://localhost:8000/healthz', timeout=3).status==200 else 1)"]
       interval: 30s
@@ -152,6 +156,8 @@ services:
     networks: [pp-net]
 
   # ---------- Telegram-бот (уведомления менеджеру) ----------
+  # Возвращён 2026-09-06: реализован реальный long-polling бот
+  # (apps/api/app/bot/__main__.py: /start, /id, /help), crash-loop устранён.
   bot:
     build:
       context: ../apps/api
@@ -171,11 +177,17 @@ services:
     networks: [pp-net]
 
   # ---------- Nuxt 3 (frontend) ----------
+  # PROD-режим по умолчанию: образ собирается через target=runtime
+  # (npm ci + nuxt build → .output, запуск `node .output/server/index.mjs`).
+  # Исходники НЕ монтируются — том затёр бы /app в образе.
+  # Хот-релоад/dev-сервер: `make web-dev` (override infra/docker-compose.web-dev.yml),
+  # обратно в prod: `make web-prod`. Dev-режим нужен для `make test-e2e`
+  # (playwright живёт в dev-контейнере web).
   web:
     build:
       context: ../apps/web
       dockerfile: Dockerfile
-      target: dev
+      target: runtime
     container_name: pp-web
     restart: unless-stopped
     env_file: ../.env
@@ -183,18 +195,14 @@ services:
       NUXT_PUBLIC_API_BASE: ""
     depends_on:
       - api
-    volumes:
-      - ../apps/web:/app
-      - /app/node_modules
     ports:
       - "3000:3000"
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
-    healthcheck:                # node-fetch есть и в dev-, и в runtime-образе (Node >=18)
+    healthcheck:                # node-fetch есть в runtime-образе (Node >=18)
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 60s
       timeout: 10s
       retries: 5
-      start_period: 90s         # dev: npm install при старте
+      start_period: 90s
     networks: [pp-net]
 
   # ---------- Nginx (единый вход, reverse proxy) ----------
@@ -209,8 +217,10 @@ services:
       - "${DEV_NGINX_PORT:-8080}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    healthcheck:                # end-to-end: nginx → proxy → api /healthz
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/healthz"]
+    healthcheck:                # /healthz отдаёт сам nginx статикой (200) — не зависит от api.
+                                # 127.0.0.1, а не localhost: busybox wget резолвит localhost в ::1
+                                # (IPv6), где nginx не слушает → вечный "connection refused".
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/healthz"]
       interval: 30s
       timeout: 5s
       retries: 4

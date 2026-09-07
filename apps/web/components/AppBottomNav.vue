@@ -20,7 +20,7 @@ function isActive(to: string): boolean {
 
 <template>
   <nav class="fixed bottom-3 inset-x-3 z-40 lg:hidden pb-[env(safe-area-inset-bottom)]">
-    <div class="rounded-[22px] border border-border bg-surface/95 backdrop-blur shadow-card-hover px-2 py-1.5">
+    <div class="glass rounded-[22px] px-2 py-1.5">
       <div class="flex items-center justify-around">
         <NuxtLink
           v-for="item in props.items"

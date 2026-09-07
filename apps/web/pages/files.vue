@@ -188,7 +188,7 @@ onMounted(() => {
             <tr
               v-for="f in files"
               :key="f.id"
-              class="border-t border-border hover:bg-canvas/60"
+              class="border-t border-border hover:bg-canvas/60 transition-colors duration-150"
             >
               <td class="px-4 py-3 max-w-[240px] truncate" :title="f.filename">{{ f.filename }}</td>
               <td class="px-4 py-3">
@@ -225,7 +225,7 @@ onMounted(() => {
       <button
         v-for="pgn in totalPages"
         :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
+        class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
         :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
         @click="goPage(pgn)"
       >{{ pgn }}</button>

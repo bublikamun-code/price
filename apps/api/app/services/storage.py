@@ -34,14 +34,25 @@ class StorageError(RuntimeError):
 
 @lru_cache(maxsize=1)
 def get_s3_client() -> BaseClient:
-    """Синглтон S3-клиента (endpoint — внутреннее имя MinIO в compose)."""
+    """Синглтон S3-клиента (endpoint — внутреннее имя MinIO в compose).
+
+    Таймауты и лимит ретраев обязательны: без них сетевая неполадка MinIO
+    подвешивает вызывающего (Celery-воркер / API-поток) на botocore-дефолты
+    (60 с connect, бесконечные ретраи).
+    """
     return boto3.client(
         "s3",
         endpoint_url=settings.s3_endpoint,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
         region_name=settings.s3_region,
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            connect_timeout=10,
+            read_timeout=15,
+            retries={"max_attempts": 2},
+        ),
     )
 
 
@@ -146,3 +157,39 @@ def presigned_get(bucket: str, key: str, *, expires: int | None = None) -> str:
     if settings.s3_external_endpoint:
         url = url.replace(settings.s3_endpoint, settings.s3_external_endpoint, 1)
     return url
+
+
+# ----------------------------- readiness (/readyz) -----------------------------
+
+@lru_cache(maxsize=1)
+def get_s3_health_client() -> BaseClient:
+    """Клиент для readiness-проб: короткие таймауты и без ретраев —
+    проверка не должна подвешивать /readyz (1-2 с на компоненту)."""
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        region_name=settings.s3_region,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            connect_timeout=2,
+            read_timeout=2,
+            retries={"max_attempts": 1},
+        ),
+    )
+
+
+def check_connection() -> None:
+    """Живость MinIO для /readyz: ``head_bucket`` бакета выгрузок.
+
+    Сетевые функции клиента здесь не важны — нужна лишь доступность S3.
+    Ошибка → :class:`StorageError` (readyz мапит её в «s3: fail»).
+    """
+    bucket = settings.s3_bucket_exports
+    try:
+        get_s3_health_client().head_bucket(Bucket=bucket)
+    except (BotoCoreError, ClientError) as exc:
+        log.warning("s3.head_bucket_failed", bucket=bucket, error=str(exc))
+        raise StorageError(f"Хранилище S3 недоступно: {exc}") from exc

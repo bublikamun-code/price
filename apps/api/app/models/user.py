@@ -58,7 +58,7 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     # кодом. chat_id отдельно не хранится (приватный чат: chat_id == user.id);
     # поле используется и для будущих клиентских TG-уведомлений (§20.3).
     telegram_id: Mapped[int | None] = mapped_column(
-        BigInteger, unique=True, nullable=True
+        BigInteger, unique=True, index=True, nullable=True
     )
 
     # Opt-in на дайджест изменения цен (§20.4): включён + источники отслеживания.
@@ -71,6 +71,13 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
         default=lambda: ["cart", "favorite", "orders"],
         server_default=text("ARRAY['cart','favorite','orders']::varchar[]"),
         nullable=False,
+    )
+
+    # Принудительная смена временного пароля (§16 п.19): выставляется при
+    # создании клиента и сбросе пароля менеджером; снимается в
+    # POST /auth/change-password. В API отдаётся как force_password_change.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
     )
 
 
@@ -89,6 +96,12 @@ class Session(Base, UUIDPrimaryKey):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Grace-окно ротации (аудит P0: гонка параллельных refresh). При ротации
+    # старая сессия помечается rotated_at + ссылкой на актуальный refresh-хэш:
+    # в пределах refresh_grace_seconds старый токен «догоняет» цепочку до
+    # актуальной сессии, после — обычный 401 (reuse-detection сохранён).
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_by_hash: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class TotpRecoveryCode(Base, UUIDPrimaryKey):

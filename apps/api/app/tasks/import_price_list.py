@@ -27,7 +27,7 @@ import csv
 import io
 import uuid
 from collections.abc import Iterator, Sequence
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 import polars as pl
@@ -237,9 +237,17 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
 # ----------------------------- helpers -----------------------------
 
 async def _lock_version(db, version_id: uuid.UUID) -> PriceListVersion | None:
-    """Вернуть версию и перевести в PROCESSING. None — если не QUEUED (no-op)."""
+    """Вернуть версию и перевести в PROCESSING. None — если не QUEUED (no-op).
+
+    ``FOR UPDATE`` (по образцу ``rollback_version``): при ``acks_late``+
+    ``reject_on_worker_lost`` задачу может взять второй воркер до того, как
+    первый закоммитит PROCESSING — без блокировки строки оба прошли бы проверку
+    QUEUED и импортировали параллельно.
+    """
     version = await db.scalar(
-        select(PriceListVersion).where(PriceListVersion.id == version_id)
+        select(PriceListVersion)
+        .where(PriceListVersion.id == version_id)
+        .with_for_update()
     )
     if version is None or version.status != PriceListVersionStatus.QUEUED:
         return None
@@ -279,6 +287,53 @@ async def _mark_failed(version_id: uuid.UUID, message: str) -> None:
         version.finished_at = datetime.utcnow()
         log.warning("import.marked_failed", version_id=str(version_id), message=message)
         await db.commit()
+
+
+# ----------------------------- beat-reconciler -----------------------------
+
+# Дедлайн «зависшего» импорта. Soft time limit задачи — 25 минут (workers.py),
+# поэтому PROCESSING дольше STUCK_IMPORT_HOURS означает, что воркер умер:
+# при acks_late + reject_on_worker_lost задача доставляется повторно, но уходит
+# в «skipped» (см. _run_import) и _mark_failed не вызывается — без reconciler'а
+# версия висела бы в PROCESSING вечно.
+STUCK_IMPORT_HOURS = 6
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.import_price_list.reconcile_stuck_imports",
+    autoretry_for=(),
+)
+def reconcile_stuck_imports(self) -> dict:
+    """Beat каждые 15 мин: PROCESSING-версии старше 6 ч → FAILED (§7.2)."""
+    try:
+        return asyncio.run(_reconcile_stuck())
+    except Exception as exc:  # непредвиденное — без слепого ретрая
+        log.exception("import.reconcile.crashed", error=str(exc))
+        return {"status": "error", "error": str(exc)}
+
+
+async def _reconcile_stuck() -> dict:
+    """Перевести зависшие PROCESSING-версии в FAILED через ``_mark_failed``."""
+    cutoff = datetime.now(UTC) - timedelta(hours=STUCK_IMPORT_HOURS)
+    async with _worker_session() as db:
+        stale_ids = (
+            await db.scalars(
+                select(PriceListVersion.id).where(
+                    PriceListVersion.status == PriceListVersionStatus.PROCESSING,
+                    PriceListVersion.started_at < cutoff,
+                )
+            )
+        ).all()
+    for version_id in stale_ids:
+        await _mark_failed(version_id, "импорт прерван: воркер не завершил задачу")
+    if stale_ids:
+        log.warning(
+            "import.reconciled_stale",
+            count=len(stale_ids),
+            older_than_hours=STUCK_IMPORT_HOURS,
+        )
+    return {"status": "ok", "reconciled": len(stale_ids)}
 
 
 def _errors_to_csv(errors: Sequence[RowError]) -> bytes:

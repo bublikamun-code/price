@@ -5,7 +5,15 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Numeric, SmallInteger, String, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    ForeignKey,
+    Index,
+    Numeric,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,6 +38,8 @@ class ExchangeRate(Base, UUIDPrimaryKey):
         UniqueConstraint(
             "currency_code", "fetched_at", "source", name="uq_rates_currency_date_source"
         ),
+        # Создан миграцией 0001; объявлен в модели ради alembic check.
+        Index("ix_rates_currency_date", "currency_code", fetched_at.desc()),
     )
 
 

@@ -28,7 +28,10 @@ RUN npm run build
 # ---------- Stage: runtime (prod) ----------
 FROM node:${NODE_VERSION}-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production
+# HOST/PORT: явный bind 0.0.0.0:3000 для nitro (иначе может слушать только localhost)
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000
 COPY --from=build /app/.output ./.output
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]

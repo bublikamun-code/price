@@ -277,8 +277,8 @@ onMounted(load)
     </div>
 
     <!-- Модалка -->
-    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="closeModal">
-      <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" @click.self="closeModal">
+      <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-none p-6">
         <div class="flex items-center justify-between gap-3 mb-5">
           <h2 class="text-lg font-semibold">{{ editingId ? 'Изменить баннер' : 'Новый баннер' }}</h2>
           <button type="button" class="btn-ghost p-1.5" aria-label="Закрыть" @click="closeModal">

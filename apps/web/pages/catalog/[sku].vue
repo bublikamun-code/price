@@ -550,7 +550,7 @@ onUnmounted(() => {
     <!-- Lightbox -->
     <div
       v-if="lightbox && product && mainPhoto"
-      class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8"
+      class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) lightbox = false; overlayDown = false"
     >
       <img

@@ -1,7 +1,7 @@
 """Новости (публичная лента). См. ARCHITECTURE_PLAN.md §5."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -23,4 +23,11 @@ class News(Base, TimestampMixin, UUIDPrimaryKey):
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    # Индексы созданы миграцией 0004; объявлены в модели ради alembic check
+    # (аудит 2026-09-06 §3: защита от дрейфа моделей → миграций).
+    __table_args__ = (
+        Index("ix_news_published_at", published_at.desc()),
+        Index("ix_news_is_active", "is_active"),
     )

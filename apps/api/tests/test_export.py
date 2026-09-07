@@ -16,6 +16,7 @@ import csv
 import io
 import json
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from openpyxl import load_workbook
@@ -391,3 +392,97 @@ class TestJobStatusEndpoint:
         await _login(api_client, CLIENT_EMAIL)
         r = await api_client.get(f"/api/v1/catalog/export/{uuid.uuid4()}")
         assert r.status_code == 404, r.text
+
+
+# ===========================================================================
+# 4. Зависший RUNNING: воркер умер → клиент получает FAILED, а не поллит до TTL
+# ===========================================================================
+@pytest.mark.asyncio
+class TestStaleRunningJob:
+    async def test_run_task_writes_started_at(
+        self, session_factory, monkeypatch, job_redis, dispatched
+    ):
+        """Переход в RUNNING пишет started_at (основа дедлайна на чтении)."""
+        client, _keaz, _iek = await _seed_catalog(session_factory)
+        job_id = await export_service.start_export(
+            user=client, filters=CatalogFilters(), format="csv",
+            price_calc_mode="fixed",
+        )
+        await _run_task(
+            session_factory, monkeypatch, job_id=job_id,
+            user=client, filters={"q": None, "brand_ids": [], "series_ids": [], "stock": None},
+            fmt="csv",
+        )
+        state = _job_state(job_redis, job_id)
+        assert state["status"] == "DONE"
+        assert state["started_at"]  # записан при переходе QUEUED → RUNNING
+
+    async def test_stale_running_get_job_returns_failed_and_overwrites_key(
+        self, session_factory, job_redis
+    ):
+        """RUNNING со started_at старше дедлайна (30 мин) → FAILED («задача
+        прервана»), ключ перезаписывается, повторные чтения дают тот же ответ."""
+        client = await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
+        job_id = uuid.uuid4()
+        stale_ts = (datetime.now(UTC) - timedelta(minutes=31)).isoformat()
+        job_redis.values[f"export:job:{job_id}"] = json.dumps({
+            "job_id": str(job_id),
+            "user_id": str(client.id),
+            "format": "csv",
+            "status": "RUNNING",
+            "error": None,
+            "s3_key": None,
+            "created_at": stale_ts,
+            "started_at": stale_ts,
+        })
+
+        state = await export_service.get_job(client.id, job_id)
+
+        assert state["status"] == "FAILED"
+        assert "прерван" in state["error"]
+        assert json.loads(job_redis.values[f"export:job:{job_id}"])["status"] == "FAILED"
+
+        state2 = await export_service.get_job(client.id, job_id)
+        assert state2["status"] == "FAILED"
+
+    async def test_fresh_running_not_marked_failed(self, session_factory, job_redis):
+        client = await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
+        job_id = uuid.uuid4()
+        fresh_ts = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+        job_redis.values[f"export:job:{job_id}"] = json.dumps({
+            "job_id": str(job_id),
+            "user_id": str(client.id),
+            "format": "csv",
+            "status": "RUNNING",
+            "error": None,
+            "s3_key": None,
+            "created_at": fresh_ts,
+            "started_at": fresh_ts,
+        })
+
+        state = await export_service.get_job(client.id, job_id)
+
+        assert state["status"] == "RUNNING"
+        assert state["error"] is None
+
+    async def test_stale_deadline_uses_created_at_fallback(
+        self, session_factory, job_redis
+    ):
+        """Ключ без started_at (старый формат): дедлайн считается от created_at."""
+        client = await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
+        job_id = uuid.uuid4()
+        stale_ts = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        job_redis.values[f"export:job:{job_id}"] = json.dumps({
+            "job_id": str(job_id),
+            "user_id": str(client.id),
+            "format": "csv",
+            "status": "RUNNING",
+            "error": None,
+            "s3_key": None,
+            "created_at": stale_ts,
+        })
+
+        state = await export_service.get_job(client.id, job_id)
+
+        assert state["status"] == "FAILED"
+        assert "прерван" in state["error"]

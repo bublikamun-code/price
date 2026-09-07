@@ -43,7 +43,7 @@ function isActive(to: string) {
     <div class="flex-1 flex justify-center">
       <div class="container-app flex">
         <aside class="hidden lg:block shrink-0 sticky top-[68px] self-start py-4 pr-4">
-          <div class="card p-3 w-60">
+          <div class="glass p-3 w-60">
             <p class="px-3 mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Управление</p>
             <nav class="flex flex-col gap-1">
               <NuxtLink

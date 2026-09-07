@@ -307,7 +307,7 @@ onMounted(load)
     <!-- Создание бренда -->
     <div
       v-if="showCreate"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) showCreate = false; overlayDown = false"
     >
       <form class="card max-w-lg w-full p-6" @submit.prevent="submitCreate">
@@ -344,7 +344,7 @@ onMounted(load)
     <!-- Переименование бренда -->
     <div
       v-if="renaming"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) renaming = null; overlayDown = false"
     >
       <form class="card max-w-lg w-full p-6" @submit.prevent="submitRename">

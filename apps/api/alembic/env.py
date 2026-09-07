@@ -5,17 +5,16 @@
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.core.config import settings
-from app.db.base import Base
-
 # Импорт моделей, чтобы они зарегистрировались в Base.metadata.
 # По мере создания моделей добавлять их сюда ИЛИ импортировать пакет целиком:
 import app.models  # noqa: F401  (см. app/models/__init__.py)
+from alembic import context
+from app.core.config import settings
+from app.db.base import Base
 
 config = context.config
 if config.config_file_name is not None:
@@ -35,7 +34,8 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        compare_server_default=True,
+        # python-дефолты (default=uuid4 и т.п.) — не схема БД; их сравнение даёт шум modify_default
+        compare_server_default=False,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -46,7 +46,8 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        compare_server_default=True,
+        # python-дефолты (default=uuid4 и т.п.) — не схема БД; их сравнение даёт шум modify_default
+        compare_server_default=False,
     )
     with context.begin_transaction():
         context.run_migrations()

@@ -137,6 +137,24 @@ export const useAuthStore = defineStore('auth', () => {
     persistCookie('auth_token', t.access_token, COOKIE_MAX_AGE.token)
   }
 
+  /**
+   * Сброс module-state клиентских composables (избранное/корзина/уведомления).
+   * Их состояние — модульные ref'ы, общие между страницами; без сброса при
+   * выходе/смене пользователя в UI оставались бы данные прежнего (а
+   * ensureLoaded() у нового считал бы их уже загруженными и не перезапрашивал).
+   * try/catch — на случай вызова вне Nuxt-контекста (серверное продолжение
+   * после await): module-state здесь — только клиентский UI-state.
+   */
+  function resetClientData() {
+    try {
+      useFavorites().resetState()
+      useCart().resetState()
+      useNotifications().resetState()
+    } catch {
+      // Тихо: сброс UI-state не критичен (на сервере он и не нужен).
+    }
+  }
+
   function clear() {
     user.value = null
     token.value = null
@@ -146,6 +164,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
     persistCookie('auth_token', null, 0)
     persistCookie('auth_user', null, 0)
+    resetClientData()
   }
 
   function authHeaders(): Record<string, string> {
@@ -173,6 +192,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
     applyTokens(res)
     await fetchMe()
+    // Новый пользователь аутентифицирован: сбрасываем module-state прежней сессии,
+    // чтобы избранное/корзина/бейдж загрузились заново под его сессию.
+    resetClientData()
     if (res.force_password_change) {
       await navigateTo('/force-change-password')
       return { twoFARequired: false, forcePasswordChange: true }
@@ -192,6 +214,8 @@ export const useAuthStore = defineStore('auth', () => {
     })
     applyTokens(pair)
     await fetchMe()
+    // Аутентифицирован новый пользователь (2FA) — сброс данных прежней сессии.
+    resetClientData()
     if (pair.force_password_change) {
       await navigateTo('/force-change-password')
     }
@@ -237,6 +261,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Смена текущего (временного) пароля: POST /api/v1/auth/change-password.
+   *  Бэкенд снимает force_password_change и инвалидирует другие refresh-сессии;
+   *  текущая сессия (кука refresh) выживает, access-токен валиден до конца TTL. */
+  async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const baseURL = apiBaseURL()
+    await $fetch('/api/v1/auth/change-password', {
+      baseURL,
+      method: 'POST',
+      body: { current_password: currentPassword, new_password: newPassword },
+      headers: { ...authHeaders(), ...csrfHeaders() },
+      credentials: 'include',
+    })
+  }
+
   async function logout() {
     const baseURL = apiBaseURL()
     try {
@@ -257,7 +295,7 @@ export const useAuthStore = defineStore('auth', () => {
     user, token,
     isAuthenticated, isClient, isManager, isAdmin,
     registerCookies,
-    login, verify2fa, fetchMe, updateMe, refresh, logout, clear, applyUser, applyTokens,
+    login, verify2fa, fetchMe, updateMe, changePassword, refresh, logout, clear, applyUser, applyTokens,
   }
 })
 

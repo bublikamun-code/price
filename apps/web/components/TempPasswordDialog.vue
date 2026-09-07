@@ -26,7 +26,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
     @mousedown.self="overlayDown = true" @click.self="if (overlayDown) emit('close'); overlayDown = false"
   >
     <div class="card max-w-md w-full p-6">

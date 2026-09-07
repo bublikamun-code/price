@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'manager', middleware: ['role'] })
+definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Аналитика' })
 </script>
 

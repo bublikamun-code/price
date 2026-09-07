@@ -35,13 +35,14 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.enums import UserRole
 from app.models.user import (
     ConsentLog,
     PasswordResetToken,
-    Session as SessionModel,
     TotpRecoveryCode,
     User,
+)
+from app.models.user import (
+    Session as SessionModel,
 )
 from app.repositories import audit as audit_repo
 from app.schemas.auth import (
@@ -69,6 +70,9 @@ _TOTP_ISSUER = "PricePortal"
 _RECOVERY_CODES_COUNT = 8
 _RECOVERY_CODE_LEN = 10  # len(secrets.token_hex(5))
 _TOTP_VALID_WINDOW = 1  # ±30 сек (§16 п.22)
+# Grace-окно ротации refresh (аудит P0-1): максимум «догоняющих» переходов
+# по цепочке ротаций за один запрос — защита от патологических циклов.
+_MAX_GRACE_HOPS = 8
 
 
 def _hash_token(plain: str) -> str:
@@ -140,11 +144,11 @@ class AuthService:
             log.info("auth.login_2fa_required", user_id=str(user.id), ip=ip)
             return user, None
 
-        token_pair = await self._issue_new_session(user, user_agent, ip)
+        token_pair = await self._issue_session(user, _generate_refresh(), user_agent, ip)
         log.info("auth.login", user_id=str(user.id), ip=ip)
         return user, token_pair
 
-    # ---------- refresh (rotation) ----------
+    # ---------- refresh (rotation + grace-окно) ----------
     async def refresh(
         self, refresh_token_plain: str, user_agent: str | None, ip: str | None
     ) -> TokenPair:
@@ -152,8 +156,16 @@ class AuthService:
         session = await self.db.scalar(
             select(SessionModel).where(SessionModel.refresh_token_hash == token_hash)
         )
-        if session is None or session.revoked:
+        if session is None:
             raise AuthError("Недействительный refresh-токен")
+
+        # Grace-окно (аудит P0-1): параллельные refresh (несколько вкладок/воркеров
+        # фронта) могут прислать уже ротированный токен. В пределах
+        # settings.refresh_grace_seconds старый токен «догоняет» цепочку ротаций
+        # до актуальной сессии, и ротация продолжается от неё; после окна — 401
+        # (reuse-detection сохранён: logout/revoke-сессии имеют rotated_at=NULL).
+        session = await self._resolve_rotation_grace(session, ip=ip)
+
         if session.expires_at <= datetime.now(timezone.utc):
             raise AuthError("Срок действия refresh-токена истёк")
 
@@ -176,13 +188,50 @@ class AuthService:
         if user is None or not user.is_active:
             raise AuthError("Пользователь неактивен")
 
-        # ротация: отзываем старую, создаём новую
-        session.revoked = True
+        # ротация: отзываем старую (с пометкой grace), создаём новую.
+        # Новый refresh генерируем заранее: hash старой сессии указывает на
+        # актуальный токен атомарно (одним commit), без окна «revoked, но без
+        # ссылки на преемника».
         old_sid = session.id
-        token_pair = await self._issue_new_session(user, user_agent, ip)
+        now = datetime.now(timezone.utc)
+        session.revoked = True
+        session.rotated_at = now
+        new_refresh_plain = _generate_refresh()
+        session.superseded_by_hash = _hash_token(new_refresh_plain)
+        await self.db.commit()
+        token_pair = await self._issue_session(user, new_refresh_plain, user_agent, ip)
         await invalidate_session(old_sid)
         log.info("auth.refresh", user_id=str(user.id), old_sid=str(old_sid))
         return token_pair
+
+    async def _resolve_rotation_grace(self, session: SessionModel, *, ip: str | None) -> SessionModel:
+        """Если сессия отозвана ротацией в пределах grace-окна — идём по цепочке
+        superseded_by_hash до актуальной (не отозванной) сессии. Иначе AuthError.
+        """
+        hops = 0
+        while session.revoked:
+            in_grace = (
+                session.rotated_at is not None
+                and session.superseded_by_hash is not None
+                and datetime.now(timezone.utc) - session.rotated_at
+                <= timedelta(seconds=settings.refresh_grace_seconds)
+            )
+            if not in_grace or hops >= _MAX_GRACE_HOPS:
+                raise AuthError("Недействительный refresh-токен")
+            successor = await self.db.scalar(
+                select(SessionModel).where(
+                    SessionModel.refresh_token_hash == session.superseded_by_hash
+                )
+            )
+            if successor is None:
+                raise AuthError("Недействительный refresh-токен")
+            log.info(
+                "auth.refresh_grace", user_id=str(session.user_id),
+                sid=str(session.id), successor_sid=str(successor.id), ip=ip,
+            )
+            session = successor
+            hops += 1
+        return session
 
     # ---------- logout ----------
     async def logout(self, refresh_token_plain: str | None) -> None:
@@ -242,11 +291,8 @@ class AuthService:
             log.info("auth.consent_accepted", user_id=str(user.id), ip=ip)
         # M5: whitelist полей — setattr только по явно разрешённым колонкам User,
         # чтобы расширение схемы не позволило трогать role/is_active/password_hash.
+        # display_currency ∈ {BYN, USD, EUR, RUB} — выбор клиента (§8, уровень 2).
         allowed = {"display_currency", "price_digest_enabled", "price_digest_sources"}
-        # Клиент видит цены только в BYN: присланное display_currency игнорируется
-        # (MANAGER может выбирать валюту как раньше).
-        if user.role == UserRole.CLIENT:
-            changed.pop("display_currency", None)
         for field, value in changed.items():
             if field in allowed:
                 setattr(user, field, value)
@@ -305,7 +351,7 @@ class AuthService:
         user = await self._decode_2fa_ticket(ticket)
         if not self._check_totp(user, code) and not await self._try_use_recovery(user, code):
             raise AuthError("Неверный код")
-        token_pair = await self._issue_new_session(user, user_agent, ip)
+        token_pair = await self._issue_session(user, _generate_refresh(), user_agent, ip)
         log.info("auth.login_2fa_completed", user_id=str(user.id), ip=ip)
         return token_pair
 
@@ -456,10 +502,24 @@ class AuthService:
         return revoked
 
     # ---------- внутреннее: создание сессии + токенов ----------
-    async def _issue_new_session(
+    async def login_miniapp(
         self, user: User, user_agent: str | None, ip: str | None
     ) -> TokenPair:
-        refresh_plain = _generate_refresh()
+        """Вход из Telegram Mini App: подпись initData проверена роутером.
+
+        2FA не запрашивается — подписанные Telegram initData являются фактором
+        владения аккаунтом (§16 п.27).
+        """
+        token_pair = await self._issue_session(user, _generate_refresh(), user_agent, ip)
+        log.info("auth.login_miniapp", user_id=str(user.id), ip=ip)
+        return token_pair
+
+    async def _issue_session(
+        self, user: User, refresh_plain: str, user_agent: str | None, ip: str | None
+    ) -> TokenPair:
+        """Создаёт сессию по уже сгенерированному refresh-токену (plain) и
+        возвращает пару токенов. refresh() генерирует токен заранее — hash
+        преемника записывается в старую сессию атомарно (см. grace-окно)."""
         session = SessionModel(
             user_id=user.id,
             refresh_token_hash=_hash_token(refresh_plain),
@@ -481,6 +541,7 @@ class AuthService:
             access_token=access,
             refresh_token=refresh_plain,
             expires_in=settings.access_token_ttl_min * 60,
+            force_password_change=bool(user.must_change_password),
         )
 
     # ---------- Сброс пароля по email (forgot/reset) ----------
@@ -534,3 +595,34 @@ class AuthService:
         await self.revoke_all_sessions(user, current_refresh_plain=None)
         log.info("auth.password_reset_done", user_id=str(user.id))
         return True
+
+    # ---------- Смена пароля залогиненным (POST /auth/change-password) ----------
+    async def change_password(
+        self,
+        user: User,
+        current_password: str,
+        new_password: str,
+        *,
+        current_refresh_plain: str | None = None,
+    ) -> None:
+        """Смена текущего (временного) пароля залогиненным пользователем.
+
+        Проверяет current_password (bcrypt), снимает флаг must_change_password
+        (§16 п.19: после смены временного пароля фронт ведёт в кабинет) и
+        инвалидирует все ДРУГИЕ refresh-сессии (текущая — по refresh-куке —
+        выживает, чтобы не разлогинить только что сменившего пароль).
+        Ошибки: HTTPException 400 (неверный текущий пароль).
+        """
+        if not verify_password(current_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Неверный текущий пароль",
+            )
+        user.password_hash = hash_password(new_password)
+        user.must_change_password = False
+        # revoke_all_sessions коммитит и чистит кэш сессий; текущая сессия
+        # (совпадает refresh-хэш с кукой) не трогается.
+        revoked = await self.revoke_all_sessions(user, current_refresh_plain=current_refresh_plain)
+        log.info(
+            "auth.password_changed", user_id=str(user.id), other_sessions_revoked=revoked
+        )

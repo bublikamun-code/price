@@ -6,14 +6,27 @@
 DC = docker compose -f infra/docker-compose.yml --env-file .env
 DC_PROD = docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file .env
 DC_OBS = docker compose -f infra/docker-compose.yml -f infra/docker-compose.observability.yml --env-file .env
+# Dev-режим фронтенда: базовый compose + override с Nuxt dev server (хот-релоад)
+DC_WEB_DEV = docker compose -f infra/docker-compose.yml -f infra/docker-compose.web-dev.yml --env-file .env
 
-.PHONY: help up down build logs ps api-shell web-shell migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys obs-up obs-down test-e2e test-load test-load-import prod-up prod-down prod-logs prod-migrate gen-self-signed-certs backup backup-list ratelimit-reset
+.PHONY: help up down build logs ps api-shell web-shell web-dev web-prod alembic-check migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys obs-up obs-down test-e2e test-load test-load-import prod-up prod-down prod-logs prod-migrate gen-self-signed-certs backup backup-list ratelimit-reset
 
 help: ## показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-up: ## поднять все сервисы (dev, с хот-релоадом)
+up: ## поднять все сервисы (web — prod-сборка; api — dev с хот-релоадом)
 	$(DC) up -d
+
+web-dev: ## web в dev-режиме (Nuxt dev server + хот-релоад; нужен для make test-e2e)
+	$(DC_WEB_DEV) up -d --build web
+	@echo "web переключён в dev-режим (npm run dev). Вернуть prod: make web-prod"
+
+web-prod: ## web в prod-режиме (собранный .output; режим по умолчанию)
+	$(DC) up -d --build web
+	@echo "web переключён в prod-режим (node .output/server/index.mjs)."
+
+alembic-check: ## проверить дрейф моделей → миграций (аудит 2026-09-06 §3)
+	$(DC) exec -T api alembic check
 
 down: ## остановить все сервисы
 	$(DC) down
@@ -48,11 +61,11 @@ seed-catalog: ## загрузить каталог OptiBox Pro (тестовые
 seed-all: seed seed-catalog ## менеджер + каталог OptiBox Pro
 
 test: ## прогнать тесты api (тестовая БД на сервере db, авто-создание)
-	@$(DC) exec -T db sh -c 'createdb "$${POSTGRES_DB}_test" 2>/dev/null || true'
+	@$(DC) exec -T db sh -c 'createdb -U "$${POSTGRES_USER}" "$${POSTGRES_DB}_test" 2>/dev/null || true'
 	@$(DC) exec -T -e TEST_DB_URL="postgresql+asyncpg://$$( $(DC) exec -T db printenv POSTGRES_USER ):$$( $(DC) exec -T db printenv POSTGRES_PASSWORD )@db:5432/$$( $(DC) exec -T db printenv POSTGRES_DB )_test" api pytest -q
 
 test-pattern: ## прогнать отдельный тест: make test-pattern T="tests/test_catalog.py -k discount"
-	@$(DC) exec -T db sh -c 'createdb "$${POSTGRES_DB}_test" 2>/dev/null || true'
+	@$(DC) exec -T db sh -c 'createdb -U "$${POSTGRES_USER}" "$${POSTGRES_DB}_test" 2>/dev/null || true'
 	@$(DC) exec -T -e TEST_DB_URL="postgresql+asyncpg://$$( $(DC) exec -T db printenv POSTGRES_USER ):$$( $(DC) exec -T db printenv POSTGRES_PASSWORD )@db:5432/$$( $(DC) exec -T db printenv POSTGRES_DB )_test" api pytest -v $(T)
 
 lint: ## линтеры (api: ruff; web: eslint)

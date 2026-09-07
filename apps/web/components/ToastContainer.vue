@@ -24,7 +24,7 @@ const { toasts, remove } = useToast()
         <div
           v-for="toast in toasts"
           :key="toast.id"
-          class="pointer-events-auto card p-4 shadow-card-hover flex items-start gap-3"
+          class="pointer-events-auto glass p-4 flex items-start gap-3"
           :class="{
             'border-success/40 bg-success-soft/40': toast.type === 'success',
             'border-danger/40 bg-danger-soft/40': toast.type === 'error',

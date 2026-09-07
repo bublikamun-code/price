@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Прайс-лист{% if client_company %} — {{ client_company }}{% endif %}</title>
+<style>
+    /* A4 print-friendly (§16 п.25): без фоновых заливок — экономия тонера. */
+    @page {
+        size: A4;
+        margin: 15mm 12mm;
+        @bottom-center {
+            content: "Стр. " counter(page) " из " counter(pages);
+            font-size: 8pt;
+            color: #666;
+        }
+    }
+    body {
+        font-family: "DejaVu Sans", "PT Sans", Arial, sans-serif;
+        font-size: 9pt;
+        color: #111;
+    }
+    h1 { font-size: 14pt; margin: 0 0 2mm; }
+    .meta { font-size: 9pt; color: #333; margin: 0 0 1.5mm; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 4mm;
+    }
+    th, td {
+        border: 0.5pt solid #999;
+        padding: 1.2mm 1.8mm;
+        text-align: left;
+        vertical-align: top;
+    }
+    th {
+        background-color: #eee;
+        font-size: 8.5pt;
+        text-align: center;
+    }
+    td.num { text-align: right; white-space: nowrap; }
+    tr { page-break-inside: avoid; }
+    thead { display: table-header-group; }
+    .empty { margin-top: 6mm; color: #333; }
+</style>
+</head>
+<body>
+<h1>Прайс-лист</h1>
+<p class="meta">
+    Дата: {{ date }} ·
+    Клиент: {{ client_name }}{% if client_company %}, {{ client_company }}{% endif %}
+</p>
+<p class="meta">Цены: {{ price_mode }}</p>
+
+{% if rows %}
+<table>
+    <thead>
+    <tr>
+        <th>Артикул</th>
+        <th>Наименование</th>
+        <th>Бренд</th>
+        <th>Серия</th>
+        <th>Наличие</th>
+        <th>Цена розничная</th>
+        <th>Цена клиента</th>
+        <th>Валюта</th>
+    </tr>
+    </thead>
+    <tbody>
+    {%- set stock_labels = {"IN_STOCK": "В наличии", "PREORDER": "Под заказ", "ARCHIVED": "Архив"} -%}
+    {%- for sku, name, brand, series, stock, retail, client_price, currency in rows %}
+    <tr>
+        <td>{{ sku }}</td>
+        <td>{{ name }}</td>
+        <td>{{ brand }}</td>
+        <td>{{ series }}</td>
+        <td>{{ stock_labels.get(stock, stock) }}</td>
+        <td class="num">{{ "%.2f"|format(retail) }}</td>
+        <td class="num">{{ "%.2f"|format(client_price) }} {{ currency }}</td>
+        <td>{{ currency }}</td>
+    </tr>
+    {%- endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">По выбранным фильтрам товары не найдены.</p>
+{% endif %}
+</body>
+</html>

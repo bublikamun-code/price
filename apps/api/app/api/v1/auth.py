@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
     SessionListResponse,
     TelegramLinkCodeOut,
@@ -106,6 +107,8 @@ async def login(
                 "data": {
                     "two_fa_required": True,
                     "ticket": create_2fa_ticket(str(user.id)),
+                    # Фронт ведёт на /force-change-password после verify2fa (§16 п.19)
+                    "force_password_change": bool(user.must_change_password),
                 }
             },
         )
@@ -157,6 +160,33 @@ async def logout(
 async def me(current_user: User = Depends(get_current_user)) -> UserPublic:
     """Текущий пользователь."""
     return UserPublic.from_user(current_user)
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(validate_csrf)],
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Смена текущего (временного) пароля залогиненным (§16 п.19).
+
+    Проверяет текущий пароль, снимает must_change_password (в /me отдаётся как
+    force_password_change=false) и инвалидирует все ДРУГИЕ refresh-сессии
+    (текущая — по refresh-куке — выживает).
+    """
+    svc = AuthService(db)
+    await svc.change_password(
+        current_user,
+        body.current_password,
+        body.new_password,
+        current_refresh_plain=request.cookies.get("refresh_token"),
+    )
+    return {"detail": "Пароль изменён"}
 
 
 @router.patch("/me", response_model=UserPublic)

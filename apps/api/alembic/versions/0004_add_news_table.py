@@ -21,8 +21,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Тип создаём вручную (checkfirst — идемпотентно), а в create_table
+    # передаём create_type=False, иначе Alembic эмитит CREATE TYPE второй раз
+    # (как в 0005_add_banners — фикс d44840f).
     news_type = postgresql.ENUM(
-        "NEWS", "NEW_PRODUCT", name="news_type", create_type=True
+        "NEWS", "NEW_PRODUCT", name="news_type", create_type=False
     )
     news_type.create(op.get_bind(), checkfirst=True)
 

@@ -305,7 +305,7 @@ onMounted(load)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in data.top_products" :key="p.product_id" class="border-t border-border hover:bg-canvas/60">
+              <tr v-for="p in data.top_products" :key="p.product_id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
                 <td class="px-6 py-2.5 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
                 <td class="px-4 py-2.5 max-w-56 truncate" :title="p.name">{{ p.name }}</td>
                 <td class="px-4 py-2.5 text-right">{{ p.qty }}</td>
@@ -339,7 +339,7 @@ onMounted(load)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="o in data.recent_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+              <tr v-for="o in data.recent_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
                 <td class="px-6 py-2.5">
                   <NuxtLink :to="`/orders/${o.id}`" class="font-medium text-primary hover:underline whitespace-nowrap">
                     {{ formatOrderNumber(o.seq, o.id) }}
@@ -378,7 +378,7 @@ onMounted(load)
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="o in data.active_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+                <tr v-for="o in data.active_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
                   <td class="px-6 py-2.5">
                     <NuxtLink :to="`/orders/${o.id}`" class="font-medium text-primary hover:underline whitespace-nowrap">
                       {{ o.number }}

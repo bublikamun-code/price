@@ -9,6 +9,7 @@ useHead({ title: 'Каталог' })
 
 const { request } = useApi()
 const route = useRoute()
+const router = useRouter()
 
 // Избранное: сердечко в карточке (ленивая загрузка списка — внутри isFav/toggle).
 const favorites = useFavorites()
@@ -31,6 +32,10 @@ const sortOptions = [
   { value: '-price', label: 'Цена ↓' },
   { value: 'sku', label: 'Артикул' },
 ]
+const modelOptions = computed(() => [
+  { value: '', label: 'Все модели' },
+  ...(filters.value.models ?? []).map((m) => ({ value: m, label: m })),
+])
 const stockOptions = [
   { value: '', label: 'Любое' },
   { value: 'IN_STOCK', label: 'В наличии' },
@@ -41,7 +46,7 @@ const loading = ref(true)
 const error = ref('')
 const products = ref<ProductCard[]>([])
 const total = ref(0)
-const filters = ref<FiltersOut>({ brands: [], series: [], stock: [] })
+const filters = ref<FiltersOut>({ brands: [], series: [], stock: [], models: [] })
 
 // Корзина: добавление товара прямо из карточки.
 // Синк с корзиной: товар, уже лежащий в ней, показывает своё количество,
@@ -101,11 +106,15 @@ const selectedSeries = ref<string[]>([])
 function idsFromQuery(key: string): string[] {
   const v = route.query[key]
   if (!v) return []
-  return Array.isArray(v) ? v.map(String) : [String(v)]
+  // значения могут быть "id1,id2" (наша запись URL) или массивом (повторы в query)
+  const raw = Array.isArray(v) ? v : [String(v)]
+  return raw.flatMap((x) => String(x).split(',')).filter(Boolean)
 }
 selectedBrands.value = idsFromQuery('brand')
 selectedSeries.value = idsFromQuery('series')
 const selectedStock = ref<string>('') // '' | IN_STOCK | PREORDER
+const selectedModel = ref<string>('') // Щит распределительный / Щит мультимедиа / Аксессуары
+selectedModel.value = (route.query.model as string) || ''
 const sort = ref<Sort>('name')
 const page = ref(1)
 const viewMode = ref<'grid' | 'list'>('grid')
@@ -134,6 +143,16 @@ function hiddenFilterCount<T extends { id: string }>(items: T[], key: string): n
 async function load() {
   loading.value = true
   error.value = ''
+  // URL отражает текущие фильтры: после F5 не «возвращаются» снятые галочки
+  const urlQuery: Record<string, string> = {}
+  if (q.value) urlQuery.q = q.value
+  if (selectedBrands.value.length) urlQuery.brand = selectedBrands.value.join(',')
+  if (selectedSeries.value.length) urlQuery.series = selectedSeries.value.join(',')
+  if (selectedStock.value) urlQuery.stock = selectedStock.value
+  if (selectedModel.value) urlQuery.model = selectedModel.value
+  if (sort.value !== 'name') urlQuery.sort = sort.value
+  if (page.value > 1) urlQuery.page = String(page.value)
+  void router.replace({ query: urlQuery }).catch(() => {})
   try {
     const [catalog, f] = await Promise.all([
       request<CatalogPage>('/api/v1/catalog/products', {
@@ -142,6 +161,7 @@ async function load() {
           brand: selectedBrands.value.length ? selectedBrands.value : undefined,
           series: selectedSeries.value.length ? selectedSeries.value : undefined,
           stock: selectedStock.value || undefined,
+          model: selectedModel.value || undefined,
           sort: sort.value,
           page: page.value,
           per_page: PER_PAGE,
@@ -168,6 +188,7 @@ function resetFilters() {
   selectedBrands.value = []
   selectedSeries.value = []
   selectedStock.value = ''
+  selectedModel.value = ''
   sort.value = 'name'
   page.value = 1
   load()
@@ -200,6 +221,7 @@ async function startExport(format: ExportFormat) {
         brand: selectedBrands.value.length ? selectedBrands.value : undefined,
         series: selectedSeries.value.length ? selectedSeries.value : undefined,
         stock: selectedStock.value || undefined,
+        model: selectedModel.value || undefined,
         price_calc_mode: 'fixed',
       },
     })
@@ -272,29 +294,31 @@ onMounted(load)
 
 <template>
   <div>
-    <!-- Заголовок + тулбар: подняты к верхней границе меню (sidebar),
-         отступ до контента чуть больше -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 -mt-2 lg:-mt-4 mb-8">
-        <div>
-          <h1 class="text-2xl font-bold">Каталог</h1>
-          <p class="text-sm text-ink-muted mt-1">
-            <template v-if="!loading">Показано {{ products.length }} из {{ total }}</template>
+    <!-- Заголовок + тулбар: подняты к верхней границе меню (sidebar).
+         Мобайл: заголовок делит строку с фильтрами и видом (2 ряда вместо 3),
+         экспорт — иконка; на sm+ обёртки растворяются в колонку справа. -->
+    <div class="flex flex-wrap items-center justify-between gap-2 -mt-2 lg:-mt-4 mb-3 sm:mb-8 sm:flex-nowrap sm:gap-4">
+        <div class="flex-1 min-w-0 flex items-baseline gap-2 sm:block">
+          <h1 class="text-xl sm:text-2xl font-bold">Каталог</h1>
+          <p class="text-xs sm:text-sm text-ink-muted sm:mt-1">
+            <template v-if="!loading">{{ products.length }} из {{ total }}</template>
             <template v-else>Загрузка…</template>
           </p>
         </div>
-        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-          <!-- Мобильный ряд 1: фильтры | вид (на десктопе обёртки растворяются) -->
-          <div class="flex items-center gap-2 justify-between sm:contents">
+        <div class="contents sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-2">
+          <!-- Мобильный ряд 1 — рядом с заголовком: фильтры | вид
+               (на десктопе обёртки растворяются) -->
+          <div class="flex items-center gap-1.5 shrink-0 sm:contents">
             <!-- Фильтры: кнопка только на мобильном (иконка) и планшете (с текстом);
                 на десктопе панель всегда видна -->
-            <button class="btn-ghost py-2 px-2 sm:px-3 lg:hidden" title="Фильтры" @click="toggleFilters">
+            <button class="btn-ghost py-1.5 px-2 sm:px-3 lg:hidden" title="Фильтры" @click="toggleFilters">
               <Icon name="heroicons:funnel" class="w-4 h-4" />
               <span class="hidden sm:inline">Фильтры</span>
             </button>
             <!-- Переключатель вида -->
-            <div class="flex shrink-0 bg-surface border border-border rounded-pill p-1">
+            <div class="flex shrink-0 bg-surface border border-border rounded-pill p-0.5 sm:p-1">
               <button
-                class="p-1.5 rounded-pill transition-colors"
+                class="p-1 sm:p-1.5 rounded-pill transition-colors"
                 :class="viewMode === 'grid' ? 'bg-primary text-white' : 'text-ink-muted'"
                 title="Плитка"
                 @click="viewMode = 'grid'"
@@ -302,7 +326,7 @@ onMounted(load)
                 <Icon name="heroicons:squares-2x2" class="w-4 h-4" />
               </button>
               <button
-                class="p-1.5 rounded-pill transition-colors"
+                class="p-1 sm:p-1.5 rounded-pill transition-colors"
                 :class="viewMode === 'list' ? 'bg-primary text-white' : 'text-ink-muted'"
                 title="Список"
                 @click="viewMode = 'list'"
@@ -311,14 +335,14 @@ onMounted(load)
               </button>
             </div>
           </div>
-          <!-- Мобильный ряд 2: сортировка (тянется) | экспорт -->
-          <div class="flex items-center gap-2 sm:contents">
+          <!-- Мобильный ряд 2 — своя строка (basis-full): сортировка (тянется) | экспорт -->
+          <div class="flex items-center gap-2 basis-full sm:contents">
             <!-- Сортировка -->
             <BaseSelect v-model="sort" :options="sortOptions" class="flex-1 sm:flex-none sm:min-w-[180px]" @change="applyFilters" />
-            <!-- Экспорт каталога под текущие фильтры -->
-            <div class="relative">
+            <!-- Экспорт каталога под текущие фильтры (на узких — иконка) -->
+            <div class="relative shrink-0">
               <button
-                class="btn-ghost py-2"
+                class="btn-ghost py-1.5 sm:py-2"
                 :disabled="exporting"
                 @click="exportMenuOpen = !exportMenuOpen"
               >
@@ -327,7 +351,7 @@ onMounted(load)
                   class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
                 />
                 <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
-                {{ exporting ? 'Готовим файл…' : 'Экспорт' }}
+                <span class="hidden min-[400px]:inline">{{ exporting ? 'Готовим файл…' : 'Экспорт' }}</span>
               </button>
               <div v-if="exportMenuOpen && !exporting" class="absolute right-0 mt-2 card p-1.5 w-44 z-20">
                 <button
@@ -372,21 +396,23 @@ onMounted(load)
         class="w-72 lg:w-64 shrink-0"
         :class="[
           drawerOpen
-            ? 'fixed inset-y-0 left-0 z-50 bg-canvas overflow-y-auto p-4'
+            ? 'fixed inset-y-0 left-0 z-50 bg-canvas overflow-y-auto scrollbar-none p-3'
             : 'hidden',
           'lg:block',
           viewMode === 'grid' ? 'lg:self-start' : '',
         ]"
       >
-        <div class="card p-4" :class="viewMode === 'list' ? 'h-full flex flex-col' : ''">
-          <div class="flex items-center justify-between mb-4">
+        <!-- card — только для статичной панели на lg; в мобильной шторке
+             белая подложка не нужна: фильтры лежат прямо на фоне шторки -->
+        <div class="p-3 sm:p-4" :class="[drawerOpen ? '' : 'card', viewMode === 'list' ? 'h-full flex flex-col' : '']">
+          <div class="flex items-center justify-between mb-2 sm:mb-4">
             <h3 class="font-semibold">Фильтры</h3>
             <button class="btn-ghost p-1.5 lg:hidden" aria-label="Закрыть фильтры" @click="drawerOpen = false">
               <Icon name="heroicons:x-mark" class="w-5 h-5" />
             </button>
           </div>
 
-          <div class="mb-4">
+          <div class="mb-3 sm:mb-4">
             <label class="label">Поиск</label>
             <div class="relative">
               <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
@@ -399,9 +425,9 @@ onMounted(load)
             </div>
           </div>
 
-          <div v-if="filters.brands.length" class="mb-4">
+          <div v-if="filters.brands.length" class="mb-3 sm:mb-4">
             <label class="label">Производитель</label>
-            <label v-for="b in visibleFilterItems(filters.brands, 'brands')" :key="b.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
+            <label v-for="b in visibleFilterItems(filters.brands, 'brands')" :key="b.id" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
               <input v-model="selectedBrands" type="checkbox" :value="b.id" class="rounded border-border" @change="applyFilters" >
               {{ b.name }}
             </label>
@@ -417,9 +443,9 @@ onMounted(load)
             >Скрыть</button>
           </div>
 
-          <div v-if="filters.series.length" class="mb-4">
+          <div v-if="filters.series.length" class="mb-3 sm:mb-4">
             <label class="label">Серия</label>
-            <label v-for="s in visibleFilterItems(filters.series, 'series')" :key="s.id" class="flex items-center gap-2 text-sm py-1 cursor-pointer">
+            <label v-for="s in visibleFilterItems(filters.series, 'series')" :key="s.id" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
               <input v-model="selectedSeries" type="checkbox" :value="s.id" class="rounded border-border" @change="applyFilters" >
               {{ s.name }}
             </label>
@@ -435,9 +461,10 @@ onMounted(load)
             >Скрыть</button>
           </div>
 
-          <div class="mb-4">
+          <div class="mb-3 sm:mb-4">
             <label class="label">Наличие</label>
             <BaseSelect v-model="selectedStock" :options="stockOptions" class="min-w-[150px]" @change="applyFilters" />
+            <BaseSelect v-model="selectedModel" :options="modelOptions" class="min-w-[190px]" @change="applyFilters" />
           </div>
 
           <button
@@ -467,18 +494,18 @@ onMounted(load)
         </template>
 
         <!-- Пусто -->
-        <div v-else-if="!products.length" class="card p-12 text-center text-ink-muted">
+        <div v-else-if="!products.length" class="card p-8 sm:p-12 text-center text-ink-muted">
           <Icon name="heroicons:archive-box-x-mark" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
           <p>Ничего не найдено. Измените условия поиска или сбросьте фильтры.</p>
         </div>
 
         <!-- Плитка: на мобильном — горизонтальная карточка (фото слева, цена и
              корзина справа, всё помещается без скролла), на sm+ — вертикальная -->
-        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
-          <article v-for="p in products" :key="p.id" class="card card-hover p-3 sm:p-5 flex flex-row sm:flex-col gap-3 sm:gap-0">
+        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5">
+          <article v-for="p in products" :key="p.id" class="card card-hover p-2.5 sm:p-5 flex flex-row sm:flex-col gap-2.5 sm:gap-0">
             <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю
                  ширину карточки, единая высота у всех (object-contain) -->
-            <div class="relative w-28 h-28 sm:w-full sm:h-52 shrink-0 bg-surface rounded-card sm:mb-4 flex items-center justify-center overflow-hidden">
+            <div class="relative w-24 h-24 sm:w-full sm:h-52 shrink-0 bg-surface rounded-card sm:mb-4 flex items-center justify-center overflow-hidden">
               <img
                 v-if="thumbOf(p.photo_key)"
                 :src="thumbOf(p.photo_key)!"
@@ -511,10 +538,10 @@ onMounted(load)
                   Осталось {{ p.stock_qty }} шт
                 </span>
               </div>
-              <NuxtLink :to="`/catalog/${p.sku}`" class="block font-semibold text-sm sm:text-base mb-1 line-clamp-2 hover:text-primary transition-colors">
+              <NuxtLink :to="`/catalog/${p.sku}`" class="block font-semibold text-sm sm:text-base mb-0.5 sm:mb-1 line-clamp-1 sm:line-clamp-2 hover:text-primary transition-colors">
                 {{ p.name }}
               </NuxtLink>
-              <p class="text-xs text-ink-faint mb-2 sm:mb-3">Артикул: {{ p.sku }}<span v-if="p.series"> · {{ p.series.name }}</span></p>
+              <p class="text-xs text-ink-faint mb-1.5 sm:mb-3 truncate">Артикул: {{ p.sku }}<span v-if="p.series"> · {{ p.series.name }}</span></p>
 
               <!-- Характеристики: стабильная сетка 2 колонки, фиксированный порядок полей -->
               <div v-if="attrChips(p).length" class="hidden sm:grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
@@ -525,23 +552,23 @@ onMounted(load)
               </div>
 
               <div class="mt-auto">
-                <div v-if="p.has_discount" class="flex items-baseline gap-2 mb-2 sm:mb-3">
-                  <span class="text-lg sm:text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
+                <div v-if="p.has_discount" class="flex items-baseline gap-2 mb-1.5 sm:mb-3">
+                  <span class="text-base sm:text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
                   <span class="text-xs sm:text-sm text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
                 </div>
-                <div v-else class="mb-2 sm:mb-3">
-                  <span class="text-lg sm:text-xl font-bold">{{ formatMoney(p.client_price, p.currency) }}</span>
+                <div v-else class="mb-1.5 sm:mb-3">
+                  <span class="text-base sm:text-xl font-bold">{{ formatMoney(p.client_price, p.currency) }}</span>
                 </div>
                 <div class="flex items-stretch gap-2">
                   <input
                     type="number"
                     min="1"
                     :value="getQty(p.sku)"
-                    class="input py-2 w-14 sm:w-20 text-center shrink-0"
+                    class="input py-1.5 sm:py-2 w-12 sm:w-20 text-center shrink-0"
                     @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
                   >
                   <button
-                    class="btn-primary flex-1 min-w-0 whitespace-nowrap px-2 sm:px-4 py-2 text-xs sm:text-sm"
+                    class="btn-primary flex-1 min-w-0 whitespace-nowrap px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm"
                     :class="addedSku !== p.sku && inCartQty(p.sku) > 0 ? '!bg-success' : ''"
                     :disabled="addingSku === p.sku"
                     :title="inCartQty(p.sku) > 0 ? `В корзине: ${inCartQty(p.sku)} шт` : 'В корзину'"
@@ -564,23 +591,24 @@ onMounted(load)
             <table class="w-full text-sm table-fixed">
               <thead>
                 <tr class="text-ink-muted text-left bg-surface-2 border-b border-border text-[11px] sm:text-xs">
-                  <th class="px-1 sm:px-2 py-2 font-medium w-[15%] sm:w-[12%] truncate">Арт.</th>
-                  <th class="px-1 sm:px-2 py-2 font-medium w-[31%] sm:w-[35%] truncate">Наименование</th>
-                  <th class="px-2 py-2 font-medium w-[10%] hidden sm:table-cell">Наличие</th>
-                  <th class="px-1 sm:px-2 py-2 font-medium text-right w-[20%] sm:w-[14%]">Цена</th>
-                  <th class="px-1 sm:px-2 py-2 font-medium text-center w-[18%] sm:w-[19%] whitespace-nowrap">Кол-во</th>
-                  <th class="px-1 sm:px-2 py-2 font-medium text-right w-[16%] sm:w-[8%]" />
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[15%] sm:w-[12%] truncate">Арт.</th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[31%] sm:w-[35%] truncate">Наименование</th>
+                  <th class="px-2 py-1.5 sm:py-2 font-medium w-[10%] hidden sm:table-cell">Наличие</th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium text-right w-[20%] sm:w-[14%]">Цена</th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium text-center w-[18%] sm:w-[19%] whitespace-nowrap">Кол-во</th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium text-right w-[16%] sm:w-[8%]" />
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-1 sm:px-2 py-2 font-mono text-[11px] sm:text-xs max-w-0 truncate" :title="p.sku">{{ p.sku }}</td>
-                  <td class="px-1 sm:px-2 py-2 max-w-0 truncate" :title="p.name">
+                <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
+                  <td class="px-1 sm:px-2 py-1.5 sm:py-2 font-mono text-[11px] sm:text-xs max-w-0 truncate" :title="p.sku">{{ p.sku }}</td>
+                  <td class="px-1 sm:px-2 py-1.5 sm:py-2 max-w-0 truncate" :title="p.name">
                     <NuxtLink :to="`/catalog/${p.sku}`" class="font-medium hover:text-primary transition-colors">
                       {{ p.name }}
                     </NuxtLink>
                   </td>
-                  <td class="px-2 py-2 hidden sm:table-cell">
+                  <td class="px-2 py-1.5 sm:py-2 hidden sm:table-cell">
+                    <!-- Только SVG-значок наличия; расшифровка — в hover-тултипе -->
                     <span class="relative inline-flex group">
                       <Icon
                         :name="STOCK_ICON[p.stock_status]?.icon || 'heroicons:question-mark-circle'"
@@ -595,7 +623,7 @@ onMounted(load)
                       Осталось {{ p.stock_qty }} шт
                     </span>
                   </td>
-                  <td class="px-1 sm:px-2 py-2 text-right max-w-0">
+                  <td class="px-1 sm:px-2 py-1.5 sm:py-2 text-right max-w-0">
                     <template v-if="p.has_discount">
                       <!-- На мобильном валюта и старая цена скрыты, чтобы сумма не налезала на соседние колонки -->
                       <span class="font-bold text-primary block truncate text-xs sm:text-sm">{{ formatMoney(p.client_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
@@ -603,7 +631,7 @@ onMounted(load)
                     </template>
                     <span v-else class="font-bold block truncate text-xs sm:text-sm">{{ formatMoney(p.client_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
                   </td>
-                  <td class="px-1 sm:px-2 py-2 text-center">
+                  <td class="px-1 sm:px-2 py-1.5 sm:py-2 text-center">
                     <input
                       type="number"
                       min="1"
@@ -612,7 +640,7 @@ onMounted(load)
                       @input="setQty(p.sku, +($event.target as HTMLInputElement).value)"
                     >
                   </td>
-                  <td class="px-1 sm:px-2 py-2 text-right">
+                  <td class="px-1 sm:px-2 py-1.5 sm:py-2 text-right">
                     <button
                       class="btn-primary p-1 sm:p-1.5"
                       :class="addedSku !== p.sku && inCartQty(p.sku) > 0 ? '!bg-success' : ''"
@@ -637,7 +665,7 @@ onMounted(load)
             нижнюю навигацию) -->
         <div
           v-if="!loading && totalPages > 1"
-          class="mt-4 py-2.5 border-t border-border bg-canvas/95 backdrop-blur lg:sticky lg:bottom-0 lg:z-10 lg:-mx-4 lg:px-4"
+          class="mt-4 py-1.5 card rounded-card backdrop-blur-[20px] lg:sticky lg:bottom-3 lg:z-10"
         >
           <nav class="flex items-center justify-center gap-1">
             <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
@@ -646,7 +674,7 @@ onMounted(load)
             <button
               v-for="pgn in totalPages"
               :key="pgn"
-              class="w-10 h-10 rounded-pill font-medium text-sm"
+              class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
               :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
               @click="goPage(pgn)"
             >{{ pgn }}</button>

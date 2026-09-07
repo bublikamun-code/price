@@ -23,7 +23,8 @@ import csv
 import io
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
+from decimal import Decimal
 
 from openpyxl import Workbook
 
@@ -34,7 +35,12 @@ from app.models.user import User
 from app.repositories import catalog as catalog_repo
 from app.repositories.catalog import CatalogFilters
 from app.services import storage
-from app.services.pricing import PricingService
+from app.services.pricing import (
+    PricingService,
+    _q,
+    client_price_byn,
+    convert_to_currency,
+)
 from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
 
@@ -90,7 +96,11 @@ async def _run_export(
     # избегаем цикличности импортов на уровне модуля.
     from app.services.export import STATUS_DONE, STATUS_RUNNING, set_job_state
 
-    await set_job_state(job_id, status=STATUS_RUNNING)
+    # started_at — для детекта зависшего RUNNING на чтении (services.export:
+    # воркер умер → клиент получает FAILED, а не поллит до TTL ключа).
+    await set_job_state(
+        job_id, status=STATUS_RUNNING, started_at=datetime.now(UTC).isoformat()
+    )
 
     async with _worker_session() as db:
         user = await db.get(User, user_id)
@@ -104,19 +114,32 @@ async def _run_export(
             db, user_id=user_id, filters=_filters_from_json(filters)
         )
         pricing = PricingService(db)
+        # Курс и скидки резолвим ДО цикла: price_product на каждую строку давал
+        # N+1 (resolve_rate + get_discount_for_brand = 2 запроса × N строк).
+        # Ниже — расчёт тех же полей price_product (§8/§17), что использует
+        # выгрузка (base_price_byn / client_price / currency), с той же
+        # семантикой; скидки кэшируются по brand_id.
+        resolved = await pricing.resolve_rate(user, price_calc_mode)
+        discounts: dict[uuid.UUID | None, Decimal | None] = {}
         records: list[list] = []
         for row in rows:
             product = row[0]
-            prices = await pricing.price_product(product, user, price_calc_mode)
+            if product.brand_id not in discounts:
+                discounts[product.brand_id] = await pricing.get_discount_for_brand(
+                    user.id, product.brand_id
+                )
+            client_byn = client_price_byn(
+                product.base_price, product.override_price, discounts[product.brand_id]
+            )
             records.append([
                 product.sku,
                 product.name,
                 row.brand_name or "",
                 row.series_name or "",
                 product.stock_status.value,
-                prices["base_price_byn"],
-                prices["client_price"],
-                prices["currency"],
+                float(_q(product.base_price)),
+                float(convert_to_currency(client_byn, resolved.rate, resolved.scale)),
+                resolved.currency,
             ])
 
         key = f"export/{job_id}.{format}"

@@ -71,6 +71,9 @@ class ManagerUsersService:
             full_name=payload.full_name,
             company=payload.company,
             phone=payload.phone,
+            # Временный пароль → обязательная смена при первом входе (§16 п.19):
+            # login отдаёт force_password_change, фронт ведёт на /force-change-password.
+            must_change_password=True,
         )
         if payload.discount_percent_all is not None:
             brand_ids = await users_repo.all_brand_ids(self.db)
@@ -191,6 +194,8 @@ class ManagerUsersService:
         user = await self._get_client(user_id)
         temp_password = secrets.token_urlsafe(12)
         user.password_hash = hash_password(temp_password)
+        # Временный пароль → снова обязательная смена при следующем входе (§16 п.19).
+        user.must_change_password = True
         revoked = await users_repo.revoke_sessions(self.db, user_id=user.id)
         await audit_repo.create_audit(
             self.db,

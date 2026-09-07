@@ -2,6 +2,7 @@
 import uuid
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Brand, Product, Series
@@ -9,11 +10,31 @@ from app.models.order import Cart, CartItem
 
 
 async def get_or_create_cart(db: AsyncSession, *, user_id: uuid.UUID) -> Cart:
+    """Корзина пользователя, при отсутствии — создаётся.
+
+    Гонка check-then-insert (аудит 2026-09-06): два параллельных запроса
+    могли создать по корзине. Теперь ``uq_carts_user_id`` (миграция 0009)
+    детерминирует победителя: проигравший INSERT благодаря
+    ``ON CONFLICT DO NOTHING`` не падает и читает корзину победителя.
+    ORM-вариант с SAVEPOINT в async-сессии ненадёжен: ``begin_nested``
+    флашит pending-объекты ещё до создания точки сохранения, а после
+    UniqueViolation транзакция остаётся повреждённой.
+    """
     cart = await db.scalar(select(Cart).where(Cart.user_id == user_id))
-    if cart is None:
-        cart = Cart(user_id=user_id)
-        db.add(cart)
-        await db.flush()
+    if cart is not None:
+        return cart
+
+    # name дублирует ORM-дефолт модели: Core-INSERT обходит python-дефолты;
+    # id обязателен по той же причине (UUIDPrimaryKey.default=uuid4).
+    stmt = (
+        pg_insert(Cart)
+        .values(user_id=user_id, name="Корзина", id=uuid.uuid4())
+        .on_conflict_do_nothing(index_elements=[Cart.user_id])
+    )
+    await db.execute(stmt)
+    cart = await db.scalar(select(Cart).where(Cart.user_id == user_id))
+    if cart is None:  # невозможен: DO NOTHING + существующий или вставленный ряд
+        raise RuntimeError(f"cart for user {user_id} missing after upsert")
     return cart
 
 

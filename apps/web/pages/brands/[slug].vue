@@ -22,7 +22,7 @@ const { data: brand, status, error, refresh } = useAsyncData('public-brand', asy
   const series = await Promise.all(
     (detail.series ?? []).map(async (s) => {
       try {
-        const pr = await fetchJson(`/api/v1/public/series/${encodeURIComponent(s.slug)}/products?page=1&page_size=200`)
+        const pr = await fetchJson(`/api/v1/public/series/${encodeURIComponent(s.slug)}/products?page=1&per_page=200`)
         return { ...s, products: unwrapData<PublicSeriesProduct[]>(pr) }
       } catch {
         return { ...s, products: [] }
@@ -49,6 +49,8 @@ useSeoMeta({
 })
 
 function thumbUrl(key: string): string {
+  // §16 п.17: http(s)-значения — внешние ссылки (напрямую), остальное — S3-ключи.
+  if (/^https?:\/\//.test(key)) return key
   return `/api/v1/public/photo?key=${encodeURIComponent(key)}`
 }
 
@@ -66,9 +68,9 @@ function plural(n: number, forms: [string, string, string]): string {
     <!-- Хлебные крошки -->
     <nav aria-label="Хлебные крошки" class="mb-6">
       <ol class="flex items-center flex-wrap gap-1.5 text-sm text-ink-muted">
-        <li><NuxtLink to="/" class="hover:text-primary">Главная</NuxtLink></li>
+        <li><NuxtLink to="/" class="hover:text-primary transition-colors duration-150">Главная</NuxtLink></li>
         <li aria-hidden="true"><Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" /></li>
-        <li><NuxtLink to="/brands" class="hover:text-primary">Бренды</NuxtLink></li>
+        <li><NuxtLink to="/brands" class="hover:text-primary transition-colors duration-150">Бренды</NuxtLink></li>
         <li aria-hidden="true"><Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" /></li>
         <li>
           <span v-if="brand" class="text-ink font-medium">{{ brand.name }}</span>

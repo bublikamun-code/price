@@ -27,6 +27,9 @@ class TokenPair(BaseModel):
     refresh_token: str = Field(exclude=True)
     token_type: str = "bearer"
     expires_in: int = Field(description="Срок жизни access-токена, сек.")
+    # Принудительная смена временного пароля (§16 п.19): true → фронт ведёт
+    # на /force-change-password.
+    force_password_change: bool = False
 
 
 class UserPublic(BaseModel):
@@ -45,6 +48,8 @@ class UserPublic(BaseModel):
     # Дайджест изменения цен (§20.4)
     price_digest_enabled: bool
     price_digest_sources: list[str]
+    # Принудительная смена временного пароля (§16 п.19, /force-change-password)
+    force_password_change: bool = False
 
     @classmethod
     def from_user(cls, user) -> "UserPublic":
@@ -61,6 +66,7 @@ class UserPublic(BaseModel):
             totp_enabled=user.totp_secret is not None,
             price_digest_enabled=user.price_digest_enabled,
             price_digest_sources=list(user.price_digest_sources or []),
+            force_password_change=bool(getattr(user, "must_change_password", False)),
         )
 
 
@@ -224,7 +230,18 @@ class ForgotPasswordRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    """Сброс пароля по токену из письма (длина пароля — как у login: 1..128)."""
+    """Сброс пароля по токену из письма. Новый пароль — минимум 8 символов."""
 
     token: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    """POST /auth/change-password: смена текущего (временного) пароля залогиненным.
+
+    current_password проверяется сервисом (bcrypt); новый пароль — минимум
+    8 символов (аудит 2026-09-06: ранее set/reset принимали пароль от 1 символа).
+    """
+
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)

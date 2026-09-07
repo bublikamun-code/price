@@ -226,7 +226,7 @@ onMounted(load)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="n in news" :key="n.id" class="border-t border-border hover:bg-canvas/60">
+            <tr v-for="n in news" :key="n.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
               <td class="px-4 py-3 max-w-[320px] truncate font-medium" :title="n.title">{{ n.title }}</td>
               <td class="px-4 py-3">
                 <span :class="TYPE_META[n.type]?.cls || 'badge-info'">{{ TYPE_META[n.type]?.label || n.type }}</span>
@@ -274,7 +274,7 @@ onMounted(load)
         v-for="pgn in totalPages"
         :key="pgn"
         type="button"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
+          class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
         :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
         @click="goPage(pgn)"
       >{{ pgn }}</button>
@@ -284,8 +284,8 @@ onMounted(load)
     </nav>
 
     <!-- Модалка -->
-    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" @click.self="closeModal">
-      <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" @click.self="closeModal">
+      <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-none p-6">
         <div class="flex items-center justify-between gap-3 mb-5">
           <h2 class="text-lg font-semibold">{{ editingId ? 'Изменить новость' : 'Новая новость' }}</h2>
           <button type="button" class="btn-ghost p-1.5" aria-label="Закрыть" @click="closeModal">

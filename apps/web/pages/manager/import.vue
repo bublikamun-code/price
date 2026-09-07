@@ -647,10 +647,10 @@ onUnmounted(() => {
     <!-- Модалка деталей версии -->
     <div
       v-if="showModal"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeModal(); overlayDown = false"
     >
-      <div class="card max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div class="card max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div class="min-w-0">
             <h3 class="font-semibold truncate">Детали импорта</h3>

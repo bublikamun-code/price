@@ -22,14 +22,9 @@ async function onSubmit() {
   }
   loading.value = true
   try {
-    await $fetch('/api/v1/auth/change-password', {
-      method: 'POST',
-      body: {
-        current_password: currentPassword.value,
-        new_password: newPassword.value,
-      },
-      credentials: 'include',
-    })
+    // Через стор: baseURL API + Authorization (Bearer из auth_token) + X-CSRF-Token
+    // (бэкенд требует CSRF для мутаций с cookie-аутентификацией, аудит 2026-09-06).
+    await auth.changePassword(currentPassword.value, newPassword.value)
     // Обновляем профиль (сбрасываем force_password_change) → дальше в кабинет.
     await auth.fetchMe()
     const redirect = (route.query.redirect as string) || (auth.isManager ? '/manager' : '/catalog')

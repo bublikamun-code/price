@@ -42,7 +42,10 @@ RUN pip install -r requirements-dev.txt
 
 # pytest, ruff и т.п. уже в requirements-dev.txt
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# --proxy-headers + --forwarded-allow-ips: доверяем заголовкам X-Forwarded-For от nginx
+# (сеть docker доверенная), иначе request.client.host = IP nginx и пер-IP rate-limit'ы
+# (например login 5/15min) становятся ГЛОБАЛЬНЫМИ: 5 неудачных входов кого угодно → 429 для всех.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]
 
 # ---------- Stage: runtime (prod) ----------
 FROM base AS runtime
@@ -67,4 +70,7 @@ RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers + --forwarded-allow-ips: доверяем заголовкам X-Forwarded-For от nginx
+# (сеть docker доверенная), иначе request.client.host = IP nginx и пер-IP rate-limit'ы
+# (например login 5/15min) становятся ГЛОБАЛЬНЫМИ: 5 неудачных входов кого угодно → 429 для всех.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

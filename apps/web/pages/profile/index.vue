@@ -100,11 +100,18 @@ async function generateLinkCode() {
         </p>
       </div>
 
-      <!-- Telegram Mini App: код связки (только CLIENT, §16 п.27). -->
+      <!-- Telegram: код связки для бота @svetvdome_bot (только CLIENT, §16 п.27). -->
       <div v-if="auth.isClient" class="card p-5 h-full">
         <h3 class="font-semibold mb-3">Telegram</h3>
         <p class="text-sm text-ink-muted mb-4">
-          Свяжите аккаунт, чтобы открывать каталог и оформлять заявки прямо в Telegram.
+          Свяжите аккаунт с ботом
+          <a
+            href="https://t.me/svetvdome_bot"
+            target="_blank"
+            rel="noopener"
+            class="text-primary hover:underline"
+          >@svetvdome_bot</a>,
+          чтобы получать уведомления об изменении цен и статусах заявок прямо в Telegram.
         </p>
 
         <button
@@ -120,7 +127,8 @@ async function generateLinkCode() {
         <div v-if="tgCode" class="mt-4 text-center bg-primary-soft/40 border border-primary/20 rounded-card p-4">
           <div class="text-3xl font-display font-bold tracking-[0.3em] text-primary">{{ tgCode }}</div>
           <p class="text-xs text-ink-faint mt-2">
-            Действует 10 минут. Откройте Mini App в Telegram и введите код.
+            Действует 10 минут. Откройте бота @svetvdome_bot в Telegram и отправьте
+            ему команду /start с этим кодом.
           </p>
         </div>
 

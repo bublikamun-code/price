@@ -120,7 +120,7 @@ onMounted(load)
             </button>
           </div>
 
-          <NuxtLink :to="`/catalog/${f.sku}`" class="font-semibold text-base mb-1 line-clamp-2 hover:text-primary">
+          <NuxtLink :to="`/catalog/${f.sku}`" class="font-semibold text-base mb-1 line-clamp-2 hover:text-primary transition-colors duration-150">
             {{ f.name }}
           </NuxtLink>
           <p class="text-xs text-ink-faint mb-3">Артикул: {{ f.sku }}</p>
@@ -152,7 +152,7 @@ onMounted(load)
         <button
           v-for="pgn in totalPages"
           :key="pgn"
-          class="w-10 h-10 rounded-pill font-medium text-sm"
+          class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
           :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
           @click="goPage(pgn)"
         >{{ pgn }}</button>

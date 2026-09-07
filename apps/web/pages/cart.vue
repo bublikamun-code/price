@@ -84,10 +84,11 @@ onMounted(refresh)
       <NuxtLink to="/catalog" class="btn-primary">Перейти в каталог</NuxtLink>
     </div>
 
-    <!-- Содержимое -->
+    <!-- min-w-0 на детях грида: без него длинные названия/артикулы
+         распирают авто-трек и карточка вылезает за экран на мобильных -->
     <div v-else class="grid lg:grid-cols-3 gap-6 items-start">
       <!-- Позиции -->
-      <div class="lg:col-span-2 space-y-3">
+      <div class="lg:col-span-2 space-y-3 min-w-0">
         <article
           v-for="item in cart.items"
           :key="item.product_id"
@@ -103,10 +104,10 @@ onMounted(refresh)
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <NuxtLink :to="`/catalog/${item.sku}`" class="font-medium hover:text-primary line-clamp-1">
+                <NuxtLink :to="`/catalog/${item.sku}`" class="font-medium hover:text-primary transition-colors duration-150 line-clamp-1">
                   {{ item.name }}
                 </NuxtLink>
-                <p class="text-xs text-ink-faint mt-0.5">Артикул: {{ item.sku }}<span v-if="item.brand_name"> · {{ item.brand_name }}</span></p>
+                <p class="text-xs text-ink-faint mt-0.5 truncate">Артикул: {{ item.sku }}<span v-if="item.brand_name"> · {{ item.brand_name }}</span></p>
               </div>
               <button
                 class="btn-ghost p-1.5 text-ink-faint hover:text-danger shrink-0"
@@ -119,20 +120,22 @@ onMounted(refresh)
               </button>
             </div>
 
-            <!-- Цена + stepper -->
-            <div class="flex items-center justify-between gap-3 mt-3">
-              <div class="flex items-center gap-1">
-                <button class="btn-outline px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, -1)">
+            <!-- Цена + stepper: shrink-0 у обоих — сумма не наезжает на
+                 кнопки на узких экранах (320–360px) -->
+            <div class="flex items-center justify-between gap-2 mt-3">
+              <div class="flex items-center gap-1 shrink-0">
+                <button class="btn-outline px-2 sm:px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, -1)">
                   <Icon name="heroicons:minus" class="w-3.5 h-3.5" />
                 </button>
-                <span class="w-10 text-center font-medium">{{ item.quantity }}</span>
-                <button class="btn-outline px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, 1)">
+                <span class="w-9 sm:w-10 text-center font-medium">{{ item.quantity }}</span>
+                <button class="btn-outline px-2 sm:px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, 1)">
                   <Icon name="heroicons:plus" class="w-3.5 h-3.5" />
                 </button>
               </div>
-              <div class="text-right">
-                <p class="text-sm text-ink-muted">{{ formatMoney(item.unit_price, item.currency) }} / шт</p>
-                <p class="font-bold">{{ formatMoney(item.line_total, item.currency) }}</p>
+              <!-- Только итог по позиции (цену за шт убрали — на узких
+                   экранах она эллипсилась и теряла смысл) -->
+              <div class="flex items-baseline justify-end shrink-0">
+                <span class="font-bold whitespace-nowrap">{{ formatMoney(item.line_total) }}<span class="hidden sm:inline"> {{ item.currency }}</span></span>
               </div>
             </div>
           </div>
@@ -140,7 +143,7 @@ onMounted(refresh)
       </div>
 
       <!-- Сводка -->
-      <aside class="lg:sticky lg:top-[88px]">
+      <aside class="lg:sticky lg:top-[88px] min-w-0">
         <div class="card p-6">
           <h3 class="font-semibold mb-4">Итого</h3>
           <div class="flex justify-between text-sm py-1">

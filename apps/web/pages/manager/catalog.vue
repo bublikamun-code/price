@@ -263,7 +263,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in rows" :key="p.id" class="border-t border-border hover:bg-canvas/60">
+            <tr v-for="p in rows" :key="p.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
               <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
               <td class="px-4 py-3 max-w-64 truncate" :title="p.name">{{ p.name }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ p.brand?.name || '—' }}</td>
@@ -301,7 +301,7 @@ onMounted(() => {
         <button
           v-for="pgn in totalPages"
           :key="pgn"
-          class="w-10 h-10 rounded-pill font-medium text-sm"
+          class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
           :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
           @click="goPage(pgn)"
         >{{ pgn }}</button>
@@ -314,10 +314,10 @@ onMounted(() => {
     <!-- Изменение товара -->
     <div
       v-if="editing"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeEdit(); overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" @submit.prevent="submitEdit">
+      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none" @submit.prevent="submitEdit">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div class="min-w-0">
             <h3 class="font-semibold">Товар {{ editing.sku }}</h3>
