@@ -33,6 +33,7 @@ redis==5.0.8
 # --- Object storage / медиа ---
 boto3==1.35.23
 Pillow==12.3.0                   # обработка фото: webp thumb/large (§10); >=12.3 — фиксы PYSEC-2025-61, PYSEC-2026-*
+rembg[cpu]==2.0.83               # вырезание фона товаров (u2net → RGBA webp, photos_cutout.py); тянет onnxruntime/pymatting
 
 # --- Data parsing / export ---
 polars==1.7.1                    # быстрый парсинг CSV

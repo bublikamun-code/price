@@ -132,8 +132,8 @@ async def import_smartwatt(db) -> dict:
         await db.flush()
         created += 1
 
-        # галерея (до 8 фото на товар)
-        for i, url in enumerate(item.get("photos", [])[:8]):
+        # галерея (весь photos[] из выгрузки)
+        for i, url in enumerate(item.get("photos", [])):
             try:
                 stem = f"photos-product/{product.id}/{uuid_mod.uuid4().hex[:8]}"
                 put_bytes(settings.s3_bucket_photos, f"{stem}.webp", _to_webp(_fetch(url), (1200, 1200)), content_type="image/webp")
