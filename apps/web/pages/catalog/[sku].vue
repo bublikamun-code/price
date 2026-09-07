@@ -147,6 +147,12 @@ const attrEntries = computed<{ label: string; value: string }[]>(() => {
     .filter((row) => row.value && row.value !== '—')
 })
 
+// В две колонки строка помещается без уродливых переносов только если
+// «лейбл + значение» короткие; иначе весь блок уходит в один столбец.
+const specsTwoColumns = computed(() =>
+  attrEntries.value.every((r) => r.label.length + r.value.length <= 28),
+)
+
 async function loadProduct() {
   try {
     product.value = await request<ProductDetail>(
@@ -376,14 +382,14 @@ onUnmounted(() => {
           <!-- Характеристики (под фото) -->
           <div v-if="attrEntries.length">
             <h2 class="font-semibold mb-3">Характеристики</h2>
-            <dl class="panel p-5 grid md:grid-cols-2 gap-x-8">
+            <dl class="panel p-5 grid gap-x-8" :class="specsTwoColumns ? 'md:grid-cols-2' : ''">
               <div
                 v-for="row in attrEntries"
                 :key="row.label"
                 class="flex justify-between gap-4 py-2 border-b border-border"
               >
                 <dt class="text-sm text-ink-muted shrink-0">{{ row.label }}</dt>
-                <dd class="text-sm font-medium text-right break-all">{{ row.value }}</dd>
+                <dd class="text-sm font-medium text-right break-words">{{ row.value }}</dd>
               </div>
             </dl>
           </div>
