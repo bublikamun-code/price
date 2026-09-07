@@ -230,7 +230,7 @@ async def get_product(
         series=series,
         stock_status=product.stock_status,
         stock_qty=product.stock_qty,
-        photo_key=series.photo_key if series else None,
+        photo_key=photos[0] if photos else (series.photo_key if series else None),
         photos=photos,
         attributes=product.attributes or {},
         override_price=float(product.override_price) if product.override_price is not None else None,

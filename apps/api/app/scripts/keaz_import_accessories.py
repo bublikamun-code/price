@@ -111,23 +111,28 @@ async def main() -> None:
         from app.services.storage import StorageError
         from app.scripts.keaz_photos import _store_pair, _fetch
 
+        items_by_sku = {x["sku"]: x for x in data["products"]}
         for pid in new_ids:
             product = (await db.execute(select(Product).where(Product.id == pid))).scalar_one()
-            if not product.attributes or not product.attributes.get("photo_url"):
+            item = items_by_sku.get(product.sku) or {}
+            urls = item.get("photos") or ([product.attributes.get("photo_url")] if product.attributes else [])
+            urls = [u for u in urls if u]
+            if not urls:
                 continue
             have = await db.scalar(
                 select(func.count()).select_from(ProductPhoto).where(ProductPhoto.product_id == pid)
             )
-            if have:
+            if have >= len(urls):
                 continue
-            try:
-                stem = f"photos-product/{pid}/{uuid_hex()}"
-                key = _store_pair(_fetch(product.attributes["photo_url"]), stem)
-            except StorageError as exc:
-                log.warning("photo_failed", sku=product.sku, error=str(exc))
-                continue
-            db.add(ProductPhoto(product_id=pid, photo_key=key, sort_order=0))
-            photo_done += 1
+            for i, url in enumerate(urls[have:]):
+                try:
+                    stem = f"photos-product/{pid}/{uuid_hex()}"
+                    key = _store_pair(_fetch(url), stem)
+                except StorageError as exc:
+                    log.warning("photo_failed", sku=product.sku, error=str(exc))
+                    continue
+                db.add(ProductPhoto(product_id=pid, photo_key=key, sort_order=have + i))
+                photo_done += 1
 
         await db.commit()
         log.info(

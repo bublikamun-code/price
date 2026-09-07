@@ -28,9 +28,11 @@ const history = ref<PriceHistoryItem[]>([])
 const siblings = ref<ProductCard[]>([])
 const lightbox = ref(false)
 
-// Галерея: основное фото + дополнительные S3-ключи (ProductDetail.photos)
+// Галерея: ключи ProductDetail.photos; если пусто — одно photo_key (фото серии)
 const gallery = computed(() =>
-  [product.value?.photo_key, ...(product.value?.photos ?? [])].filter(Boolean) as string[],
+  product.value?.photos?.length
+    ? product.value.photos
+    : ([product.value?.photo_key].filter(Boolean) as string[]),
 )
 const activePhoto = ref(0)
 // URL активного фото (если gallery пуст — запасной вариант attributes.photo_url через photoOf)
