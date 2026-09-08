@@ -347,9 +347,9 @@
 - **API:** `GET /manager/dashboard` (агрегаты, кэш Redis).
 
 ### `/manager/catalog` — Управление каталогом
-- **Блоки:** таблица товаров (как каталог, но с колонками base_price, override_price, складской статус, бренд, серия, версия прайса); поиск/фильтры; ссылка на детальную карточку товара; CTA «Импортировать прайс» → `/manager/import`.
+- **Блоки:** таблица товаров (как каталог, но с колонками base_price, override_price, складской статус, бренд, серия, версия прайса); поиск/фильтры; ссылка на детальную карточку товара; CTA «Импортировать прайс» → `/manager/import`; кнопка «Экспорт CSV» — полная выгрузка продукции (все характеристики колонками + ссылки на фото), job-опрос → presigned URL.
 - **Действия:** редактирование единичного товара (override_price вручную, статус), предпросмотр «что видит клиент X» (выбор клиента → пересчёт).
-- **API:** `GET /manager/products`, `PATCH /manager/products/{id}`.
+- **API:** `GET /manager/products`, `PATCH /manager/products/{id}`, `POST /manager/products/export`, `GET /manager/products/export/{job_id}`.
 
 ### `/manager/import` — Импорт прайса (CSV) ⭐
 - **Блоки:**

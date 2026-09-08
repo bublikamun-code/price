@@ -34,6 +34,7 @@ celery_app = Celery(
         "app.tasks.email",
         "app.tasks.export_catalog",
         "app.tasks.export_order_pdf",
+        "app.tasks.export_products_full",
         "app.tasks.photo_zip",
     ],
 )

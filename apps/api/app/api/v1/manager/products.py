@@ -3,25 +3,32 @@
 Список с фильтрами (в отличие от клиентского каталога виден и ARCHIVED) и
 точечный PATCH ручной цены/статуса; мутации пишут audit_log и инвалидируют
 кэш каталога. Галерея доп. фото товара: POST/DELETE …/photos (§6).
-Все эндпоинты требуют роль MANAGER (§11 RBAC).
+Полный экспорт продукции в CSV (все характеристики + ссылки на фото):
+POST /export, статус — GET /export/{job_id}. Все эндпоинты требуют
+роль MANAGER (§11 RBAC).
 """
+import io
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import require_role
+from app.core.limiter import EXPORT_RATE_LIMIT, export_rate_key, limiter
 from app.db.session import get_db
 from app.models.enums import StockStatus, UserRole
 from app.models.user import User
 from app.schemas import MetaPage
+from app.schemas.catalog import ExportJobOut, ExportStartOut
 from app.schemas.manager_catalog import (
     ManagerProductPage,
     ManagerProductPatchIn,
     ManagerProductRead,
     ProductPhotoOut,
 )
-from app.services import storage
+from app.services import product_export, storage
 from app.services.manager_catalog import (
     ConflictError,
     InvalidImageError,
@@ -137,3 +144,72 @@ async def delete_product_photo(
         await ManagerCatalogService(db).delete_product_photo(manager, product_id, photo_key)
     except ValueError as exc:
         raise _to_http(exc) from exc
+
+
+@router.post(
+    "/export",
+    response_model=ExportStartOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@limiter.limit(EXPORT_RATE_LIMIT, key_func=export_rate_key)
+async def start_products_export(
+    request: Request,
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+) -> ExportStartOut:
+    """Запустить полный экспорт продукции в CSV: все характеристики колонками
+    (объединение ключей attributes) + ссылки на фото отдельными колонками.
+
+    Без персональных цен — выгрузка менеджера (базовая и договорная цены).
+    Файл собирает Celery-задача: статус — ``GET /export/{job_id}``.
+    Лимит: 10 запусков/час на пользователя.
+    """
+    job_id = await product_export.start_full_export(user=manager)
+    return ExportStartOut(job_id=job_id)
+
+
+@router.get("/export/{job_id}", response_model=ExportJobOut)
+async def get_products_export_job(
+    job_id: uuid.UUID,
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+) -> ExportJobOut:
+    """Статус job экспорта (только владелец, чужой/несуществующий → 404).
+
+    ``url`` — presigned-ссылка на файл в S3 (5 мин), отдаётся только при DONE.
+    """
+    state = await product_export.get_full_export_job(manager.id, job_id)
+    if state is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Экспорт не найден"
+        )
+    url = None
+    if state.get("status") == "DONE" and state.get("s3_key"):
+        url = storage.presigned_get(settings.s3_bucket_exports, state["s3_key"])
+    return ExportJobOut(
+        job_id=state["job_id"],
+        status=state["status"],
+        format=state["format"],
+        error=state.get("error"),
+        url=url,
+    )
+
+
+@router.get("/export/{job_id}/download")
+async def download_products_export(
+    job_id: uuid.UUID,
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+) -> StreamingResponse:
+    """Прокси-скачивание экспорта из S3 (обходит проблему с presigned URL)."""
+    state = await product_export.get_full_export_job(manager.id, job_id)
+    if state is None or state.get("status") != "DONE" or not state.get("s3_key"):
+        raise HTTPException(404, detail="Экспорт не найден или не готов")
+    s3_key = state["s3_key"]
+    filename = f"products-full-{job_id}.csv"
+    try:
+        body = storage.get_bytes(settings.s3_bucket_exports, s3_key)
+    except storage.StorageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return StreamingResponse(
+        io.BytesIO(body),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

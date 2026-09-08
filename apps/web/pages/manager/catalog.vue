@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Управление каталогом (менеджер, Этап 8 п.20-2): список товаров с фильтрами,
-// точечный PATCH ручной цены (override_price) и статуса остатка.
+// точечный PATCH ручной цены (override_price) и статуса остатка, полный экспорт
+// продукции в CSV (все характеристики + ссылки на фото).
 // См. ARCHITECTURE_PLAN.md §6, SITEMAP.md /manager/catalog.
-import type { ManagerBrand, ManagerProductPage, ManagerProductRow, StockStatus } from '~/types/api'
+import type { ExportJobOut, ExportStartOut, ManagerBrand, ManagerProductPage, ManagerProductRow, StockStatus } from '~/types/api'
 
 // stock_qty приходит с бэка позже — расширяем локально (types/api.ts пока без поля).
 type ProductRow = ManagerProductRow & { stock_qty?: number | null }
@@ -181,6 +182,67 @@ onMounted(() => {
   load()
   loadBrands()
 })
+
+// --- Полный экспорт продукции в CSV (все характеристики + ссылки на фото) ---
+// Celery-задача собирает файл, статус опрашиваем (как в каталоге, §16 п.16).
+const EXPORT_POLL_MS = 2000
+const EXPORT_MAX_POLLS = 60
+const exporting = ref(false)
+const exportError = ref('')
+let exportTimer: ReturnType<typeof setTimeout> | null = null
+
+async function startFullExport() {
+  if (exporting.value) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    const started = await request<ExportStartOut>('/api/v1/manager/products/export', {
+      method: 'POST',
+    })
+    await pollExport(started.job_id)
+  } catch (e) {
+    exportError.value = getErrorMessage(e, 'Не удалось запустить экспорт')
+    exporting.value = false
+  }
+}
+
+function pollExport(jobId: string): Promise<void> {
+  return new Promise(resolve => {
+    let attempts = 0
+    const tick = async () => {
+      attempts++
+      let job: ExportJobOut
+      try {
+        job = await request<ExportJobOut>(`/api/v1/manager/products/export/${jobId}`)
+      } catch (e) {
+        exportError.value = getErrorMessage(e, 'Не удалось получить статус экспорта')
+        exporting.value = false
+        return resolve()
+      }
+      if (job.status === 'DONE' && job.url) {
+        window.open(job.url, '_blank')
+        exporting.value = false
+        return resolve()
+      }
+      if (job.status === 'FAILED') {
+        exportError.value = job.error || 'Экспорт не удался'
+        exporting.value = false
+        return resolve()
+      }
+      if (attempts >= EXPORT_MAX_POLLS) {
+        exportError.value = 'Экспорт выполняется слишком долго, попробуйте позже'
+        exporting.value = false
+        return resolve()
+      }
+      exportTimer = setTimeout(tick, EXPORT_POLL_MS)
+    }
+    tick()
+  })
+}
+
+onUnmounted(() => {
+  if (exportTimer) clearTimeout(exportTimer)
+})
 </script>
 
 <template>
@@ -193,9 +255,19 @@ onMounted(() => {
           <template v-else>Загрузка…</template>
         </p>
       </div>
-      <NuxtLink to="/manager/import" class="btn-secondary shrink-0">
-        <Icon name="heroicons:arrow-up-tray" class="w-4 h-4" /> Импортировать прайс
-      </NuxtLink>
+      <div class="flex items-center gap-3 shrink-0">
+        <button class="btn-secondary" :disabled="exporting" @click="startFullExport">
+          <Icon name="heroicons:arrow-down-tray" class="w-4 h-4" />
+          {{ exporting ? 'Экспорт…' : 'Экспорт CSV' }}
+        </button>
+        <NuxtLink to="/manager/import" class="btn-secondary shrink-0">
+          <Icon name="heroicons:arrow-up-tray" class="w-4 h-4" /> Импортировать прайс
+        </NuxtLink>
+      </div>
+    </div>
+
+    <div v-if="exportError" class="flex items-center gap-3 mb-4">
+      <div class="badge-danger">{{ exportError }}</div>
     </div>
 
     <!-- Фильтры -->
