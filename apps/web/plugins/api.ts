@@ -3,6 +3,7 @@
 // См. ARCHITECTURE_PLAN.md §6, §11.
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
+  const nuxtApp = useNuxtApp()
   const baseURL = import.meta.server ? config.apiBase : config.public.apiBase
 
   const api = $fetch.create({
@@ -10,12 +11,14 @@ export default defineNuxtPlugin(() => {
     credentials: 'include',
     onRequest({ options }) {
       const headers = new Headers(options.headers as HeadersInit)
-      const token = useCookie<string | null>('auth_token').value
+      // useCookie требует контекст Nuxt: при вложенных вызовах после await
+      // (например, серии в brands/[slug]) он теряется — runWithContext его возвращает.
+      const token = nuxtApp.runWithContext(() => useCookie<string | null>('auth_token').value)
       if (token) headers.set('Authorization', `Bearer ${token}`)
 
       const method = String(options.method ?? 'GET').toUpperCase()
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        const csrfToken = useCookie<string | null>('csrf_token').value
+        const csrfToken = nuxtApp.runWithContext(() => useCookie<string | null>('csrf_token').value)
         if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
       }
       options.headers = headers

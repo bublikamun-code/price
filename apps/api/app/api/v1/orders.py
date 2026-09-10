@@ -156,7 +156,7 @@ async def start_order_pdf(
     """
     try:
         order = await OrderService(db).get(
-            user, order_id, as_manager=user.role == UserRole.MANAGER
+            user, order_id, as_manager=user.role != UserRole.CLIENT
         )
     except ValueError as e:
         raise _from_value_error(e)

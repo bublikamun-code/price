@@ -138,16 +138,21 @@ async def invalidate_session(sid: Any) -> None:
 
 
 # ---------- Блокировка аккаунта после N неудачных входов (H4) ----------
-# Счётчик неудач по email в Redis; при достижении лимита аккаунт блокируется
-# на login_lockout_minutes. Redis down → fail-open (не блокируем вход: иначе
-# авария Redis превратилась бы в DoS всех логинов; IP rate-limit остаётся).
-def login_fail_key(email: str) -> str:
-    return f"{settings.cache_key_prefix}:login_fail:{email.strip().lower()}"
+# Счётчик неудач по паре email+IP в Redis; при достижении лимита вход с этого
+# IP блокируется на login_lockout_minutes. Ключ email+IP (P2 §3.1): чистый
+# email-ключ позволял бы атакующему лочить произвольный чужой аккаунт спамом
+# неудач. Redis down → fail-open (не блокируем вход: иначе авария Redis
+# превратилась бы в DoS всех логинов; IP rate-limit остаётся).
+def login_fail_key(email: str, ip: str | None = None) -> str:
+    email_part = email.strip().lower()
+    if ip:
+        return f"{settings.cache_key_prefix}:login_fail:{email_part}:{ip}"
+    return f"{settings.cache_key_prefix}:login_fail:{email_part}"
 
 
-async def is_account_locked(email: str, max_attempts: int) -> bool:
+async def is_account_locked(email: str, max_attempts: int, ip: str | None = None) -> bool:
     try:
-        raw = await cache.redis.get(login_fail_key(email))
+        raw = await cache.redis.get(login_fail_key(email, ip))
     except Exception as exc:
         log.warning("cache.lockout_get_failed", email=email, error=str(exc))
         return False
@@ -160,10 +165,10 @@ async def is_account_locked(email: str, max_attempts: int) -> bool:
 
 
 async def record_login_failure(
-    email: str, max_attempts: int, lockout_minutes: int
+    email: str, max_attempts: int, lockout_minutes: int, ip: str | None = None
 ) -> int:
     """Инкрементирует счётчик неудач; TTL = окно блокировки. Возвращает новый счётчик."""
-    key = login_fail_key(email)
+    key = login_fail_key(email, ip)
     try:
         count = int(await cache.redis.incr(key))
         await cache.redis.expire(key, lockout_minutes * 60)
@@ -173,10 +178,10 @@ async def record_login_failure(
         return 0
 
 
-async def clear_login_failures(email: str) -> None:
+async def clear_login_failures(email: str, ip: str | None = None) -> None:
     """Успешный вход сбрасывает счётчик неудач."""
     try:
-        await cache.redis.delete(login_fail_key(email))
+        await cache.redis.delete(login_fail_key(email, ip))
     except Exception as exc:
         log.warning("cache.lockout_del_failed", email=email, error=str(exc))
 

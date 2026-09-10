@@ -108,4 +108,6 @@ async def update_order(
                     order_id=str(order.id),
                     error=str(exc),
                 )
-    return await _to_read(db, order, with_items=True)
+    # clients= — как в GET: без него PATCH-ответ не содержит client_name/
+    # client_company, и оптимистичное обновление строки списка теряло имя клиента.
+    return await _to_read(db, order, with_items=True, clients=clients)

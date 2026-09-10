@@ -105,7 +105,7 @@ async def seed_catalog() -> None:
         created = updated = errors = 0
         for p in products:
             try:
-                _, is_new = await repo.upsert_product(
+                product, is_new = await repo.upsert_product(
                     db,
                     sku=p["sku"],
                     name=p["name"],
@@ -114,6 +114,15 @@ async def seed_catalog() -> None:
                     base_price=p["base_price"],
                     attributes=p["attributes"],
                     stock_status=StockStatus.IN_STOCK,
+                    price_list_version_id=version.id if version else None,
+                )
+                # История цен — как у боевого импорта (§16.1 фича J): сид должен
+                # оставлять то же состояние БД, что и POST /manager/import.
+                await repo.add_price_history(
+                    db,
+                    product_id=product.id,
+                    base_price=p["base_price"],
+                    override_price=None,
                     price_list_version_id=version.id if version else None,
                 )
                 created += int(is_new)

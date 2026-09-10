@@ -40,7 +40,12 @@ async def lifespan(app: FastAPI):
     log = get_logger("app.main")
     log.info("app.starting", env=settings.env, app=settings.app_name)
     yield
-    log.info("app.stopping", env=settings.env)
+    # Корректное закрытие пула соединений БД (P2 §3.2): без dispose uvicorn
+    # при остановке шумит «Unclosed connection» и держит сокеты до GC.
+    from app.db.session import engine
+
+    await engine.dispose()
+    log.info("app.stopped", env=settings.env, app=settings.app_name)
 
 
 # ---------- App ----------
