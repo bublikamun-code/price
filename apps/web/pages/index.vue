@@ -13,12 +13,74 @@ import type {
   OrderStatus,
 } from '~/types/api'
 
-useHead({ title: 'Главная' })
-// OG-мета лендинга (§16 п.29); og:image не задаём — ассета пока нет.
+// SEO лендинга: ключевая страница для индексации (§6, SITEMAP §5).
+// Канонический URL и og:image — абсолютные, от хоста запроса (SSR).
+const pageOrigin = useRequestURL().origin
+const pageUrl = `${pageOrigin}/`
+useHead({
+  title: 'B2B-портал светотехники и электромонтажа — персональные цены и заявки онлайн',
+  titleTemplate: '%s',
+  link: [{ rel: 'canonical', href: pageUrl }],
+  script: [
+    {
+      // JSON-LD: Organization + WebSite + FAQPage (rich results Яндекса/Google).
+      // Вопросы должны оставаться синхронны видимому FAQ-блоку ниже на странице.
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify([
+        {
+          '@context': 'https://schema.org',
+          '@type': 'Organization',
+          name: 'ООО «Свет в доме»',
+          url: pageOrigin,
+          telephone: '+375 (29) 123-45-67',
+          email: 'info@svetvdome.by',
+          address: {
+            '@type': 'PostalAddress',
+            addressCountry: 'BY',
+            addressLocality: 'Минск',
+            streetAddress: 'ул. Примерная, д. 1, офис 1',
+          },
+        },
+        {
+          '@context': 'https://schema.org',
+          '@type': 'WebSite',
+          name: 'PricePortal',
+          url: pageOrigin,
+          inLanguage: 'ru',
+        },
+        {
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: [
+            'Как формируются мои цены?|Прайс-лист импортируется в портал, а к нему применяется ваша персональная скидка по договору. Вы видите свою цену у каждого товара после входа — общих цен и «витринных наценок» на портале нет.',
+            'Посмотреть каталог можно без регистрации?|Да. Номенклатура, характеристики и состав склада открыты всем. Цены, корзина и оформление заявок — после входа в кабинет.',
+            'Как быстро подтверждается заявка?|Заявка сразу попадает менеджеру в кабинет со всеми позициями и комментарием. Вы меняете статусы в реальном времени — без звонков для уточнения деталей.',
+            'Что нужно для начала работы?|Оставьте заявку на этой странице или позвоните. Менеджер согласует условия, создаст аккаунт и передаст вам логин и временный пароль.',
+          ].map((qa) => {
+            const [q, a] = qa.split('|')
+            return {
+              '@type': 'Question',
+              name: q,
+              acceptedAnswer: { '@type': 'Answer', text: a },
+            }
+          }),
+        },
+      ]),
+    },
+  ],
+})
 useSeoMeta({
-  ogTitle: 'PricePortal — B2B-портал с персональными прайс-листами',
-  ogDescription: 'Личный кабинет с динамическими ценами по вашему договору, импорт заявок и уведомления в реальном времени.',
+  description:
+    'Каталог KEAZ, SmartWatt и Rostok: корпуса, щиты, стабилизаторы напряжения, реле напряжения. Персональные цены по договору, заявки онлайн, статусы в реальном времени. Работаем с юридическими лицами и ИП.',
+  ogTitle: 'PricePortal — персональные цены и заявки для юридических лиц',
+  ogDescription:
+    'Каталог светотехники и электромонтажа с открытым составом склада. Цены по вашему договору, заявки и статусы — онлайн.',
   ogType: 'website',
+  ogUrl: pageUrl,
+  ogImage: `${pageOrigin}/og-landing.png`,
+  ogImageWidth: 1200,
+  ogImageHeight: 630,
+  twitterCard: 'summary_large_image',
 })
 
 // storeToRefs обязателен: деструктуризация Pinia-стора напрямую даёт
@@ -176,15 +238,24 @@ function requestNewsOnce() {
 
 // Витрина лендинга (публичные данные, без входа): бренды с фото и счётчиками.
 interface ShowcaseBrand { name: string; slug: string; photo?: string; seriesCount: number; productsCount: number }
+// Товары витрины: публичные данные без цен (цены — персональные, после входа).
+interface ShowcaseProduct { sku: string; name: string; photo?: string; brandName: string; brandSlug: string }
 const showcaseLoading = ref(true)
 const showcaseFailed = ref(false)
 const showcaseBrands = ref<ShowcaseBrand[]>([])
+const showcaseProducts = ref<ShowcaseProduct[]>([])
 
 // Короткие описания брендов для витрины (копирайт лендинга).
 const BRAND_BLURBS: Record<string, string> = {
   keaz: 'Электрощитовое оборудование: корпуса и боксы OptiBox Pro от 8 до 60 модулей.',
   smartwatt: 'Стабилизаторы напряжения AVR: релейные, электромеханические, инверторные и симисторные.',
   rostok: 'Реле напряжения, контроль фаз и защита техники от скачков сети.',
+}
+
+// Какими товарами бренд представляется на лендинге: названия с этими словами
+// поднимаются наверх витрины (KEAZ показываем корпусами-щитами, не аксессуарами).
+const BRAND_SHOWCASE_KEYWORDS: Record<string, string[]> = {
+  keaz: ['корпус', 'щит', 'шкаф'],
 }
 
 function brandBlurb(slug: string): string {
@@ -211,22 +282,71 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
 // чей Nuxt-контекст внутри хендлера useAsyncData недоступен.
 async function loadShowcase() {
   const { request } = useApi()
+  let brands: ShowcaseBrand[] = []
   try {
     const res = await request<{
       data: { name: string; slug: string; photo?: string; series_count: number; products_count: number }[]
     }>('/api/v1/public/brands')
-    showcaseBrands.value = res.data.map((b) => ({
+    brands = res.data.map((b) => ({
       name: b.name,
       slug: b.slug,
       photo: b.photo,
       seriesCount: b.series_count,
       productsCount: b.products_count,
     }))
+    showcaseBrands.value = brands
   } catch {
     showcaseFailed.value = true
-  } finally {
     showcaseLoading.value = false
+    return
   }
+  // Витрина товаров: первая серия каждого из первых 3 брендов (публичные
+  // данные, без цен). Фейл одной ветки не ломает лендинг — allSettled.
+  const perBrand = 60
+  const shownPerBrand = 8
+  const results = await Promise.allSettled(
+    brands.slice(0, 3).map(async (b) => {
+      const detail = await request<{ data: { series?: { slug: string }[] } }>(
+        `/api/v1/public/brands/${encodeURIComponent(b.slug)}`,
+      )
+      const seriesSlug = detail.data?.series?.[0]?.slug
+      if (!seriesSlug) return []
+      const pr = await request<{ data: { sku: string; name: string; photo?: string }[] }>(
+        `/api/v1/public/series/${encodeURIComponent(seriesSlug)}/products?page=1&per_page=${perBrand}`,
+      )
+      const kw = BRAND_SHOWCASE_KEYWORDS[b.slug] ?? []
+      let items = pr.data
+      if (kw.length) {
+        const rank = (n: string) => (kw.some((k) => n.toLowerCase().includes(k)) ? 0 : 1)
+        items = [...items].sort((a, c) => rank(a.name) - rank(c.name))
+      }
+      return items.slice(0, shownPerBrand).map((p) => ({
+        sku: p.sku,
+        name: p.name,
+        photo: p.photo,
+        brandName: b.name,
+        brandSlug: b.slug,
+      }))
+    }),
+  )
+  // Чередуем бренды (round-robin), чтобы витрина не начиналась
+  // с нескольких похожих товаров одной серии.
+  const lists = results
+    .filter((r): r is PromiseFulfilledResult<ShowcaseProduct[]> => r.status === 'fulfilled')
+    .map((r) => r.value)
+  const interleaved: ShowcaseProduct[] = []
+  for (let i = 0; ; i++) {
+    let any = false
+    for (const list of lists) {
+      if (list[i]) {
+        interleaved.push(list[i])
+        any = true
+      }
+    }
+    if (!any) break
+  }
+  showcaseProducts.value = interleaved
+  showcaseLoading.value = false
 }
 
 let showcaseRequested = false
@@ -234,6 +354,79 @@ function requestShowcaseOnce() {
   if (showcaseRequested) return
   showcaseRequested = true
   loadShowcase()
+}
+
+// Итоги для hero-чипов лендинга (считаются из витрины брендов).
+const showcaseTotals = computed(() => ({
+  brands: showcaseBrands.value.length,
+  series: showcaseBrands.value.reduce((s, b) => s + b.seriesCount, 0),
+  products: showcaseBrands.value.reduce((s, b) => s + b.productsCount, 0),
+}))
+
+// Коллаж в hero: первые фото товаров витрины (фолбэк — фото брендов).
+const heroShots = computed(() => {
+  const shots: { src?: string; label: string }[] = showcaseProducts.value
+    .filter((p) => p.photo)
+    .slice(0, 3)
+    .map((p) => ({ src: showcasePhotoUrl(p.photo), label: p.brandName }))
+  for (const b of showcaseBrands.value) {
+    if (shots.length < 3 && b.photo) shots.push({ src: showcasePhotoUrl(b.photo), label: b.name })
+  }
+  return shots
+})
+
+// Горизонтальная прокрутка витрины товаров (стрелки).
+const productRow = ref<HTMLElement | null>(null)
+function scrollProducts(dir: -1 | 1) {
+  productRow.value?.scrollBy({ left: dir * 660, behavior: 'smooth' })
+}
+
+// Лид-форма лендинга: заявка на доступ уходит менеджерам (POST /public/lead).
+const leadForm = reactive({
+  company: '',
+  contact_name: '',
+  phone: '',
+  email: '',
+  comment: '',
+  website: '',  // honeypot — скрытое поле против ботов
+})
+const leadSubmitting = ref(false)
+const leadSuccess = ref(false)
+const leadError = ref('')
+const leadValid = computed(
+  () =>
+    leadForm.company.trim().length >= 2 &&
+    leadForm.contact_name.trim().length >= 2 &&
+    leadForm.phone.trim().length >= 7,
+)
+
+async function submitLead() {
+  if (!leadValid.value || leadSubmitting.value) return
+  leadSubmitting.value = true
+  leadError.value = ''
+  try {
+    const { request } = useApi()
+    await request('/api/v1/public/lead', {
+      method: 'POST',
+      body: {
+        company: leadForm.company.trim(),
+        contact_name: leadForm.contact_name.trim(),
+        phone: leadForm.phone.trim(),
+        email: leadForm.email.trim() || undefined,
+        comment: leadForm.comment.trim() || undefined,
+        website: leadForm.website,
+      },
+    })
+    leadSuccess.value = true
+  } catch (e) {
+    leadError.value = getErrorMessage(e, 'Не удалось отправить заявку. Позвоните нам — контакты ниже.')
+  } finally {
+    leadSubmitting.value = false
+  }
+}
+
+function scrollToLead() {
+  document.getElementById('lead')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 watch(
@@ -450,96 +643,255 @@ watch(
       </div>
     </section>
 
-    <!-- Лендинг для гостей: без изменений -->
+    <!-- Лендинг для гостей (SITEMAP §5): hero с коллажем фото, витрина товаров,
+         бренды, возможности кабинета, новости, о компании, шаги, финальный CTA -->
     <template v-else>
-      <!-- Hero -->
+      <!-- HERO -->
       <section class="relative overflow-hidden">
-        <div class="container-app py-16 lg:py-24 text-center">
-          <span class="chip bg-primary-soft text-primary mb-6">B2B-портал</span>
-          <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-5 leading-tight">
-            Персональный доступ к прайсам<br class="hidden sm:block" >
-            и управлению заявками
-          </h1>
-          <p class="text-lg text-ink-muted max-w-2xl mx-auto mb-8">
-            Личный кабинет с динамическими ценами по вашему договору, импорт заявок и уведомления в реальном времени.
-          </p>
-          <div class="flex flex-wrap items-center justify-center gap-3">
-            <NuxtLink
-              v-if="isAuthenticated"
-              to="/catalog"
-              class="btn-primary px-6 py-3 text-base"
-            >Перейти в каталог</NuxtLink>
-            <NuxtLink
-              v-else
-              to="/login"
-              class="btn-primary px-6 py-3 text-base"
-            >Войти в личный кабинет</NuxtLink>
-            <button
-              type="button"
-              class="btn-outline px-6 py-3 text-base"
-              @click="showContactModal = true"
-            >Связаться с менеджером</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Наши бренды: витрина лендинга (публичные данные каталога) -->
-      <section v-if="!showcaseFailed" id="products" class="container-app py-12 lg:py-16">
-        <div class="mb-8">
-          <h2 class="text-2xl font-bold mb-2">Наши бренды</h2>
-          <p class="text-sm text-ink-muted max-w-2xl">
-            Открытый состав склада: номенклатура и характеристики каждого товара.
-            Персональные цены и оформление заявок — после входа в личный кабинет.
-          </p>
-        </div>
-
-        <div v-if="showcaseLoading" class="grid grid-cols-1 sm:grid-cols-3 gap-5" aria-hidden="true">
-          <div v-for="i in 3" :key="i" class="card overflow-hidden">
-            <div class="aspect-[4/3] animate-pulse bg-border/60" />
-            <div class="p-5 space-y-2"><div class="h-5 w-1/2 rounded bg-border/60 animate-pulse" /><div class="h-3 w-3/4 rounded bg-border/60 animate-pulse" /></div>
-          </div>
-        </div>
-
-        <div v-else class="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <NuxtLink
-            v-for="b in showcaseBrands"
-            :key="b.slug"
-            :to="`/brands/${b.slug}`"
-            class="card card-hover overflow-hidden group"
-          >
-            <div class="aspect-[4/3] bg-white flex items-center justify-center overflow-hidden">
-              <img
-                v-if="b.photo"
-                :src="showcasePhotoUrl(b.photo)"
-                :alt="`Продукция ${b.name}`"
-                class="w-full h-full object-contain p-4"
-                loading="lazy"
+        <div class="container-app py-16 lg:py-24">
+          <div class="grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-16 items-center">
+            <div class="text-center lg:text-left">
+              <span class="chip bg-primary-soft text-primary mb-6">B2B-портал · светотехника и электромонтаж</span>
+              <h1 class="text-4xl sm:text-5xl lg:text-[3.4rem] font-bold leading-[1.06] tracking-tight mb-6">
+                Персональные прайсы и заявки —<br class="hidden lg:block">
+                в одном кабинете
+              </h1>
+              <p class="text-lg text-ink-muted max-w-xl mx-auto lg:mx-0 mb-8 leading-relaxed">
+                Цены по вашему договору, открытый состав склада для ознакомления,
+                заявки и их статусы — онлайн. Без звонков и переписок.
+              </p>
+              <div class="flex flex-wrap items-center justify-center lg:justify-start gap-3 mb-8">
+                <NuxtLink
+                  v-if="isAuthenticated"
+                  to="/catalog"
+                  class="btn-primary px-7 py-3.5 text-base"
+                >Перейти в каталог</NuxtLink>
+                <button
+                  v-else
+                  type="button"
+                  class="btn-primary px-7 py-3.5 text-base"
+                  @click="scrollToLead"
+                >Получить доступ и прайс</button>
+                <NuxtLink to="/login" class="btn-outline px-7 py-3.5 text-base">Войти в кабинет</NuxtLink>
+                <a
+                  href="/api/v1/public/catalog.pdf"
+                  class="btn-ghost px-7 py-3.5 text-base inline-flex items-center gap-2"
+                  download
+                >
+                  <Icon name="heroicons:arrow-down-tray" class="w-5 h-5" />
+                  Каталог (PDF)
+                </a>
+              </div>
+              <div
+                v-if="!showcaseLoading && showcaseTotals.products"
+                class="flex flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2 text-sm text-ink-muted"
               >
-              <Icon v-else name="heroicons:squares-2x2" class="w-12 h-12 text-ink-faint" />
-            </div>
-            <div class="p-5">
-              <div class="flex items-center justify-between gap-2 mb-1.5">
-                <h3 class="text-lg font-bold">{{ b.name }}</h3>
-                <Icon
-                  name="heroicons:arrow-right"
-                  class="w-5 h-5 text-ink-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-200"
-                />
-              </div>
-              <p class="text-sm text-ink-muted leading-relaxed mb-3">{{ brandBlurb(b.slug) }}</p>
-              <div class="text-xs text-ink-faint">
-                {{ b.seriesCount }} {{ pluralRu(b.seriesCount, 'серия', 'серии', 'серий') }}
-                · {{ b.productsCount }} {{ pluralRu(b.productsCount, 'наименование', 'наименования', 'наименований') }}
+                <span><b class="text-ink text-lg font-bold mr-1">{{ showcaseTotals.brands }}</b>{{ pluralRu(showcaseTotals.brands, 'бренд', 'бренда', 'брендов') }}</span>
+                <span class="text-border" aria-hidden="true">|</span>
+                <span><b class="text-ink text-lg font-bold mr-1">{{ showcaseTotals.series }}</b>{{ pluralRu(showcaseTotals.series, 'серия', 'серии', 'серий') }}</span>
+                <span class="text-border" aria-hidden="true">|</span>
+                <span><b class="text-ink text-lg font-bold mr-1">{{ showcaseTotals.products }}</b>{{ pluralRu(showcaseTotals.products, 'наименование', 'наименования', 'наименований') }}</span>
               </div>
             </div>
-          </NuxtLink>
+
+            <!-- Коллаж реальных фото каталога: компактный на мобильных -->
+            <div v-if="heroShots.length" class="md:hidden grid grid-cols-3 gap-3 mt-10" aria-hidden="true">
+              <div v-for="(s, i) in heroShots" :key="i" class="card p-2">
+                <div class="relative aspect-square bg-white rounded-[18px] flex items-center justify-center overflow-hidden">
+                  <img
+                    v-if="s.src"
+                    :src="s.src"
+                    :alt="s.label"
+                    class="w-full h-full object-contain"
+                    loading="eager"
+                  >
+                  <span class="badge badge-solid absolute top-1.5 left-1.5">{{ s.label }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Коллаж реальных фото каталога -->
+            <div v-if="heroShots.length" class="relative h-[340px] sm:h-[420px] hidden md:block" aria-hidden="true">
+              <div
+                v-for="(s, i) in heroShots"
+                :key="i"
+                class="card absolute w-56 sm:w-64 p-3"
+                :class="[
+                  i === 0 ? 'left-0 top-8 -rotate-3 z-10' : '',
+                  i === 1 ? 'right-0 sm:right-4 top-0 rotate-2 z-20' : '',
+                  i === 2 ? 'left-1/2 -translate-x-1/2 bottom-0 rotate-1 z-30' : '',
+                ]"
+              >
+                <div class="relative aspect-[4/3] bg-white rounded-[18px] flex items-center justify-center overflow-hidden">
+                  <img
+                    v-if="s.src"
+                    :src="s.src"
+                    :alt="s.label"
+                    class="w-full h-full object-contain"
+                    loading="eager"
+                  >
+                  <Icon v-else name="heroicons:photo" class="w-10 h-10 text-ink-faint" />
+                  <!-- бейдж внутри фото: карточки перекрывают друг друга,
+                       подпись внизу оказалась бы скрыта -->
+                  <span class="badge badge-solid absolute top-2 left-2">{{ s.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <!-- Преимущества -->
-      <section class="container-app py-12 lg:py-16">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <!-- Сегменты: посетитель находит себя -->
+      <section class="container-app pt-16 lg:pt-20 pb-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Для кого</p>
+        <h2 class="text-3xl font-bold mb-8">Кому подходит портал</h2>
+        <div v-reveal class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div class="card card-hover p-6">
+            <Icon name="heroicons:wrench-screwdriver" class="w-7 h-7 text-primary mb-4" />
+            <h3 class="font-semibold mb-1.5">Монтажным организациям</h3>
+            <p class="text-sm text-ink-muted leading-relaxed">Подбор корпусов и комплектующих по объектам без ожидания ответа менеджера.</p>
+          </div>
+          <div class="card card-hover p-6">
+            <Icon name="heroicons:building-office-2" class="w-7 h-7 text-primary mb-4" />
+            <h3 class="font-semibold mb-1.5">Застройщикам</h3>
+            <p class="text-sm text-ink-muted leading-relaxed">Стабилизаторы и реле напряжения для защиты техники в проектах любой сложности.</p>
+          </div>
+          <div class="card card-hover p-6">
+            <Icon name="heroicons:pencil-square" class="w-7 h-7 text-primary mb-4" />
+            <h3 class="font-semibold mb-1.5">Проектировщикам</h3>
+            <p class="text-sm text-ink-muted leading-relaxed">Характеристики и артикулы в открытом доступе — для точных спецификаций.</p>
+          </div>
+          <div class="card card-hover p-6">
+            <Icon name="heroicons:building-storefront" class="w-7 h-7 text-primary mb-4" />
+            <h3 class="font-semibold mb-1.5">Магазинам электротоваров</h3>
+            <p class="text-sm text-ink-muted leading-relaxed">Расширение ассортимента: OptiBox Pro, SmartWatt и Rostok под одной поставкой.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Товары из каталога: горизонтальная витрина (публичные данные, без цен) -->
+      <section v-if="showcaseProducts.length" class="py-16 lg:py-20">
+        <div class="container-app">
+          <div class="flex items-end justify-between gap-4 mb-8">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Каталог</p>
+              <h2 class="text-3xl font-bold">Товары из каталога</h2>
+              <p class="text-sm text-ink-muted mt-2 max-w-2xl">
+                Характеристики каждого товара открыты всем.
+                Цены персональные — увидите их после входа в кабинет.
+              </p>
+            </div>
+            <div class="hidden sm:flex items-center gap-2 shrink-0">
+              <button type="button" class="btn-outline p-2.5 rounded-pill" aria-label="Прокрутить назад" @click="scrollProducts(-1)">
+                <Icon name="heroicons:chevron-left" class="w-5 h-5" />
+              </button>
+              <button type="button" class="btn-outline p-2.5 rounded-pill" aria-label="Прокрутить вперёд" @click="scrollProducts(1)">
+                <Icon name="heroicons:chevron-right" class="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref="productRow"
+            class="flex gap-5 overflow-x-auto snap-x scroll-smooth pb-2 scrollbar-none -mx-4 px-4 lg:mx-0 lg:px-0"
+          >
+            <NuxtLink
+              v-for="p in showcaseProducts"
+              :key="`${p.brandSlug}-${p.sku}`"
+              :to="`/brands/${p.brandSlug}`"
+              class="card card-hover overflow-hidden group flex flex-col w-60 sm:w-64 shrink-0 snap-start"
+            >
+              <div class="aspect-[4/3] bg-white flex items-center justify-center overflow-hidden">
+                <img
+                  v-if="p.photo"
+                  :src="showcasePhotoUrl(p.photo)"
+                  :alt="p.name"
+                  class="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                >
+                <Icon v-else name="heroicons:cube" class="w-10 h-10 text-ink-faint" />
+              </div>
+              <div class="p-4 flex flex-col gap-2 flex-1">
+                <span class="badge-info self-start">{{ p.brandName }}</span>
+                <h3 class="text-sm font-medium leading-snug line-clamp-2">{{ p.name }}</h3>
+                <div class="mt-auto flex items-center justify-between gap-2 pt-1">
+                  <span class="text-xs text-ink-faint truncate">Арт. {{ p.sku }}</span>
+                  <Icon
+                    name="heroicons:arrow-right"
+                    class="w-4 h-4 text-ink-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-200 shrink-0"
+                  />
+                </div>
+              </div>
+            </NuxtLink>
+          </div>
+
+          <div class="text-center mt-8">
+            <NuxtLink to="/brands" class="btn-outline px-5 py-2.5 text-sm inline-flex items-center gap-2">
+              Весь каталог
+              <Icon name="heroicons:arrow-right" class="w-4 h-4" />
+            </NuxtLink>
+          </div>
+        </div>
+      </section>
+
+      <!-- Бренды -->
+      <section class="bg-surface border-y border-border py-16 lg:py-20">
+        <div class="container-app">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Бренды</p>
+          <h2 v-reveal class="text-3xl font-bold mb-3">Наши бренды</h2>
+          <p class="text-sm text-ink-muted max-w-2xl mb-8">
+            Открытый состав склада: номенклатура и характеристики каждого товара.
+          </p>
+
+          <div v-if="showcaseLoading" class="grid grid-cols-1 sm:grid-cols-3 gap-5" aria-hidden="true">
+            <div v-for="i in 3" :key="i" class="card overflow-hidden">
+              <div class="aspect-[16/10] animate-pulse bg-border/60" />
+              <div class="p-5 space-y-2"><div class="h-5 w-1/2 rounded bg-border/60 animate-pulse" /><div class="h-3 w-3/4 rounded bg-border/60 animate-pulse" /></div>
+            </div>
+          </div>
+          <div v-else v-reveal class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <NuxtLink
+              v-for="b in showcaseBrands"
+              :key="b.slug"
+              :to="`/brands/${b.slug}`"
+              class="card card-hover overflow-hidden group"
+            >
+              <div class="aspect-[16/10] bg-white flex items-center justify-center overflow-hidden">
+                <img
+                  v-if="b.photo"
+                  :src="showcasePhotoUrl(b.photo)"
+                  :alt="`Продукция ${b.name}`"
+                  class="w-full h-full object-contain p-5 transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                >
+                <Icon v-else name="heroicons:squares-2x2" class="w-12 h-12 text-ink-faint" />
+              </div>
+              <div class="p-5">
+                <div class="flex items-center justify-between gap-2 mb-1.5">
+                  <h3 class="text-lg font-bold">{{ b.name }}</h3>
+                  <Icon
+                    name="heroicons:arrow-right"
+                    class="w-5 h-5 text-ink-faint group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-200"
+                  />
+                </div>
+                <p class="text-sm text-ink-muted leading-relaxed mb-3">{{ brandBlurb(b.slug) }}</p>
+                <div class="text-xs text-ink-faint">
+                  {{ b.seriesCount }} {{ pluralRu(b.seriesCount, 'серия', 'серии', 'серий') }}
+                  · {{ b.productsCount }} {{ pluralRu(b.productsCount, 'наименование', 'наименования', 'наименований') }}
+                </div>
+              </div>
+            </NuxtLink>
+          </div>
+        </div>
+      </section>
+
+      <!-- Возможности кабинета -->
+      <section class="container-app py-16 lg:py-20">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Возможности</p>
+        <h2 v-reveal class="text-3xl font-bold mb-8">Что даёт личный кабинет</h2>
+        <div v-reveal class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <div v-for="a in advantages" :key="a.title" class="card card-hover p-6">
-            <div class="w-12 h-12 rounded-card bg-primary-soft text-primary flex items-center justify-center mb-4">
+            <div class="w-12 h-12 rounded-[18px] bg-primary-soft text-primary flex items-center justify-center mb-4">
               <Icon :name="a.icon" class="w-6 h-6" />
             </div>
             <h3 class="text-lg font-semibold mb-2">{{ a.title }}</h3>
@@ -548,41 +900,173 @@ watch(
         </div>
       </section>
 
-      <!-- Новости (гости) -->
-      <section v-if="!newsFailed && (newsLoading || newsItems.length)" class="container-app py-12 lg:py-16">
-        <h2 class="text-2xl font-bold text-center mb-8">Новости и обновления</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          <!-- Skeleton -->
-          <template v-if="newsLoading">
-            <div v-for="i in 3" :key="i" class="card p-5">
-              <div class="skeleton h-3 w-1/3 mb-3" />
-              <div class="skeleton h-5 w-full mb-2" />
-              <div class="skeleton h-3 w-2/3" />
-            </div>
-          </template>
-
-          <!-- Карточки -->
-          <template v-else>
-            <NuxtLink v-for="item in newsItems.slice(0, 6)" :key="item.id" :to="`/news/${item.id}`">
-              <article class="card card-hover p-5 h-full">
-                <div class="flex items-center gap-2 mb-2">
-                  <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
-                  <span v-else class="badge-info text-xs">Новость</span>
-                  <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
-                </div>
-                <h3 class="font-semibold mb-2 leading-snug hover:text-primary transition-colors">{{ item.title }}</h3>
-                <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
-              </article>
-            </NuxtLink>
-          </template>
+      <!-- Сравнение: до портала / на портале -->
+      <section class="container-app pb-16 lg:pb-20">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Разница</p>
+        <h2 class="text-3xl font-bold mb-8">Заказ без портала и с порталом</h2>
+        <div class="grid md:grid-cols-2 gap-5" data-reveal>
+          <div class="card p-7">
+            <h3 class="text-lg font-semibold mb-4 text-ink-muted">Как обычно</h3>
+            <ul class="space-y-3 text-sm text-ink-muted">
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:x-mark" class="w-5 h-5 text-ink-faint shrink-0 mt-0.5" />
+                Цены уточняются по телефону или в переписке
+              </li>
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:x-mark" class="w-5 h-5 text-ink-faint shrink-0 mt-0.5" />
+                Заявка в почте — легко ошибиться в артикуле
+              </li>
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:x-mark" class="w-5 h-5 text-ink-faint shrink-0 mt-0.5" />
+                Статус неизвестен: «а что там с моей заявкой?»
+              </li>
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:x-mark" class="w-5 h-5 text-ink-faint shrink-0 mt-0.5" />
+                История заказов размазана по почте и чатам
+              </li>
+            </ul>
+          </div>
+          <div class="card p-7 border-primary/40" style="box-shadow: 0 4px 24px rgb(var(--color-primary) / 0.10);">
+            <h3 class="text-lg font-semibold mb-4">На портале</h3>
+            <ul class="space-y-3 text-sm">
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:check" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                Ваша цена видна прямо у товара — по договору
+              </li>
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:check" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                Корзина собирается из каталога: артикулы уже верные
+              </li>
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:check" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                Статусы заявки меняются в реальном времени
+              </li>
+              <li class="flex items-start gap-2.5">
+                <Icon name="heroicons:check" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                Все заявки, файлы и уведомления — в одном кабинете
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
 
-      <!-- О компании -->
-      <section class="container-app py-12 lg:py-16">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start">
+      <!-- Лид-форма: заявка на доступ -->
+      <section id="lead" class="scroll-mt-6">
+        <div class="container-app pb-16 lg:pb-20">
+          <div v-reveal class="card relative overflow-hidden p-8 lg:p-12">
+            <div
+              class="absolute inset-0 pointer-events-none"
+              aria-hidden="true"
+              style="background: radial-gradient(30rem 18rem at 85% -30%, rgb(var(--ambient-1) / 0.08), transparent 70%);"
+            />
+            <div class="relative grid lg:grid-cols-[0.9fr_1.1fr] gap-10 items-start">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Доступ</p>
+                <h2 class="text-3xl font-bold mb-4">Получить доступ и прайс</h2>
+                <p class="text-sm text-ink-muted leading-relaxed mb-5">
+                  Оставьте заявку — персональный менеджер создаст аккаунт,
+                  согласует цены по вашему договору и подготовит прайс-лист.
+                </p>
+                <ul class="space-y-2.5 text-sm text-ink-muted">
+                  <li class="flex items-start gap-2.5">
+                    <Icon name="heroicons:check-circle" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                    Каталог и цены — под ваш договор, а не общая витрина
+                  </li>
+                  <li class="flex items-start gap-2.5">
+                    <Icon name="heroicons:check-circle" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                    Заявки онлайн со статусами — без звонков и переписки
+                  </li>
+                  <li class="flex items-start gap-2.5">
+                    <Icon name="heroicons:check-circle" class="w-5 h-5 text-success shrink-0 mt-0.5" />
+                    Никакого спама — только ваш прайс и Ваш менеджер
+                  </li>
+                </ul>
+              </div>
+
+              <div v-if="leadSuccess" class="flex flex-col items-center justify-center text-center py-10">
+                <Icon name="heroicons:check-badge" class="w-14 h-14 text-success mb-4" />
+                <h3 class="text-xl font-bold mb-2">Заявка отправлена</h3>
+                <p class="text-sm text-ink-muted max-w-sm">
+                  Менеджер уже видит её в своём кабинете и свяжется с вами
+                  в ближайшее рабочее время.
+                </p>
+              </div>
+
+              <form v-else class="space-y-4" @submit.prevent="submitLead">
+                <input v-model="leadForm.website" type="text" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
+                <div class="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="label" for="lead-company">Компания <span class="text-danger">*</span></label>
+                    <input id="lead-company" v-model="leadForm.company" type="text" class="input" placeholder="ООО «Пример»" required minlength="2" maxlength="255">
+                  </div>
+                  <div>
+                    <label class="label" for="lead-name">Контактное лицо <span class="text-danger">*</span></label>
+                    <input id="lead-name" v-model="leadForm.contact_name" type="text" class="input" placeholder="Иванов Иван" required minlength="2" maxlength="255">
+                  </div>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="label" for="lead-phone">Телефон <span class="text-danger">*</span></label>
+                    <input id="lead-phone" v-model="leadForm.phone" type="tel" class="input" placeholder="+375 29 000-00-00" required minlength="7" maxlength="32">
+                  </div>
+                  <div>
+                    <label class="label" for="lead-email">Email</label>
+                    <input id="lead-email" v-model="leadForm.email" type="email" class="input" placeholder="you@company.by" maxlength="255">
+                  </div>
+                </div>
+                <div>
+                  <label class="label" for="lead-comment">Что вас интересует?</label>
+                  <textarea id="lead-comment" v-model="leadForm.comment" class="input min-h-24 resize-y" placeholder="Напр.: прайс на корпуса OptiBox Pro, регулярные поставки" maxlength="1000" />
+                </div>
+                <div v-if="leadError" class="badge-danger w-full justify-center py-2">{{ leadError }}</div>
+                <button type="submit" class="btn-primary w-full justify-center py-3.5 text-base" :disabled="leadSubmitting || !leadValid">
+                  {{ leadSubmitting ? 'Отправка…' : 'Отправить заявку' }}
+                </button>
+                <p class="text-xs text-ink-faint text-center">
+                  Отправляя заявку, вы соглашаетесь на обработку данных менеджером для обратной связи.
+                </p>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Новости -->
+      <section v-if="!newsFailed && (newsLoading || newsItems.length)" class="bg-surface border-y border-border py-16 lg:py-20">
+        <div class="container-app">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Новости</p>
+          <h2 class="text-3xl font-bold mb-8">Новости и обновления</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <template v-if="newsLoading">
+              <div v-for="i in 3" :key="i" class="card p-5">
+                <div class="skeleton h-3 w-1/3 mb-3" />
+                <div class="skeleton h-5 w-full mb-2" />
+                <div class="skeleton h-3 w-2/3" />
+              </div>
+            </template>
+            <template v-else>
+              <NuxtLink v-for="item in newsItems.slice(0, 6)" :key="item.id" :to="`/news/${item.id}`">
+                <article class="card card-hover p-5 h-full">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span v-if="item.type === 'NEW_PRODUCT'" class="badge-success text-xs">Новинка</span>
+                    <span v-else class="badge-info text-xs">Новость</span>
+                    <span class="text-xs text-ink-muted">{{ formatNewsDate(item.published_at) }}</span>
+                  </div>
+                  <h3 class="font-semibold mb-2 leading-snug hover:text-primary transition-colors">{{ item.title }}</h3>
+                  <p class="text-sm text-ink-muted leading-relaxed">{{ newsExcerpt(item.content) }}</p>
+                </article>
+              </NuxtLink>
+            </template>
+          </div>
+        </div>
+      </section>
+
+      <!-- О компании + контакты -->
+      <section class="container-app py-16 lg:py-20">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
           <div>
-            <h2 class="text-2xl font-bold mb-4">О компании</h2>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">О нас</p>
+            <h2 class="text-3xl font-bold mb-4">О компании</h2>
             <p class="text-sm text-ink-muted leading-relaxed mb-3">
               ООО «Свет в доме» работает с юридическими лицами и ИП по договору:
               согласовываем с каждым клиентом персональные цены и принимаем заявки
@@ -595,25 +1079,127 @@ watch(
             </p>
             <NuxtLink to="/brands" class="btn-secondary px-4 py-2 text-sm inline-flex">Весь каталог продукции</NuxtLink>
           </div>
-
+          <div class="card p-6">
+            <h3 class="text-lg font-semibold mb-4">Контакты</h3>
+            <ul class="space-y-3 text-sm">
+              <li class="flex items-center gap-3">
+                <Icon name="heroicons:phone" class="w-5 h-5 text-primary shrink-0" />
+                <a href="tel:+375291234567" class="hover:text-primary transition-colors">+375 (29) 123-45-67</a>
+              </li>
+              <li class="flex items-center gap-3">
+                <Icon name="heroicons:envelope" class="w-5 h-5 text-primary shrink-0" />
+                <a href="mailto:info@svetvdome.by" class="hover:text-primary transition-colors">info@svetvdome.by</a>
+              </li>
+              <li class="flex items-start gap-3">
+                <Icon name="heroicons:map-pin" class="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                <span class="text-ink-muted">Республика Беларусь, г. Минск, ул. Примерная, д. 1, офис 1</span>
+              </li>
+              <li class="flex items-center gap-3">
+                <Icon name="heroicons:document-text" class="w-5 h-5 text-primary shrink-0" />
+                <span class="text-ink-muted">ООО «Свет в доме» · УНП 123456789</span>
+              </li>
+            </ul>
+            <button type="button" class="btn-primary w-full mt-5" @click="showContactModal = true">
+              Связаться с менеджером
+            </button>
+          </div>
         </div>
       </section>
 
-      <section class="bg-surface border-y border-border">
-        <div class="container-app py-12 lg:py-16">
-          <h2 class="text-2xl font-bold text-center mb-10">Как начать работу</h2>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Как начать -->
+      <section class="bg-surface border-y border-border py-16 lg:py-20">
+        <div class="container-app">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint text-center mb-2">Старт</p>
+          <h2 class="text-3xl font-bold text-center mb-12">Как начать работу</h2>
+          <div class="relative grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="hidden md:block absolute top-5 left-[16%] right-[16%] h-px bg-border" aria-hidden="true" />
             <div
-v-for="(step, i) in [
-              { t: 'Менеджер создаёт аккаунт', d: 'Вы получаете логин и временный пароль от вашего персонального менеджера.' },
-              { t: 'Вход и согласие', d: 'Первый вход — принимаете условия обработки персональных данных.' },
-              { t: 'Заказ и отслеживание', d: 'Собираете корзину, оформляете заявку и следите за статусом в реальном времени.' },
-            ]" :key="i" class="flex gap-4">
-              <div class="shrink-0 w-10 h-10 rounded-pill bg-secondary-soft text-secondary flex items-center justify-center font-bold">{{ i + 1 }}</div>
+              v-for="(step, i) in [
+                { t: 'Менеджер создаёт аккаунт', d: 'Вы получаете логин и временный пароль от вашего персонального менеджера.' },
+                { t: 'Вход и согласие', d: 'Первый вход — принимаете условия обработки персональных данных.' },
+                { t: 'Заказ и отслеживание', d: 'Собираете корзину, оформляете заявку и следите за статусом в реальном времени.' },
+              ]"
+              :key="i"
+              class="relative flex gap-4 items-start"
+            >
+              <div class="shrink-0 w-10 h-10 rounded-pill bg-primary text-white flex items-center justify-center font-bold relative z-10">{{ i + 1 }}</div>
               <div>
                 <h4 class="font-semibold mb-1">{{ step.t }}</h4>
                 <p class="text-sm text-ink-muted">{{ step.d }}</p>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAQ: снятие возражений -->
+      <section class="container-app py-16 lg:py-20">
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Вопросы</p>
+        <h2 class="text-3xl font-bold mb-8">Частые вопросы</h2>
+        <div class="max-w-3xl space-y-3">
+          <details class="card p-5 group">
+            <summary class="flex items-center justify-between gap-4 cursor-pointer font-semibold list-none">
+              Как формируются мои цены?
+              <Icon name="heroicons:chevron-down" class="w-5 h-5 text-ink-faint group-open:rotate-180 transition-transform shrink-0" />
+            </summary>
+            <p class="text-sm text-ink-muted leading-relaxed mt-3">
+              Прайс-лист импортируется в портал, а к нему применяется ваша персональная
+              скидка по договору. Вы видите свою цену у каждого товара после входа —
+              общих цен и «витринных наценок» на портале нет.
+            </p>
+          </details>
+          <details class="card p-5 group">
+            <summary class="flex items-center justify-between gap-4 cursor-pointer font-semibold list-none">
+              Посмотреть каталог можно без регистрации?
+              <Icon name="heroicons:chevron-down" class="w-5 h-5 text-ink-faint group-open:rotate-180 transition-transform shrink-0" />
+            </summary>
+            <p class="text-sm text-ink-muted leading-relaxed mt-3">
+              Да. Номенклатура, характеристики и состав склада открыты всем.
+              Цены, корзина и оформление заявок — после входа в кабинет.
+            </p>
+          </details>
+          <details class="card p-5 group">
+            <summary class="flex items-center justify-between gap-4 cursor-pointer font-semibold list-none">
+              Как быстро подтверждается заявка?
+              <Icon name="heroicons:chevron-down" class="w-5 h-5 text-ink-faint group-open:rotate-180 transition-transform shrink-0" />
+            </summary>
+            <p class="text-sm text-ink-muted leading-relaxed mt-3">
+              Заявка сразу попадает менеджеру в кабинет со всеми позициями и комментарием.
+              Вы меняете статусы в реальном времени — без звонков для уточнения деталей.
+            </p>
+          </details>
+          <details class="card p-5 group">
+            <summary class="flex items-center justify-between gap-4 cursor-pointer font-semibold list-none">
+              Что нужно для начала работы?
+              <Icon name="heroicons:chevron-down" class="w-5 h-5 text-ink-faint group-open:rotate-180 transition-transform shrink-0" />
+            </summary>
+            <p class="text-sm text-ink-muted leading-relaxed mt-3">
+              Оставьте заявку на этой странице или позвоните. Менеджер согласует условия,
+              создаст аккаунт и передаст вам логин и временный пароль.
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <!-- Финальный CTA -->
+      <section class="container-app py-16 lg:py-24">
+        <div class="card relative overflow-hidden p-10 lg:p-16 text-center">
+          <div
+            class="absolute inset-0 pointer-events-none"
+            aria-hidden="true"
+            style="background: radial-gradient(36rem 20rem at 50% -20%, rgb(var(--ambient-1) / 0.08), transparent 70%);"
+          />
+          <div class="relative">
+            <h2 class="text-3xl lg:text-4xl font-bold mb-4">Готовы к персональным ценам?</h2>
+            <p class="text-sm sm:text-base text-ink-muted max-w-xl mx-auto mb-8 leading-relaxed">
+              Войдите в кабинет — цены по вашему договору, корзина и заявки уже ждут.
+              Нет аккаунта? Персональный менеджер создаст его за один звонок.
+            </p>
+            <div class="flex flex-wrap items-center justify-center gap-3">
+              <button type="button" class="btn-primary px-7 py-3.5 text-base" @click="scrollToLead">
+                Оставить заявку
+              </button>
+              <NuxtLink to="/login" class="btn-outline px-7 py-3.5 text-base">Войти в кабинет</NuxtLink>
             </div>
           </div>
         </div>
