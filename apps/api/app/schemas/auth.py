@@ -70,6 +70,30 @@ class UserPublic(BaseModel):
         )
 
 
+class MyTermsBrandDiscount(BaseModel):
+    """Скидка клиента по бренду (блок «Мои условия» профиля, SITEMAP §6)."""
+
+    brand_id: uuid.UUID
+    brand_name: str
+    discount_percent: float
+
+
+class MyTermsFixedRate(BaseModel):
+    """Зафиксированный курс договора клиента (users.fixed_rate_id)."""
+
+    currency: str
+    rate: float
+    source: str | None = None
+    fetched_at: datetime | None = None
+
+
+class MyTermsOut(BaseModel):
+    """GET /auth/my-terms — персональные условия клиента (SITEMAP §6 /profile)."""
+
+    discounts: list[MyTermsBrandDiscount] = []
+    fixed_rate: MyTermsFixedRate | None = None
+
+
 class UserUpdate(BaseModel):
     """PATCH /auth/me: частичное обновление профиля (§6).
 

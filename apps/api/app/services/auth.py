@@ -44,8 +44,13 @@ from app.models.user import (
 from app.models.user import (
     Session as SessionModel,
 )
+from app.models.pricing import ExchangeRate
 from app.repositories import audit as audit_repo
+from app.repositories import users as users_repo
 from app.schemas.auth import (
+    MyTermsBrandDiscount,
+    MyTermsFixedRate,
+    MyTermsOut,
     SessionOut,
     TokenPair,
     TwoFASetupOut,
@@ -117,9 +122,10 @@ class AuthService:
         tokens=None → включена 2FA: сессия НЕ создаётся, роутер вместо токенов
         выдаёт короткоживущий ticket (§16 п.22).
         """
-        # Блокировка аккаунта после N неудачных входов (H4): проверяем до
-        # проверки кредов, чтобы брутфорс упирался в lockout, а не в rate-limit.
-        if await is_account_locked(email, settings.login_max_attempts):
+        # Блокировка после N неудачных входов с пары email+IP (H4, P2 §3.1):
+        # проверяем до проверки кредов, чтобы брутфорс упирался в lockout,
+        # а не в rate-limit. Ключ с IP — чтобы атакующий не лочил чужие аккаунты.
+        if await is_account_locked(email, settings.login_max_attempts, ip):
             log.warning("auth.login_locked", email=email, ip=ip)
             raise AuthError("Слишком много неудачных попыток. Попробуйте позже.")
 
@@ -130,7 +136,7 @@ class AuthService:
             raise AuthError("Неверный email или пароль")
         if not verify_password(password, user.password_hash):
             attempts = await record_login_failure(
-                email, settings.login_max_attempts, settings.login_lockout_minutes
+                email, settings.login_max_attempts, settings.login_lockout_minutes, ip
             )
             log.warning(
                 "auth.login_failed", user_id=str(user.id), attempts=attempts, ip=ip
@@ -138,7 +144,7 @@ class AuthService:
             raise AuthError("Неверный email или пароль")
 
         # успешный вход сбрасывает счётчик неудач
-        await clear_login_failures(email)
+        await clear_login_failures(email, ip)
 
         if user.totp_secret is not None:
             log.info("auth.login_2fa_required", user_id=str(user.id), ip=ip)
@@ -246,6 +252,39 @@ class AuthService:
             await self.db.commit()
             await invalidate_session(session.id)
             log.info("auth.logout", sid=str(session.id))
+
+    # ---------- мои условия (GET /auth/my-terms, SITEMAP §6 /profile) ----------
+    async def my_terms(self, user: User) -> MyTermsOut:
+        """Персональные условия клиента: скидки по брендам + фикс. курс договора.
+
+        Скидки — вся матрица (без записи = 0, как в менеджерской карточке
+        клиента); fixed_rate — курс по договору (users.fixed_rate_id), если
+        менеджер его зафиксировал.
+        """
+        rows = await users_repo.fetch_discount_rows(self.db, user_id=user.id)
+        fixed_rate = None
+        if user.fixed_rate_id is not None:
+            rate = await self.db.get(ExchangeRate, user.fixed_rate_id)
+            if rate is not None:
+                fixed_rate = MyTermsFixedRate(
+                    currency=rate.currency_code,
+                    rate=float(rate.rate),
+                    source=rate.source,
+                    fetched_at=datetime.combine(
+                        rate.fetched_at, datetime.min.time(), tzinfo=timezone.utc
+                    ),
+                )
+        return MyTermsOut(
+            discounts=[
+                MyTermsBrandDiscount(
+                    brand_id=row.brand_id,
+                    brand_name=row.brand_name,
+                    discount_percent=float(row.percent),
+                )
+                for row in rows
+            ],
+            fixed_rate=fixed_rate,
+        )
 
     # ---------- update profile (PATCH /auth/me, §6 / §20.4 / §16 п.20-6) ----------
     async def update_profile(

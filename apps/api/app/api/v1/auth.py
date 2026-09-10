@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
+    MyTermsOut,
     SessionListResponse,
     TelegramLinkCodeOut,
     TokenPair,
@@ -160,6 +161,16 @@ async def logout(
 async def me(current_user: User = Depends(get_current_user)) -> UserPublic:
     """Текущий пользователь."""
     return UserPublic.from_user(current_user)
+
+
+@router.get("/my-terms", response_model=MyTermsOut)
+async def my_terms(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MyTermsOut:
+    """Персональные условия (SITEMAP §6 /profile «Мои условия»): скидки по
+    брендам + зафиксированный курс договора (если заведён менеджером)."""
+    return await AuthService(db).my_terms(current_user)
 
 
 @router.post(
@@ -372,13 +383,16 @@ async def forgot_password(
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.rate_limit_forgot_password)
 async def reset_password(
     body: ResetPasswordRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Сброс пароля по токену из письма: смена hash + инвалидация всех refresh-сессий.
 
     Токен неизвестен/использован/истёк → 400 (без раскрытия лишних деталей).
+    Rate-limit — как у forgot-password (P2, аудит §3.1): подбор токена брутом.
     """
     svc = AuthService(db)
     ok = await svc.reset_password(body.token, body.new_password)

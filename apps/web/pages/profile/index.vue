@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Профиль: личные данные, безопасность, Telegram, уведомления, согласие на ПДн.
-// Валюта отображения — только BYN, определяется менеджером (клиент не меняет).
-// Telegram-код связки: Этап 12, §16 п.27. См. SITEMAP.md §5.
+// Профиль: личные данные, мои условия, валюта, безопасность, Telegram,
+// уведомления, согласие на ПДн. См. SITEMAP.md §6 /profile, канон §8
+// (display_currency — выбор клиента, PATCH /auth/me).
 import type { TelegramLinkCode } from '~/types/api'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
@@ -12,6 +12,39 @@ const { request } = useApi()
 
 // --- Оформление: тёмная/светлая тема (useTheme — обёртка над @nuxtjs/color-mode) ---
 const { mode: themeMode, toggle: toggleTheme } = useTheme()
+
+// --- Валюта отображения (§8 — выбор клиента) ---
+const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB'] as const
+const currencySaving = ref(false)
+const currencySaved = ref(false)
+const currencyError = ref('')
+
+async function setDisplayCurrency(code: string) {
+  if (currencySaving.value || code === auth.user?.displayCurrency) return
+  currencySaving.value = true
+  currencySaved.value = false
+  currencyError.value = ''
+  try {
+    await auth.updateMe({ display_currency: code })
+    currencySaved.value = true
+    setTimeout(() => { currencySaved.value = false }, 2000)
+  } catch (e) {
+    currencyError.value = getErrorMessage(e, 'Не удалось изменить валюту')
+  } finally {
+    currencySaving.value = false
+  }
+}
+
+// --- Мои условия (SITEMAP §6): скидки по брендам + фикс. курс договора ---
+interface MyTerms {
+  discounts: { brand_id: string; brand_name: string; discount_percent: number }[]
+  fixed_rate: { currency: string; rate: number; source: string | null; fetched_at: string | null } | null
+}
+const { data: myTerms, error: termsError } = await useAsyncData(
+  'my-terms',
+  () => request<MyTerms>('/api/v1/auth/my-terms'),
+  { server: false },
+)
 
 // --- Telegram Mini App: код связки (§16 п.27, SITEMAP §8). Только CLIENT. ---
 const tgCode = ref('')
@@ -63,11 +96,50 @@ async function generateLinkCode() {
         </div>
         <div class="flex justify-between items-center text-sm py-1.5">
           <span class="text-ink-muted">Валюта отображения</span>
-          <span class="font-medium">BYN</span>
+          <span class="flex items-center gap-1.5">
+            <button
+              v-for="c in CURRENCIES"
+              :key="c"
+              type="button"
+              class="px-2.5 py-1 rounded-pill text-xs font-semibold border transition-colors duration-150"
+              :class="auth.user?.displayCurrency === c
+                ? 'bg-primary text-white border-primary'
+                : 'border-border text-ink-muted hover:border-primary/50 hover:text-primary'"
+              :disabled="currencySaving"
+              :aria-pressed="auth.user?.displayCurrency === c"
+              @click="setDisplayCurrency(c)"
+            >
+              {{ c }}
+            </button>
+          </span>
         </div>
+        <p v-if="currencySaved" class="text-xs text-success mt-2">Валюта сохранена</p>
+        <p v-else-if="currencyError" class="text-xs text-danger mt-2">{{ currencyError }}</p>
         <p class="text-xs text-ink-faint mt-3">
-          Для изменения данных обратитесь к менеджеру. Валюта определяется менеджером.
+          Для изменения данных обратитесь к менеджеру. Курсы конвертации — по НБ РБ или фикс. курсу договора.
         </p>
+      </div>
+
+      <!-- Мои условия (SITEMAP §6): персональные скидки по брендам + фикс. курс -->
+      <div class="card p-5 h-full">
+        <h3 class="font-semibold mb-3">Мои условия</h3>
+        <div v-if="termsError" class="text-sm text-ink-muted">Не удалось загрузить условия</div>
+        <template v-else>
+          <div class="flex justify-between text-sm py-1.5" v-for="d in myTerms?.discounts ?? []" :key="d.brand_id">
+            <span class="text-ink-muted">{{ d.brand_name }}</span>
+            <span class="font-medium">{{ d.discount_percent > 0 ? `−${d.discount_percent}%` : 'базовая цена' }}</span>
+          </div>
+          <div v-if="!myTerms?.discounts?.length" class="text-sm text-ink-muted py-1.5">
+            Персональные скидки не заведены — цены по базовому прайсу.
+          </div>
+          <div v-if="myTerms?.fixed_rate" class="mt-3 pt-3 border-t border-border">
+            <div class="flex justify-between text-sm py-1">
+              <span class="text-ink-muted">Фикс. курс договора</span>
+              <span class="font-medium">1 {{ myTerms.fixed_rate.currency }} = {{ myTerms.fixed_rate.rate }} BYN</span>
+            </div>
+            <p v-if="myTerms.fixed_rate.source" class="text-xs text-ink-faint mt-1">Источник: {{ myTerms.fixed_rate.source }}</p>
+          </div>
+        </template>
       </div>
 
       <!-- Безопасность (2FA — менеджер; сессии — все роли). Фичи H/I, §16 п.22 -->
