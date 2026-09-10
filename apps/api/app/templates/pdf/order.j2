@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Заявка {{ order_no }}{% if client_company %} — {{ client_company }}{% endif %}</title>
+<style>
+    /* A4 print-friendly (§16 п.25): без фоновых заливок — экономия тонера. */
+    @page {
+        size: A4;
+        margin: 15mm 12mm;
+        @bottom-center {
+            content: "Стр. " counter(page) " из " counter(pages);
+            font-size: 8pt;
+            color: #666;
+        }
+    }
+    body {
+        font-family: "DejaVu Sans", "PT Sans", Arial, sans-serif;
+        font-size: 9pt;
+        color: #111;
+    }
+    h1 { font-size: 14pt; margin: 0 0 2mm; }
+    .meta { font-size: 9pt; color: #333; margin: 0 0 1.5mm; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 4mm;
+    }
+    th, td {
+        border: 0.5pt solid #999;
+        padding: 1.2mm 1.8mm;
+        text-align: left;
+        vertical-align: top;
+    }
+    th {
+        background-color: #eee;
+        font-size: 8.5pt;
+        text-align: center;
+    }
+    td.num { text-align: right; white-space: nowrap; }
+    tr.total td {
+        background-color: #eee;
+        font-weight: bold;
+    }
+    .comment { margin-top: 3mm; font-size: 8.5pt; color: #333; }
+    .rate-note { margin-top: 2mm; font-size: 7.5pt; color: #666; }
+</style>
+</head>
+<body>
+    <h1>Заявка {{ order_no }}</h1>
+    <p class="meta">Дата: {{ date }}</p>
+    <p class="meta">Клиент: {{ client_name }}{% if client_company %} — {{ client_company }}{% endif %}</p>
+    <p class="meta">Способ получения: {{ delivery }}</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Артикул</th>
+                <th>Наименование</th>
+                <th>Кол-во</th>
+                <th>Цена, {{ currency }}</th>
+                <th>Сумма, {{ currency }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.sku }}</td>
+                <td>{{ r.name }}</td>
+                <td class="num">{{ r.qty }}</td>
+                <td class="num">{{ r.price }}</td>
+                <td class="num">{{ r.amount }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total">
+                <td colspan="4" style="text-align: right;">Итого</td>
+                <td class="num">{{ total }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if comment %}
+    <p class="comment">Комментарий: {{ comment }}</p>
+    {% endif %}
+    <p class="rate-note">Курс: 1 {{ currency }} = {{ rate }} BYN. Цены зафиксированы на момент оформления заявки.</p>
+</body>
+</html>

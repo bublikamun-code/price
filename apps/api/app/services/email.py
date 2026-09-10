@@ -25,6 +25,12 @@ ORDER_STATUS_RU = {
     "CANCELLED": "Отменена",
 }
 
+# Способ получения (orders.delivery_method, §9) — подпись в письмах и выгрузках.
+DELIVERY_METHOD_RU = {
+    "pickup": "Самовывоз",
+    "delivery": "Доставка",
+}
+
 
 def format_order_no(seq: int) -> str:
     """Форматировать номер заказа."""
