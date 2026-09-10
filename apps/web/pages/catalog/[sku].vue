@@ -461,7 +461,10 @@ onUnmounted(() => {
                 <h4 class="font-medium text-sm line-clamp-2 mb-1">{{ s.name }}</h4>
                 <p class="text-xs text-ink-faint mb-2">{{ s.sku }}</p>
                 <div class="mt-auto">
-                  <span class="text-base font-bold text-primary">
+                  <span v-if="!(Number(s.client_price) > 0) && !(Number(s.retail_price) > 0)" class="text-xs text-ink-muted">
+                    Цена по запросу
+                  </span>
+                  <span v-else class="text-base font-bold text-primary">
                     {{ formatMoney(s.has_discount ? s.client_price : s.retail_price, s.currency) }}
                   </span>
                 </div>
@@ -494,7 +497,11 @@ onUnmounted(() => {
           <!-- Цена -->
           <div class="card p-5 mb-5">
             <div class="flex items-baseline gap-2 flex-wrap">
-              <template v-if="product.has_discount">
+              <!-- Товар без прайса: «по запросу» вместо 0,00 (§8) -->
+              <template v-if="!(Number(product.client_price) > 0) && !(Number(product.retail_price) > 0)">
+                <span class="text-xl font-semibold text-ink-muted">Цена по запросу</span>
+              </template>
+              <template v-else-if="product.has_discount">
                 <span class="text-3xl font-bold text-primary">{{ formatMoney(product.client_price, product.currency) }}</span>
                 <span class="text-ink-muted line-through">{{ formatMoney(product.retail_price, product.currency) }}</span>
               </template>

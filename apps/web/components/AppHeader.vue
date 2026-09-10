@@ -94,14 +94,15 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
 
       <nav class="flex items-center gap-1 sm:gap-2">
         <template v-if="auth.isAuthenticated">
-          <button
+          <NuxtLink
+            to="/profile"
             class="btn-ghost px-3 hidden sm:inline-flex"
             title="Валюта отображения — меняется в профиле"
           >
             <span class="badge-info">{{ auth.user?.displayCurrency ?? 'BYN' }}</span>
-          </button>
+          </NuxtLink>
 
-          <button class="btn-ghost p-2 sm:p-2.5 relative" title="Уведомления">
+          <NuxtLink to="/notifications" class="btn-ghost p-2 sm:p-2.5 relative" title="Уведомления">
             <Icon name="heroicons:bell" class="w-5 h-5" />
             <span
               v-if="unreadCount"
@@ -109,7 +110,7 @@ function getCompanyInitials(company: string | undefined, fallbackName: string | 
             >
               {{ unreadCount > 99 ? '99+' : unreadCount }}
             </span>
-          </button>
+          </NuxtLink>
 
           <NuxtLink v-if="auth.isClient" to="/favorites" class="btn-ghost p-2 sm:p-2.5" title="Избранное">
             <Icon name="heroicons:heart" class="w-5 h-5" />

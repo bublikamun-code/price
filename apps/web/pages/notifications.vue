@@ -29,6 +29,7 @@ const TYPE_META: Record<string, { label: string; icon: string; cls: string }> = 
   IMPORT_FAILED: { label: 'Ошибка импорта', icon: 'heroicons:exclamation-triangle', cls: 'bg-danger-soft text-danger' },
   RATE_FETCH_FAILED: { label: 'Курс НБ РБ', icon: 'heroicons:currency-dollar', cls: 'bg-danger-soft text-danger' },
   ACCOUNT_CREATED: { label: 'Доступ создан', icon: 'heroicons:user-plus', cls: 'bg-primary-soft text-primary' },
+  LEAD_CREATED: { label: 'Заявка с сайта', icon: 'heroicons:inbox-arrow-down', cls: 'bg-success-soft text-success' },
 }
 
 function typeMeta(t: string) {

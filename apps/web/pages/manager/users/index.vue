@@ -99,7 +99,10 @@ async function submitCreate() {
         full_name: createForm.full_name.trim(),
         company: createForm.company.trim() || undefined,
         phone: createForm.phone.trim() || undefined,
-        discount_percent_all: createForm.discount_percent_all.trim() || undefined,
+        // v-model на type="number" возвращает число — .trim() там падает
+        // (TypeError), из-за чего создание клиента со скидкой ломалось.
+        discount_percent_all:
+          String(createForm.discount_percent_all).trim() || undefined,
       },
     })
     closeCreate()

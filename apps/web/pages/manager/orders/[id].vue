@@ -177,8 +177,8 @@ onMounted(load)
                   <p v-if="item.note" class="text-xs text-ink-muted mt-1">📝 {{ item.note }}</p>
                 </td>
                 <td class="px-5 py-3 text-center">{{ item.quantity }}</td>
-                <td class="px-5 py-3 text-right">{{ item.unit_price }} {{ item.currency_code }}</td>
-                <td class="px-5 py-3 text-right font-medium">{{ (item.unit_price * item.quantity).toFixed(2) }} {{ item.currency_code }}</td>
+                <td class="px-5 py-3 text-right">{{ formatMoney(item.unit_price, item.currency_code) }}</td>
+                <td class="px-5 py-3 text-right font-medium">{{ formatMoney(item.unit_price * item.quantity, item.currency_code) }}</td>
               </tr>
             </tbody>
           </table>

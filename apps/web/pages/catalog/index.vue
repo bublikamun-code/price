@@ -140,7 +140,12 @@ function hiddenFilterCount<T extends { id: string }>(items: T[], key: string): n
   return expandedFilters[key] ? 0 : Math.max(0, items.length - FILTER_COLLAPSED)
 }
 
+// Seq-guard против гонок: медленный ответ с устаревшими фильтрами не должен
+// перетирать результат свежего запроса (P2 §3.3).
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
   // URL отражает текущие фильтры: после F5 не «возвращаются» снятые галочки
@@ -169,13 +174,15 @@ async function load() {
       }),
       request<FiltersOut>('/api/v1/catalog/filters'),
     ])
+    if (seq !== loadSeq) return // устаревший ответ — игнорируем
     products.value = catalog.data
     total.value = catalog.meta.total
     filters.value = f
   } catch (e) {
+    if (seq !== loadSeq) return
     error.value = getErrorMessage(e, 'Не удалось загрузить каталог')
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -553,7 +560,11 @@ onMounted(load)
               </div>
 
               <div class="mt-auto">
-                <div v-if="p.has_discount" class="flex items-baseline gap-2 mb-1.5 sm:mb-3">
+                <!-- Товар без прайса: не показываем «0,00» (§8 — цены только из активного импорта) -->
+                <div v-if="!(Number(p.client_price) > 0)" class="mb-1.5 sm:mb-3">
+                  <span class="text-sm text-ink-muted">Цена по запросу</span>
+                </div>
+                <div v-else-if="p.has_discount" class="flex items-baseline gap-2 mb-1.5 sm:mb-3">
                   <span class="text-base sm:text-xl font-bold text-primary">{{ formatMoney(p.client_price, p.currency) }}</span>
                   <span class="text-xs sm:text-sm text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
                 </div>
@@ -625,7 +636,9 @@ onMounted(load)
                     </span>
                   </td>
                   <td class="px-1 sm:px-2 py-1.5 sm:py-2 text-right max-w-0">
-                    <template v-if="p.has_discount">
+                    <!-- Товар без прайса: «по запросу» вместо 0,00 (§8) -->
+                    <span v-if="!(Number(p.client_price) > 0)" class="text-xs sm:text-sm text-ink-muted block truncate">По запросу</span>
+                    <template v-else-if="p.has_discount">
                       <!-- На мобильном валюта и старая цена скрыты, чтобы сумма не налезала на соседние колонки -->
                       <span class="font-bold text-primary block truncate text-xs sm:text-sm">{{ formatMoney(p.client_price) }}<span class="hidden sm:inline"> {{ p.currency }}</span></span>
                       <span class="hidden sm:block text-xs text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>

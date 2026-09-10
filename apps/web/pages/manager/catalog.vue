@@ -136,7 +136,8 @@ async function submitEdit() {
   if (editResetPrice.value) {
     body.override_price = null // явный сброс ручной цены
   } else {
-    const t = editPrice.value.trim()
+    // String(): v-model на type="number" держит число, у числа нет .trim().
+    const t = String(editPrice.value).trim()
     if (t !== '') {
       const n = Number(t.replace(',', '.'))
       if (!Number.isFinite(n) || n < 0) {
@@ -148,7 +149,7 @@ async function submitEdit() {
   }
 
   // Остаток: пусто = не менять.
-  const qtyRaw = editStockQty.value.trim()
+  const qtyRaw = String(editStockQty.value).trim()
   if (qtyRaw !== '') {
     const qty = Number(qtyRaw.replace(',', '.'))
     if (!Number.isInteger(qty) || qty < 0) {

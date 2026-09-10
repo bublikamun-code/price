@@ -17,6 +17,16 @@ export function usePdfExport() {
   const { request } = useApi()
   const activeId = ref<string | null>(null)
   const error = ref('')
+  // Таймер опроса: сбрасывается при размонтировании компонента, чтобы
+  // поллинг не продолжался после ухода со страницы (P2 §3.3).
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      if (pollTimer !== null) clearTimeout(pollTimer)
+      pollTimer = null
+    })
+  }
 
   async function exportOrderPdf(orderId: string): Promise<void> {
     if (activeId.value) return
@@ -59,7 +69,7 @@ export function usePdfExport() {
           activeId.value = null
           return resolve()
         }
-        setTimeout(tick, POLL_MS)
+        pollTimer = setTimeout(tick, POLL_MS)
       }
       tick()
     })

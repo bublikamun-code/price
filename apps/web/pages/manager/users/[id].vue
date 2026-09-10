@@ -170,9 +170,11 @@ const applyAllError = ref('')
 const discountsSaving = ref(false)
 const discountsError = ref('')
 
-function validPercent(v: string): boolean {
-  const n = Number(v)
-  return v.trim() !== '' && !Number.isNaN(n) && n >= 0 && n <= 100
+function validPercent(v: string | number): boolean {
+  // v-model на type="number" отдаёт число — приводим к строке явно.
+  const s = String(v).trim()
+  const n = Number(s)
+  return s !== '' && !Number.isNaN(n) && n >= 0 && n <= 100
 }
 
 function syncDiscounts() {
@@ -184,13 +186,13 @@ function syncDiscounts() {
 }
 
 function applyToAll() {
-  const v = applyAllValue.value.trim()
-  if (!validPercent(v)) {
+  const s = String(applyAllValue.value).trim()
+  if (!validPercent(s)) {
     applyAllError.value = 'Введите процент от 0 до 100'
     return
   }
   applyAllError.value = ''
-  discountRows.value = discountRows.value.map((r) => ({ ...r, percent: v }))
+  discountRows.value = discountRows.value.map((r) => ({ ...r, percent: s }))
 }
 
 async function saveDiscounts() {
@@ -206,7 +208,8 @@ async function saveDiscounts() {
     const res = await request<DiscountOut[]>(`/api/v1/manager/users/${userId.value}/discounts`, {
       method: 'PUT',
       body: {
-        discounts: discountRows.value.map((r) => ({ brand_id: r.brand_id, percent: r.percent.trim() })),
+        // String() — после правки поля v-model держит число (type="number").
+        discounts: discountRows.value.map((r) => ({ brand_id: r.brand_id, percent: String(r.percent).trim() })),
       },
     })
     detail.value!.discounts = res
@@ -249,7 +252,8 @@ async function applyFixedRate() {
   fixError.value = ''
   try {
     const body: Record<string, unknown> = { currency_code: fixCurrency.value }
-    if (fixMode.value === 'manual') body.rate = fixRate.value.trim()
+    // String() — v-model на type="number" держит число.
+    if (fixMode.value === 'manual') body.rate = String(fixRate.value).trim()
     const user = await request<UserManagerRead>(`/api/v1/manager/users/${userId.value}/fixed-rate`, {
       method: 'PUT',
       body,
@@ -284,9 +288,10 @@ async function resetFixedRate() {
   }
 }
 
-function validRate(v: string): boolean {
-  const n = Number(v)
-  return v.trim() !== '' && !Number.isNaN(n) && n > 0
+function validRate(v: string | number): boolean {
+  const s = String(v).trim()
+  const n = Number(s)
+  return s !== '' && !Number.isNaN(n) && n > 0
 }
 
 // --- Последние заказы ---
