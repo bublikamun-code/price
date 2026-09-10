@@ -41,6 +41,9 @@ def _visible_products_stmt(series_id: uuid.UUID):
     )
 
 
+
+
+
 async def count_series_products(db: AsyncSession, *, series_id: uuid.UUID) -> int:
     stmt = select(func.count(Product.id)).where(
         Product.series_id == series_id,
@@ -52,10 +55,33 @@ async def count_series_products(db: AsyncSession, *, series_id: uuid.UUID) -> in
 
 async def fetch_series_products(
     db: AsyncSession, *, series_id: uuid.UUID, limit: int, offset: int
-) -> list[Product]:
-    stmt = _visible_products_stmt(series_id).order_by(Product.name).limit(limit).offset(offset)
+) -> list[tuple[Product, str | None]]:
+    """Товары серии + представительское фото: личное (первое ProductPhoto по
+    sort_order/created_at), иначе фото серии — та же логика, что в каталоге."""
+    from app.models.catalog import ProductPhoto
+
+    first_photo = (
+        select(ProductPhoto.photo_key)
+        .where(ProductPhoto.product_id == Product.id)
+        .order_by(ProductPhoto.sort_order.asc(), ProductPhoto.created_at.asc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    series_photo = (
+        select(Series.photo_key)
+        .where(Series.id == series_id, Series.photo_key.is_not(None))
+        .limit(1)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(Product, func.coalesce(first_photo, series_photo).label("photo_key"))
+        .where(*_visible_products_stmt(series_id).whereclause)
+        .order_by(Product.name)
+        .limit(limit)
+        .offset(offset)
+    )
     res = await db.execute(stmt)
-    return list(res.scalars().all())
+    return [(row[0], row.photo_key) for row in res.all()]
 
 
 async def fetch_brand_stats(db: AsyncSession, brand_id: uuid.UUID) -> dict:

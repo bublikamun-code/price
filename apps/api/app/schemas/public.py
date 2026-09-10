@@ -6,7 +6,7 @@
 """
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas import MetaPage
 
@@ -38,6 +38,8 @@ class PublicBrandDetailOut(PublicBrandOut):
 class PublicSeriesProductOut(BaseModel):
     sku: str
     name: str
+    # личное фото товара (ключ photos-product/…) — витрина лендинга (2026-09-08)
+    photo: str | None = None
 
 
 class PublicBrandListEnvelope(BaseModel):
@@ -51,3 +53,19 @@ class PublicBrandDetailEnvelope(BaseModel):
 class PublicSeriesProductsEnvelope(BaseModel):
     data: list[PublicSeriesProductOut]
     meta: MetaPage
+
+
+class PublicLeadIn(BaseModel):
+    """Заявка на доступ с лендинга (гость, без авторизации)."""
+
+    company: str = Field(min_length=2, max_length=255)
+    contact_name: str = Field(min_length=2, max_length=255)
+    phone: str = Field(min_length=7, max_length=32)
+    email: EmailStr | None = None
+    comment: str | None = Field(default=None, max_length=1000)
+    # honeypot: скрытое поле, человек его не заполняет
+    website: str = ""
+
+
+class PublicLeadAccepted(BaseModel):
+    ok: bool = True

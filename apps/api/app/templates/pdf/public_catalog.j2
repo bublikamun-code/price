@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Каталог продукции — B2B-портал «Свет в доме»</title>
+<style>
+    /* Публичный каталог (лендинг, §6): A4, без цен — состав и характеристики. */
+    @page {
+        size: A4;
+        margin: 15mm 12mm;
+        @bottom-left {
+            content: "Цены — по вашему договору: запросите доступ на портале";
+            font-size: 8pt;
+            color: #666;
+        }
+        @bottom-right {
+            content: "Стр. " counter(page) " из " counter(pages);
+            font-size: 8pt;
+            color: #666;
+        }
+    }
+    body {
+        font-family: "DejaVu Sans", "PT Sans", Arial, sans-serif;
+        font-size: 9pt;
+        color: #111;
+    }
+    .cover { text-align: center; margin: 60mm 0 30mm; }
+    .cover h1 { font-size: 22pt; margin: 0 0 4mm; }
+    .cover .sub { font-size: 12pt; color: #444; margin: 0 0 2mm; }
+    .cover .date { font-size: 9pt; color: #777; }
+    h2 {
+        font-size: 13pt;
+        margin: 8mm 0 1mm;
+        padding-bottom: 1mm;
+        border-bottom: 1pt solid #222;
+        page-break-after: avoid;
+    }
+    h3 {
+        font-size: 10.5pt;
+        margin: 4mm 0 1mm;
+        color: #333;
+        page-break-after: avoid;
+    }
+    ul { margin: 0; padding: 0 0 2mm 5mm; list-style: none; }
+    li {
+        padding: 0.8mm 0;
+        border-bottom: 0.3pt dotted #bbb;
+        page-break-inside: avoid;
+    }
+    li .sku { color: #666; font-size: 8pt; }
+    .note { font-size: 8.5pt; color: #666; margin-top: 6mm; }
+</style>
+</head>
+<body>
+<div class="cover">
+    <h1>Каталог продукции</h1>
+    <p class="sub">B2B-портал «Свет в доме» · светотехника и электромонтаж</p>
+    <p class="sub">Персональные цены по договору — после входа в личный кабинет</p>
+    <p class="date">Актуален на {{ date }}</p>
+</div>
+
+{% for brand in brands %}
+    <h2>{{ brand.name }}</h2>
+    {% for series in brand.series %}
+        <h3>{{ series.name }}</h3>
+        <ul>
+            {% for p in series.products %}
+                <li>{{ p.name }} <span class="sku">· {{ p.sku }}</span></li>
+            {% endfor %}
+        </ul>
+    {% endfor %}
+{% endfor %}
+
+<p class="note">
+    ООО «Свет в доме» · Республика Беларусь, г. Минск, ул. Примерная, д. 1, офис 1 ·
+    +375 (29) 123-45-67 · info@svetvdome.by
+</p>
+</body>
+</html>

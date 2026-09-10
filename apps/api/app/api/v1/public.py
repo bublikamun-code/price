@@ -20,20 +20,25 @@ presigned URL: внешний S3-эндпоинт может иметь нева
 """
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.repositories.catalog import PHOTO_KEY_PREFIX
+from app.repositories.notifications import create_notification
 from app.schemas import MetaPage
 from app.schemas.public import (
     PublicBrandDetailEnvelope,
     PublicBrandListEnvelope,
+    PublicLeadAccepted,
+    PublicLeadIn,
     PublicSeriesProductsEnvelope,
 )
 from app.services import storage
+from app.services.notification_events import notification_payload, publish_notification
 from app.services.public_catalog import NotFoundError, PublicCatalogService
 
 router = APIRouter(prefix="/public", tags=["public"])
@@ -149,4 +154,113 @@ async def get_photo(
         media_type=media_type,
         # Публичные неизменяемые ассеты — кэш может быть общим (в отличие от files.py).
         headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+# Заявка на доступ с лендинга: лид уходит всем менеджерам (in-app + telegram).
+# Лимит строже витрины: форма — цель спама.
+LEAD_RATE_LIMIT = "5/10minutes"
+
+
+@router.post("/lead", response_model=PublicLeadAccepted, status_code=status.HTTP_201_CREATED)
+@limiter.limit(LEAD_RATE_LIMIT)
+async def create_lead(
+    request: Request,
+    payload: PublicLeadIn,
+    db: AsyncSession = Depends(get_db),
+) -> PublicLeadAccepted:
+    """Публичная лид-форма лендинга (§6): без авторизации, уведомление менеджерам.
+
+    CSRF не применяется (как у витрины: анонимный запрос без сессии).
+    """
+    # Honeypot: боты заполняют скрытое поле «сайт». Отвечаем успехом, ничего не делая.
+    if payload.website.strip():
+        return PublicLeadAccepted(ok=True)
+
+    contact = f"{payload.contact_name}, тел. {payload.phone}"
+    if payload.email:
+        contact += f", {payload.email}"
+    body = f"Компания: {payload.company}\n{contact}"
+    if payload.comment:
+        body += f"\nКомментарий: {payload.comment}"
+
+    notif = await create_notification(
+        db,
+        type="LEAD_CREATED",
+        title="Новая заявка с лендинга",
+        body=body,
+        user_id=None,  # None → всем менеджерам (§20)
+        channel=["inapp", "telegram"],
+        payload={
+            "company": payload.company,
+            "contact_name": payload.contact_name,
+            "phone": payload.phone,
+            "email": payload.email,
+            "comment": payload.comment,
+        },
+    )
+    # SSE-событие менеджерам: мгновенная доставка, fail-open (§16 п.26).
+    publish_notification(notification_payload(notif), user_id=None)
+    await db.commit()
+    return PublicLeadAccepted(ok=True)
+
+
+# Публичный PDF-каталог (лид-магнит лендинга): рендер weasyprint тяжёлый,
+# состав меняется только импортом — кэшируем байты на час в процессе.
+_CATALOG_PDF_TTL = 60 * 60
+_catalog_pdf_cache: dict[str, bytes] = {}
+
+
+@router.get("/catalog.pdf", response_class=Response)
+@limiter.limit("10/minute")
+async def download_catalog_pdf(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """PDF-каталог для гостей: бренды → серии → номенклатура, без цен (§6)."""
+    import datetime as dt
+
+    cache_key = "public_catalog_pdf"
+    cached = _catalog_pdf_cache.get(cache_key)
+    if cached is None:
+        service = PublicCatalogService(db)
+        brands_out = []
+        for brand in await service.list_brands():
+            detail = await service.get_brand(brand.slug)
+            series_blocks = []
+            for series in detail.series:
+                products, _total = await service.series_products(
+                    series.slug, page=1, per_page=200
+                )
+                series_blocks.append(
+                    {
+                        "name": series.name,
+                        "products": [
+                            {"name": p.name, "sku": p.sku} for p in products
+                        ],
+                    }
+                )
+            brands_out.append({"name": brand.name, "series": series_blocks})
+
+        from app.core.templates import render_pdf
+
+        html = render_pdf(
+            "public_catalog.j2",
+            brands=brands_out,
+            date=dt.datetime.now(dt.UTC).strftime("%d.%m.%Y"),
+        )
+        from weasyprint import HTML  # лениво, как в export_catalog (§16 п.25)
+
+        cached = HTML(string=html).write_pdf()
+        _catalog_pdf_cache[cache_key] = cached
+
+    return Response(
+        content=cached,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="katalog-svet-v-dome.pdf"'
+            ),
+            "Cache-Control": "public, max-age=300",
+        },
     )

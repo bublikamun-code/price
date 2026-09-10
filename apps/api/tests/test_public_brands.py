@@ -8,8 +8,11 @@ from datetime import datetime, timezone
 
 import pytest
 
+from sqlalchemy import select
+
 from app.models.catalog import Product
 from app.models.enums import StockStatus
+from app.models.system import Notification
 from app.services.storage import StorageError
 from tests.conftest import create_brand, create_product, create_series
 
@@ -46,7 +49,8 @@ async def test_list_brands_no_auth(api_client, session_factory):
     body = r.json()
     assert [b["slug"] for b in body["data"]] == ["acme", "beta", "gamma"]
     item = body["data"][0]
-    assert set(item) == {"id", "name", "slug"}
+    # Витрина лендинга (§16 п.29): фото + счётчики серий/товаров
+    assert set(item) == {"id", "name", "slug", "photo", "series_count", "products_count"}
     assert item["name"] == "acme"
 
 
@@ -111,7 +115,8 @@ async def test_series_products_visibility_and_pagination(api_client, session_fac
     # Поля без цен/остатков (публичная витрина)
     r = await api_client.get(url, params={"per_page": 200})
     assert r.status_code == 200
-    assert all(set(p) == {"sku", "name"} for p in r.json()["data"])
+    # photo — личное фото товара (ключ photos-product/…), добавлено 2026-09-08
+    assert all(set(p) == {"sku", "name", "photo"} for p in r.json()["data"])
     assert len(r.json()["data"]) == 3
 
     # Кап per_page как в каталоге
@@ -162,3 +167,60 @@ async def test_photo_missing_object_404(api_client, monkeypatch):
         "/api/v1/public/photo", params={"key": "photos-series/ghost.webp"}
     )
     assert r.status_code == 404, r.text
+
+
+async def test_lead_creates_manager_notification(api_client, session_factory):
+    """Лид-форма лендинга: 201 + уведомление всем менеджерам (user_id=None)."""
+    r = await api_client.post(
+        "/api/v1/public/lead",
+        json={
+            "company": "ООО «Тест-строй»",
+            "contact_name": "Иван Тестов",
+            "phone": "+375291112233",
+            "email": "test@example.com",
+            "comment": "Нужны цены на OptiBox Pro",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json() == {"ok": True}
+
+    async with session_factory() as db:
+        notif = (
+            await db.execute(
+                select(Notification).where(Notification.type == "LEAD_CREATED")
+            )
+        ).scalars().first()
+    assert notif is not None
+    assert notif.user_id is None  # рассылка всем менеджерам (§20)
+    assert "ООО «Тест-строй»" in (notif.body or "")
+    assert "Иван Тестов" in (notif.body or "")
+
+
+async def test_lead_honeypot_silent_ok(api_client, session_factory):
+    """Заполненный honeypot — ответ успешный, но лид не создаётся."""
+    r = await api_client.post(
+        "/api/v1/public/lead",
+        json={
+            "company": "Бот Инк",
+            "contact_name": "Bot Botov",
+            "phone": "+375290000000",
+            "website": "http://spam.example",
+        },
+    )
+    assert r.status_code == 201, r.text
+
+    async with session_factory() as db:
+        notif = (
+            await db.execute(
+                select(Notification).where(Notification.type == "LEAD_CREATED")
+            )
+        ).scalars().first()
+    assert notif is None
+
+
+async def test_lead_validation_422(api_client):
+    r = await api_client.post(
+        "/api/v1/public/lead",
+        json={"company": "ООО", "contact_name": "", "phone": "123"},
+    )
+    assert r.status_code == 422, r.text
