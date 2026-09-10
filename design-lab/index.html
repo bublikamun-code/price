@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Редизайн портала — сравнение вариантов</title>
+<style>
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; margin: 0; padding: 24px; background: #101014; color: #eee; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #999; margin: 0 0 16px; font-size: 14px; }
+  nav { margin: 0 0 28px; display: flex; gap: 10px; flex-wrap: wrap; }
+  nav a { color: #7ab0ff; text-decoration: none; font-size: 14px; padding: 6px 12px; border: 1px solid #2a2a30; border-radius: 999px; }
+  nav a:hover { background: #1a1a20; }
+  h2 { font-size: 18px; margin: 40px 0 6px; color: #fff; scroll-margin-top: 16px; }
+  .theme-tag { font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: #888; margin: 18px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .block { background: #17171c; border: 1px solid #2a2a30; border-radius: 10px; padding: 12px; }
+  .block h3 { margin: 2px 4px 2px; font-size: 15px; color: #fff; }
+  .block p { margin: 0 4px 10px; font-size: 13px; color: #999; }
+  img { width: 100%; border-radius: 8px; border: 1px solid #2a2a30; display: block; }
+  .cap { font-size: 12px; color: #888; margin: 4px 2px 10px; }
+  .cap:last-child { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<h1>Редизайн портала — сравнение вариантов</h1>
+<p class="sub">TypeUI-скиллы (clean/corporate, enterprise, mono) → токены дизайн-системы (main.css + tailwind.config). В каждом блоке — тёмная и светлая темы друг под другом. Сайт-оригинал не тронут: это локальные превью реального портала.</p>
+<nav>
+  <a href="#catalog">Каталог</a>
+  <a href="#home">Главная (кабинет)</a>
+  <a href="#roles">Роли: менеджер и админ</a>
+</nav>
+
+<h2 id="catalog">Каталог</h2>
+<div class="grid">
+  <div class="block"><h3>0. Baseline — Liquid Glass (текущий)</h3><p>Монохром, стекло, радиусы 24/18px, ambient-пятна</p>
+    <img src="baseline-catalog-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="baseline-catalog-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+  <div class="block"><h3>A. Corporate Blue — clean/corporate</h3><p>Синий акцент #2563EB, slate-палитра, плоско, радиусы 12/10px</p>
+    <img src="a-corporate-catalog-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="a-corporate-catalog-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+  <div class="block"><h3>B. Enterprise Dark — enterprise</h3><p>Zinc-тёмный + синий, стекло сохранено, радиусы 16/12px</p>
+    <img src="b-enterprise-catalog-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="b-enterprise-catalog-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+  <div class="block"><h3>C. Mono Flat — mono/shadcn</h3><p>Монохром без стекла, hairline-борда, радиусы 8/6px</p>
+    <img src="c-monoflat-catalog-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="c-monoflat-catalog-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+</div>
+
+<h2 id="home">Главная (кабинет клиента)</h2>
+<div class="grid">
+  <div class="block"><h3>0. Baseline</h3>
+    <img src="baseline-home-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="baseline-home-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+  <div class="block"><h3>A. Corporate Blue</h3>
+    <img src="a-corporate-home-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="a-corporate-home-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+  <div class="block"><h3>B. Enterprise Dark</h3>
+    <img src="b-enterprise-home-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="b-enterprise-home-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+  <div class="block"><h3>C. Mono Flat</h3>
+    <img src="c-monoflat-home-dark.png" loading="lazy" alt=""><div class="cap">тёмная</div>
+    <img src="c-monoflat-home-light.png" loading="lazy" alt=""><div class="cap">светлая</div>
+  </div>
+</div>
+
+<h2 id="roles">Роли: менеджер и админ (один дизайн для всех)</h2>
+<p class="sub">Вариант A применён только на уровне токенов — менеджер и админ получили тот же дизайн, что и клиент, без отдельных правок.</p>
+<div class="grid">
+  <div class="block"><h3>Менеджер / дашборд — Baseline</h3><img src="baseline-manager-dark.png" loading="lazy" alt=""></div>
+  <div class="block"><h3>Менеджер / дашборд — вариант A</h3><img src="a-corporate-manager-dark.png" loading="lazy" alt=""></div>
+  <div class="block"><h3>Админ / администрирование — Baseline</h3><img src="baseline-admin-dark.png" loading="lazy" alt=""></div>
+  <div class="block"><h3>Админ / администрирование — вариант A</h3><img src="a-corporate-admin-dark.png" loading="lazy" alt=""></div>
+</div>
+</body>
+</html>
