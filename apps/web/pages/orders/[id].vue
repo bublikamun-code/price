@@ -15,6 +15,16 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
 }
 
+// --- Status timeline ---
+const STATUS_ORDER = ['NEW', 'IN_PROGRESS', 'SHIPPED', 'COMPLETED'] as const
+const STATUS_LABELS: Record<string, string> = {
+  NEW: 'Новая',
+  IN_PROGRESS: 'В работе',
+  SHIPPED: 'Отгружена',
+  COMPLETED: 'Завершена',
+  CANCELLED: 'Отменена',
+}
+
 const loading = ref(true)
 const error = ref('')
 const notFound = ref(false)
@@ -90,6 +100,31 @@ const canCancel = computed(
   () => order.value && (order.value.status === 'NEW' || order.value.status === 'IN_PROGRESS')
 )
 
+const statusSteps = computed(() => {
+  if (!order.value) return []
+  const currentStatus = order.value.status
+  const isCancelled = currentStatus === 'CANCELLED'
+
+  // Нормальный поток: NEW → IN_PROGRESS → SHIPPED → COMPLETED
+  const currentIdx = STATUS_ORDER.indexOf(currentStatus as typeof STATUS_ORDER[number])
+  const normalSteps = STATUS_ORDER.map((key, idx) => ({
+    key,
+    label: STATUS_LABELS[key],
+    done: currentIdx >= 0 && idx < currentIdx,
+    active: key === currentStatus,
+  }))
+
+  if (isCancelled) {
+    // При отмене: показываем все шаги как неактивные (NEW — пройден) + CANCELLED как текущий
+    return [
+      ...normalSteps.map(s => ({ ...s, active: false, done: s.key === 'NEW' })),
+      { key: 'CANCELLED', label: STATUS_LABELS.CANCELLED, done: false, active: true },
+    ]
+  }
+
+  return normalSteps
+})
+
 // PDF-экспорт заявки (§16 п.25): job-паттерн, поллинг в composables/usePdfExport.ts.
 const { activeId: pdfActiveId, error: pdfError, exportOrderPdf } = usePdfExport()
 const pdfBusy = computed(() => pdfActiveId.value !== null)
@@ -162,6 +197,25 @@ onMounted(load)
             <Icon name="heroicons:x-circle" class="w-4 h-4" /> Отменить
           </button>
         </div>
+      </div>
+
+      <!-- Status timeline -->
+      <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+        <template v-for="(step, i) in statusSteps" :key="step.key">
+          <div class="flex items-center gap-2 shrink-0">
+            <div
+              class="w-8 h-8 rounded-pill flex items-center justify-center text-xs font-bold"
+              :class="step.active ? 'bg-primary text-white' : step.done ? 'bg-success text-white' : 'bg-canvas text-ink-faint'"
+            >
+              <Icon v-if="step.done" name="heroicons:check" class="w-4 h-4" />
+              <span v-else>{{ i + 1 }}</span>
+            </div>
+            <span class="text-xs whitespace-nowrap" :class="step.active ? 'font-semibold text-ink' : 'text-ink-muted'">
+              {{ step.label }}
+            </span>
+          </div>
+          <div v-if="i < statusSteps.length - 1" class="w-8 h-px bg-border shrink-0" />
+        </template>
       </div>
 
       <div v-if="error" class="badge-danger w-full justify-center py-2 mb-4">{{ error }}</div>

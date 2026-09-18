@@ -234,7 +234,7 @@ onMounted(load)
               <span class="text-xs sm:text-sm text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
               <span :class="`badge-${k.tone} shrink-0`"><Icon :name="k.icon" class="w-3.5 h-3.5" /></span>
             </div>
-            <p class="text-xl sm:text-3xl font-bold break-words mt-auto" :title="k.value">{{ k.value }}</p>
+            <p class="text-xl sm:text-3xl font-bold break-words mt-auto text-accent" :title="k.value">{{ k.value }}</p>
           </div>
         </template>
       </div>

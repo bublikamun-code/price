@@ -20,7 +20,9 @@ export default <Partial<Config>>{
         canvas: 'rgb(var(--color-canvas) / <alpha-value>)',
         surface: 'rgb(var(--color-surface) / <alpha-value>)',
         'surface-2': 'rgb(var(--color-surface-2) / <alpha-value>)',
+        'surface-3': 'rgb(var(--color-surface-3) / <alpha-value>)',
         border: 'rgb(var(--color-border) / <alpha-value>)',
+        'border-strong': 'rgb(var(--color-border-strong) / <alpha-value>)',
         // Акценты
         primary: {
           DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
@@ -52,6 +54,11 @@ export default <Partial<Config>>{
           text: 'rgb(var(--color-danger-text) / <alpha-value>)',
         },
         'info-text': 'rgb(var(--color-info-text) / <alpha-value>)',
+        accent: {
+          DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
+          soft: 'rgb(var(--color-accent-soft) / <alpha-value>)',
+          hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
+        },
         // Текст
         ink: {
           DEFAULT: 'rgb(var(--color-ink) / <alpha-value>)',
@@ -63,8 +70,8 @@ export default <Partial<Config>>{
         'glass-border': 'rgb(var(--glass-border-rgb) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       fontSize: {
         xs: ['0.75rem', { lineHeight: '1.5' }],
@@ -76,14 +83,14 @@ export default <Partial<Config>>{
         '3xl': ['2rem', { lineHeight: '1.2' }],
       },
       borderRadius: {
-        card: '24px',
+        card: '20px',
         pill: '999px',
       },
       boxShadow: {
-        // Liquid Glass: внутренние блики (свет сверху, тень снизу, световое
-        // кольцо) + прежние наружные тени. Варианты бликов — токены тем.
-        card: 'inset 0 1px 0 0 rgb(255 255 255 / var(--glass-spec-top)), inset 0 0 0 1px rgb(255 255 255 / var(--glass-spec-ring)), inset 0 -1px 0 0 rgb(0 0 0 / var(--glass-spec-bot)), 0 0 0 1px hsla(0,0%,9%,.05), 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)',
-        'card-hover': 'inset 0 1px 0 0 rgb(255 255 255 / var(--glass-spec-top)), inset 0 0 0 1px rgb(255 255 255 / var(--glass-spec-ring)), inset 0 -1px 0 0 rgb(0 0 0 / var(--glass-spec-bot)), 0 0 0 1px hsla(0,0%,9%,.08), 0 2px 6px rgba(0,0,0,.12), 0 2px 4px -2px rgba(0,0,0,.1)',
+        // Тени прототипа CMR (sh-1/sh-2) — значения в main.css
+        // (--shadow-card / --shadow-card-hover), темы различаются.
+        card: 'var(--shadow-card)',
+        'card-hover': 'var(--shadow-card-hover)',
       },
       transitionTimingFunction: {
         soft: 'cubic-bezier(0.4, 0, 0.2, 1)',

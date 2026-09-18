@@ -23,6 +23,12 @@ const deliveryPoint = computed(() => {
   return PICKUP_POINTS.find((p) => p.id === pickupPointId.value)?.label ?? null
 })
 
+// Поля доставки (показываются при deliveryMethod === 'delivery').
+const deliveryAddress = ref('')
+const deliveryContact = ref('')
+const deliveryPhone = ref('')
+const deliveryComment = ref('')
+
 const notes = ref('')
 const submitting = ref(false)
 const error = ref('')
@@ -31,15 +37,40 @@ const currency = computed(() => cartData.value?.items[0]?.currency || 'BYN')
 
 async function submit() {
   if (!cartData.value?.items.length || submitting.value) return
+
+  // Валидация адреса доставки.
+  if (deliveryMethod.value === 'delivery' && !deliveryAddress.value.trim()) {
+    error.value = 'Укажите адрес доставки'
+    return
+  }
+
   submitting.value = true
   error.value = ''
+
+  // Собираем информацию о доставке в notes для бэкенда.
+  const deliveryNotes: string[] = []
+  if (deliveryMethod.value === 'delivery') {
+    deliveryNotes.push(`Адрес доставки: ${deliveryAddress.value.trim()}`)
+    if (deliveryContact.value.trim()) deliveryNotes.push(`Контактное лицо: ${deliveryContact.value.trim()}`)
+    if (deliveryPhone.value.trim()) deliveryNotes.push(`Телефон для доставки: ${deliveryPhone.value.trim()}`)
+    if (deliveryComment.value.trim()) deliveryNotes.push(`Комментарий к доставке: ${deliveryComment.value.trim()}`)
+  }
+  const combinedNotes = [
+    ...deliveryNotes,
+    ...(notes.value.trim() ? [notes.value.trim()] : []),
+  ].join('\n') || null
+
   const payload: OrderCreate = {
     items: cartData.value.items.map((i) => ({ sku: i.sku, quantity: i.quantity, note: i.note })),
-    notes: notes.value || null,
+    notes: combinedNotes,
     price_calc_mode: 'fixed',
     // Поля получения: бэкенд примет их параллельно с этой правкой.
     delivery_method: deliveryMethod.value,
     delivery_point: deliveryPoint.value,
+    delivery_address: deliveryMethod.value === 'delivery' ? deliveryAddress.value.trim() : null,
+    delivery_contact: deliveryMethod.value === 'delivery' ? deliveryContact.value.trim() || null : null,
+    delivery_phone: deliveryMethod.value === 'delivery' ? deliveryPhone.value.trim() || null : null,
+    delivery_comment: deliveryMethod.value === 'delivery' ? deliveryComment.value.trim() || null : null,
   } as OrderCreate
   try {
     const order = await request<OrderRead>('/api/v1/orders', { method: 'POST', body: payload })
@@ -148,6 +179,52 @@ onMounted(refresh)
               <span class="block text-xs text-ink-muted mt-0.5">Условия и стоимость согласует менеджер.</span>
             </span>
           </label>
+        </div>
+
+        <!-- Поля доставки (показываются при выборе «Доставка») -->
+        <div v-if="deliveryMethod === 'delivery'" class="mt-4 space-y-3">
+          <div>
+            <label class="label" for="delivery-address">Адрес доставки <span class="text-danger">*</span></label>
+            <input
+              id="delivery-address"
+              v-model="deliveryAddress"
+              type="text"
+              class="input"
+              placeholder="г. Минск, ул. Примерная, д. 1, офис 1"
+              required
+            >
+          </div>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label class="label" for="delivery-contact">Контактное лицо</label>
+              <input
+                id="delivery-contact"
+                v-model="deliveryContact"
+                type="text"
+                class="input"
+                placeholder="Иванов Иван"
+              >
+            </div>
+            <div>
+              <label class="label" for="delivery-phone">Телефон для доставки</label>
+              <input
+                id="delivery-phone"
+                v-model="deliveryPhone"
+                type="tel"
+                class="input"
+                placeholder="+375 29 000-00-00"
+              >
+            </div>
+          </div>
+          <div>
+            <label class="label" for="delivery-comment">Комментарий к доставке</label>
+            <textarea
+              id="delivery-comment"
+              v-model="deliveryComment"
+              class="input min-h-20 resize-y"
+              placeholder="Время приёмки, пропуск, и т.д."
+            />
+          </div>
         </div>
       </fieldset>
     </div>

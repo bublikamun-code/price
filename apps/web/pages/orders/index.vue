@@ -95,6 +95,65 @@ function goPage(p: number) {
 
 // formatMoney/formatDate/pluralize/formatOrderNumber — автоимпорт из utils/format.ts
 
+// --- Поиск (debounce 300ms, клиентская фильтрация) ---
+const searchQuery = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+const debouncedSearch = ref('')
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    debouncedSearch.value = searchQuery.value
+  }, 300)
+}
+
+// --- Фильтр по дате (клиентский) ---
+const dateFrom = ref('')
+const dateTo = ref('')
+
+function applyFilters() {
+  // Триггер пересчёта filteredOrders (computed уже реактивный,
+  // но функция нужна для явного @change на input[type=date]).
+}
+
+const filteredOrders = computed(() => {
+  let result = orders.value
+
+  // Поиск по номеру
+  const q = debouncedSearch.value.trim().toLowerCase()
+  if (q) {
+    result = result.filter(o => {
+      const num = formatOrderNumber(o.seq, o.id).toLowerCase()
+      return num.includes(q) || o.id.toLowerCase().includes(q)
+    })
+  }
+
+  // Фильтр по дате
+  if (dateFrom.value) {
+    const from = new Date(dateFrom.value).getTime()
+    result = result.filter(o => new Date(o.created_at).getTime() >= from)
+  }
+  if (dateTo.value) {
+    const to = new Date(dateTo.value).getTime() + 86400000 // включительно до конца дня
+    result = result.filter(o => new Date(o.created_at).getTime() < to)
+  }
+
+  return result
+})
+
+// --- Windowed pagination (первая, последняя, ±2 соседа, …) ---
+function paginationWindow(total: number, current: number, window = 2): (number | '...')[] {
+  const pages: (number | '...')[] = []
+  const start = Math.max(2, current - window)
+  const end = Math.min(total - 1, current + window)
+  pages.push(1)
+  if (start > 2) pages.push('...')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < total - 1) pages.push('...')
+  if (total > 1) pages.push(total)
+  return pages
+}
+
 onMounted(load)
 </script>
 
@@ -109,7 +168,7 @@ onMounted(load)
     </div>
 
     <!-- Фильтр статусов -->
-    <div class="flex flex-wrap gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-4">
       <button
         v-for="tab in STATUS_TABS"
         :key="tab.value || 'all'"
@@ -117,6 +176,22 @@ onMounted(load)
         :class="statusFilter === tab.value ? 'bg-primary text-white' : 'bg-surface border border-border text-ink-muted hover:border-primary/60'"
         @click="applyStatus(tab.value)"
       >{{ tab.label }}</button>
+    </div>
+
+    <!-- Поиск по номеру + фильтр по дате -->
+    <div class="flex flex-wrap items-center gap-3 mb-6">
+      <input
+        v-model="searchQuery"
+        type="text"
+        class="input max-w-xs"
+        placeholder="Поиск по номеру заявки…"
+        @input="onSearchInput"
+      >
+      <div class="flex items-center gap-2">
+        <input v-model="dateFrom" type="date" class="input max-w-[160px]" @change="applyFilters">
+        <span class="text-ink-muted text-sm">—</span>
+        <input v-model="dateTo" type="date" class="input max-w-[160px]" @change="applyFilters">
+      </div>
     </div>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
@@ -137,6 +212,11 @@ onMounted(load)
       <NuxtLink to="/catalog" class="btn-primary">Перейти в каталог</NuxtLink>
     </div>
 
+    <div v-else-if="!filteredOrders.length" class="card p-8 text-center text-ink-muted">
+      <Icon name="heroicons:magnifying-glass" class="w-10 h-10 mx-auto mb-2 text-ink-faint" />
+      <p>Ничего не найдено по заданным фильтрам</p>
+    </div>
+
     <template v-else>
       <!-- Таблица: планшет/десктоп -->
       <div class="card overflow-hidden hidden md:block">
@@ -151,7 +231,7 @@ onMounted(load)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="o in orders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+              <tr v-for="o in filteredOrders" :key="o.id" class="border-t border-border hover:bg-canvas/60">
                 <td class="px-4 py-3.5 whitespace-nowrap">
                   <div class="font-semibold text-sm" :title="o.id">{{ formatOrderNumber(o.seq, o.id) }} <span class="text-ink-faint">·</span> <span class="text-ink-muted font-normal">{{ formatDate(o.created_at) }}</span></div>
                   <div v-if="deliveryLabel(o.delivery_method)" class="text-xs text-ink-faint mt-0.5">
@@ -191,7 +271,7 @@ onMounted(load)
 
       <!-- Карточки: мобильные (таблица на 390px не влезает) -->
       <div class="md:hidden flex flex-col gap-3">
-        <article v-for="o in orders" :key="o.id" class="card p-4">
+        <article v-for="o in filteredOrders" :key="o.id" class="card p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <p class="font-semibold text-sm" :title="o.id">{{ formatOrderNumber(o.seq, o.id) }}</p>
@@ -242,13 +322,15 @@ onMounted(load)
       <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
-      <button
-        v-for="pgn in totalPages"
-        :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
-        :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-        @click="goPage(pgn)"
-      >{{ pgn }}</button>
+      <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
+        <span v-if="pgn === '...'" class="w-10 h-10 flex items-center justify-center text-ink-faint text-sm">…</span>
+        <button
+          v-else
+          class="w-10 h-10 rounded-pill font-medium text-sm"
+          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          @click="goPage(pgn)"
+        >{{ pgn }}</button>
+      </template>
       <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>

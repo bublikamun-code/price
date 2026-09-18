@@ -68,10 +68,10 @@ const kpiTiles = computed(() => {
   if (!data.value) return []
   const k = data.value.kpi
   return [
-    { label: 'Заявки сегодня', value: String(k.orders_today), icon: 'heroicons:clipboard-document-list', tone: 'info' },
-    { label: 'Заявки за 7 дней', value: String(k.orders_7d), icon: 'heroicons:inbox-stack', tone: 'info' },
-    { label: 'Выручка за месяц', value: fmtMoney(k.revenue_month), icon: 'heroicons:banknotes', tone: 'success' },
-    { label: 'Новых клиентов за неделю', value: String(k.new_clients_7d), icon: 'heroicons:user-plus', tone: 'warning' },
+    { label: 'Заявки сегодня', value: String(k.orders_today), icon: 'heroicons:clipboard-document-list', tone: 'info', to: '/manager/orders' },
+    { label: 'Заявки за 7 дней', value: String(k.orders_7d), icon: 'heroicons:inbox-stack', tone: 'info', to: '/manager/orders' },
+    { label: 'Выручка за месяц', value: fmtMoney(k.revenue_month), icon: 'heroicons:banknotes', tone: 'success', to: '/manager/orders' },
+    { label: 'Новых клиентов за неделю', value: String(k.new_clients_7d), icon: 'heroicons:user-plus', tone: 'warning', to: '/manager/users' },
   ]
 })
 
@@ -82,7 +82,7 @@ const chart = computed(() => {
   const W = 720
   const H = 160 // высота зоны столбцов
   const GAP = 4
-  const PAD_LEFT = 12 // левый отступ области построения, чтобы первая подпись оси X не резалась
+  const PAD_LEFT = 38 // левый отступ: место для подписей оси Y + отступ первой точки X
   const max = Math.max(...items.map((i) => i.count), 1) // all-zero → пустая шкала
   const barW = (W - PAD_LEFT - GAP * (items.length - 1)) / items.length
   const bars = items.map((it, idx) => {
@@ -100,7 +100,7 @@ const chart = computed(() => {
   const ticks = items
     .map((it, idx) => (idx % 5 === 0 ? { x: +(PAD_LEFT + idx * (barW + GAP) + barW / 2).toFixed(2), text: `${it.date.slice(8, 10)}.${it.date.slice(5, 7)}` } : null))
     .filter((t): t is { x: number; text: string } => t !== null)
-  return { W, H, padLeft: PAD_LEFT, bars, ticks, total: items.reduce((s, i) => s + i.count, 0) }
+  return { W, H, padLeft: PAD_LEFT, bars, ticks, total: items.reduce((s, i) => s + i.count, 0), maxCount: max }
 })
 
 function plural(n: number): string {
@@ -154,19 +154,19 @@ onMounted(load)
           </div>
         </template>
         <template v-else-if="data">
-          <div v-for="k in kpiTiles" :key="k.label" class="card p-5">
+          <NuxtLink v-for="k in kpiTiles" :key="k.label" :to="k.to" class="card p-5 block cursor-pointer hover:border-primary transition-colors">
             <div class="flex items-center justify-between gap-2 mb-3">
               <span class="text-xs text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
               <span :class="`badge-${k.tone} shrink-0`"><Icon :name="k.icon" class="w-3.5 h-3.5" /></span>
             </div>
-            <p class="text-2xl font-bold whitespace-nowrap" :title="k.value">{{ k.value }}</p>
-          </div>
+            <p class="text-2xl font-bold whitespace-nowrap text-accent" :title="k.value">{{ k.value }}</p>
+          </NuxtLink>
           <NuxtLink to="/manager/import" class="card p-5 block hover:border-primary transition-colors">
             <div class="flex items-center justify-between gap-2 mb-3">
               <span class="text-xs text-ink-muted truncate">Активных импортов</span>
               <span class="badge-warning shrink-0"><Icon name="heroicons:arrow-up-tray" class="w-3.5 h-3.5" /></span>
             </div>
-            <p class="text-2xl font-bold">{{ data.kpi.active_imports }}</p>
+            <p class="text-2xl font-bold text-accent">{{ data.kpi.active_imports }}</p>
           </NuxtLink>
         </template>
       </div>
@@ -177,6 +177,10 @@ onMounted(load)
         <div v-if="loading" class="skeleton h-44 w-full" />
         <div v-else-if="chart">
           <svg :viewBox="`0 0 ${chart.W} 184`" class="w-full" role="img" aria-label="Заявки за 30 дней">
+            <!-- Подписи оси Y -->
+            <text x="0" y="5" class="fill-ink-faint" font-size="9" text-anchor="start">{{ chart.maxCount }}</text>
+            <text x="0" :y="chart.H / 2 + 3" class="fill-ink-faint" font-size="9" text-anchor="start">{{ Math.round(chart.maxCount / 2) }}</text>
+            <text x="0" :y="chart.H + 3" class="fill-ink-faint" font-size="9" text-anchor="start">0</text>
             <!-- Базовая линия -->
             <line :x1="chart.padLeft" :y1="chart.H" :x2="chart.W" :y2="chart.H" class="stroke-border" stroke-width="1" />
             <g class="fill-primary fill-opacity-80">
@@ -284,7 +288,7 @@ onMounted(load)
                   <NuxtLink
                     :to="`/manager/orders/${o.id}`"
                     class="font-medium text-primary hover:underline whitespace-nowrap"
-                  >Заявка {{ o.id.slice(0, 8) }}</NuxtLink>
+                  >{{ formatOrderNumber(o.seq, o.id) }}</NuxtLink>
                 </td>
                 <td class="px-4 py-2.5 text-ink-muted whitespace-nowrap">{{ fmtDateTime(o.created_at) }}</td>
                 <td class="px-4 py-2.5 max-w-56 truncate" :title="o.client_name">{{ o.client_name }}</td>

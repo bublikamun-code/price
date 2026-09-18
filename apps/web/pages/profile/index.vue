@@ -3,12 +3,52 @@
 // уведомления, согласие на ПДн. См. SITEMAP.md §6 /profile, канон §8
 // (display_currency — выбор клиента, PATCH /auth/me).
 import type { TelegramLinkCode } from '~/types/api'
+import { getErrorMessage } from '~/utils/errors'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Профиль' })
 
 const auth = useAuth()
 const { request } = useApi()
+
+// --- Редактирование телефона и email (self-service) ---
+// TODO: бэкенд PATCH /auth/me пока не принимает phone/email.
+// Когда эндпоинт будет расширен — заменить saveProfile на реальный вызов updateMe.
+const editPhone = ref('')
+const editEmail = ref('')
+const profileSaving = ref(false)
+const profileSuccess = ref(false)
+const profileError = ref('')
+
+const phoneChanged = computed(() => editPhone.value.trim() !== (auth.user?.phone || ''))
+const emailChanged = computed(() => editEmail.value.trim() !== (auth.user?.email || ''))
+
+// Инициализация значений из auth.user.
+onMounted(() => {
+  editPhone.value = auth.user?.phone || ''
+  editEmail.value = auth.user?.email || ''
+})
+
+async function saveProfile() {
+  if (profileSaving.value) return
+  profileSaving.value = true
+  profileSuccess.value = false
+  profileError.value = ''
+  try {
+    // TODO: когда PATCH /auth/me начнёт принимать phone/email, заменить на:
+    //   await auth.updateMe({ phone: editPhone.value.trim(), email: editEmail.value.trim() })
+    // Пока бэкенд не поддерживает — показываем информативное сообщение.
+    await new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(
+        'Сохранение телефона и email через портал пока не поддерживается. Обратитесь к менеджеру для изменения контактных данных.',
+      )), 300),
+    )
+  } catch (e) {
+    profileError.value = getErrorMessage(e, 'Не удалось сохранить данные', { withMessage: true })
+  } finally {
+    profileSaving.value = false
+  }
+}
 
 // --- Оформление: тёмная/светлая тема (useTheme — обёртка над @nuxtjs/color-mode) ---
 const { mode: themeMode, toggle: toggleTheme } = useTheme()
@@ -86,13 +126,37 @@ async function generateLinkCode() {
           <span class="text-ink-muted">Компания</span>
           <span class="font-medium">{{ auth.user?.company || '—' }}</span>
         </div>
-        <div class="flex justify-between text-sm py-1.5">
-          <span class="text-ink-muted">Телефон</span>
-          <span class="font-medium">{{ auth.user?.phone || '—' }}</span>
-        </div>
-        <div class="flex justify-between text-sm py-1.5">
-          <span class="text-ink-muted">Email</span>
-          <span class="font-medium">{{ auth.user?.email || '—' }}</span>
+        <div class="mt-4 space-y-3">
+          <div>
+            <label class="label" for="profile-phone">Телефон</label>
+            <input
+              id="profile-phone"
+              v-model="editPhone"
+              type="tel"
+              class="input"
+              :placeholder="auth.user?.phone || '+375 29 000-00-00'"
+            >
+          </div>
+          <div>
+            <label class="label" for="profile-email">Email</label>
+            <input
+              id="profile-email"
+              v-model="editEmail"
+              type="email"
+              class="input"
+              :placeholder="auth.user?.email || 'you@company.by'"
+            >
+          </div>
+          <button
+            type="button"
+            class="btn-accent px-5 py-2 text-sm"
+            :disabled="profileSaving || (!phoneChanged && !emailChanged)"
+            @click="saveProfile"
+          >
+            {{ profileSaving ? 'Сохранение…' : 'Сохранить изменения' }}
+          </button>
+          <div v-if="profileSuccess" class="badge-success">Данные обновлены</div>
+          <div v-if="profileError" class="badge-danger">{{ profileError }}</div>
         </div>
         <div class="flex justify-between items-center text-sm py-1.5">
           <span class="text-ink-muted">Валюта отображения</span>
@@ -116,7 +180,7 @@ async function generateLinkCode() {
         <p v-if="currencySaved" class="text-xs text-success mt-2">Валюта сохранена</p>
         <p v-else-if="currencyError" class="text-xs text-danger mt-2">{{ currencyError }}</p>
         <p class="text-xs text-ink-faint mt-3">
-          Для изменения данных обратитесь к менеджеру. Курсы конвертации — по НБ РБ или фикс. курсу договора.
+          Телефон и email можно изменить самостоятельно. Для изменения ФИО и компании обратитесь к менеджеру. Курсы конвертации — по НБ РБ или фикс. курсу договора.
         </p>
       </div>
 
@@ -125,7 +189,7 @@ async function generateLinkCode() {
         <h3 class="font-semibold mb-3">Мои условия</h3>
         <div v-if="termsError" class="text-sm text-ink-muted">Не удалось загрузить условия</div>
         <template v-else>
-          <div class="flex justify-between text-sm py-1.5" v-for="d in myTerms?.discounts ?? []" :key="d.brand_id">
+          <div v-for="d in myTerms?.discounts ?? []" :key="d.brand_id" class="flex justify-between text-sm py-1.5">
             <span class="text-ink-muted">{{ d.brand_name }}</span>
             <span class="font-medium">{{ d.discount_percent > 0 ? `−${d.discount_percent}%` : 'базовая цена' }}</span>
           </div>

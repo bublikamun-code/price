@@ -131,9 +131,8 @@ onMounted(refresh)
                 <button class="btn-outline px-2 sm:px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, 1)">
                   <Icon name="heroicons:plus" class="w-3.5 h-3.5" />
                 </button>
+                <span class="text-xs text-ink-muted whitespace-nowrap ml-1">{{ formatMoney(item.unit_price, item.currency) }}/шт</span>
               </div>
-              <!-- Только итог по позиции (цену за шт убрали — на узких
-                   экранах она эллипсилась и теряла смысл) -->
               <div class="flex items-baseline justify-end shrink-0">
                 <span class="font-bold whitespace-nowrap">{{ formatMoney(item.line_total) }}<span class="hidden sm:inline"> {{ item.currency }}</span></span>
               </div>

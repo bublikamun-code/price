@@ -16,6 +16,7 @@ definePageMeta({
 useHead({ title: 'Уведомления' })
 
 const { request } = useApi()
+const auth = useAuth()
 const { unreadCount, refresh: refreshBadge } = useNotifications()
 const PER_PAGE = 20
 
@@ -34,6 +35,27 @@ const TYPE_META: Record<string, { label: string; icon: string; cls: string }> = 
 
 function typeMeta(t: string) {
   return TYPE_META[t] ?? { label: t, icon: 'heroicons:bell', cls: 'bg-primary-soft text-primary' }
+}
+
+/** Маппинг типа уведомления → ссылка на связанный объект. */
+function getNotificationLink(n: NotificationItem): string | null {
+  const prefix = auth.isManager ? '/manager' : ''
+  switch (n.type) {
+    case 'NEW_ORDER':
+    case 'ORDER_STATUS_CHANGED':
+      return n.payload?.order_id ? `${prefix}/orders/${n.payload.order_id}` : `${prefix}/orders`
+    case 'PRICE_CHANGED':
+      return n.payload?.sku ? `/catalog/${n.payload.sku}` : '/catalog'
+    case 'PRICE_CHANGED_DIGEST':
+    case 'STOCK_CHANGED':
+      return '/catalog'
+    case 'IMPORT_FAILED':
+      return `${prefix}/files`
+    case 'LEAD_CREATED':
+      return `${prefix}/orders`
+    default:
+      return null
+  }
 }
 
 const TYPE_FILTERS: { value: string; label: string }[] = [
@@ -182,6 +204,15 @@ onMounted(load)
           </div>
           <p v-if="n.body" class="text-sm text-ink-muted mt-1">{{ n.body }}</p>
           <p class="text-xs text-ink-faint mt-1.5">{{ formatDateTime(n.created_at) }}</p>
+          <NuxtLink
+            v-if="getNotificationLink(n)"
+            :to="getNotificationLink(n) ?? undefined"
+            class="btn-ghost text-xs py-1 px-2 mt-2 inline-flex items-center gap-1"
+            @click.stop
+          >
+            Открыть
+            <Icon name="heroicons:arrow-right" class="w-3 h-3" />
+          </NuxtLink>
         </div>
         <span v-if="!n.is_read" class="w-2.5 h-2.5 shrink-0 mt-2 rounded-pill bg-primary" :class="markingId === n.id ? 'animate-pulse' : ''"/>
       </div>

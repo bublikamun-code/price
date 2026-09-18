@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,98 +6,126 @@
 
 /* ============================================================
    Дизайн-система. Токены — RGB-триплеты для rgb()/alpha.
-   Палитра светлой и тёмной темы — из прод-билда нового дизайна
-   (восстановлено из бэкапа чанков; не менять значения без
-   согласования — это зафиксированный дизайн).
+   Палитра светлой и тёмной темы — из прототипа CMR shell-v2
+   (/Users/yaroslav/cmr-svetvdome/tools/mockups/shell-v2-prototype.html,
+   решение пользователя 2026-09-17 «взять стиль с СМР-прототипа»):
+   тёплый серо-бежевый фон + белые поверхности, индиго-акцент
+   #4f46e5, плоские карточки с тонкой рамкой и мягкими тенями.
+   Не менять значения без согласования — это зафиксированный дизайн.
    ============================================================ */
 
 :root {
-  --color-canvas: 245 245 245;
+  --color-canvas: 234 232 227;
   --color-surface: 255 255 255;
-  --color-surface-2: 250 250 250;
-  --color-border: 229 229 229;
-  --color-ink: 38 38 38;
-  --color-ink-muted: 107 114 128;
-  --color-ink-faint: 156 163 175;
-  --color-primary: 38 38 38;
-  --color-primary-hover: 55 65 81;
-  --color-primary-soft: 245 245 245;
-  --color-secondary: 23 23 23;
-  --color-secondary-soft: 245 245 245;
-  --color-destructive: 231 0 11;
-  --color-destructive-soft: 254 242 242;
-  --color-success: 5 150 105;
-  --color-success-soft: 233 248 241;
-  --color-success-text: 4 110 80;
-  --color-warning: 234 179 8;
-  --color-warning-soft: 254 252 232;
-  --color-warning-text: 161 98 7;
-  --color-danger: 231 0 11;
-  --color-danger-soft: 254 242 242;
-  --color-danger-text: 153 27 27;
-  --color-info-text: 23 23 23;
+  --color-surface-2: 245 244 241;
+  --color-surface-3: 239 237 233;
+  --color-border: 228 226 220;
+  --color-border-strong: 213 210 202;
+  --color-ink: 23 26 23;
+  --color-ink-muted: 124 130 124;
+  --color-ink-faint: 154 160 154;
+  --color-primary: 79 70 229;
+  --color-primary-hover: 67 56 229;
+  --color-primary-soft: 236 234 253;
+  --color-secondary: 23 26 23;
+  --color-secondary-soft: 245 244 241;
+  --color-destructive: 194 71 79;
+  --color-destructive-soft: 251 233 234;
+  --color-success: 62 155 98;
+  --color-success-soft: 230 244 234;
+  --color-success-text: 30 105 64;
+  --color-warning: 180 118 31;
+  --color-warning-soft: 251 240 220;
+  --color-warning-text: 140 89 16;
+  --color-danger: 194 71 79;
+  --color-danger-soft: 251 233 234;
+  --color-danger-text: 152 45 51;
+  --color-info-text: 79 70 229;
 
-  /* Liquid Glass — материал поверхностей (добавлено, палитру не трогаем).
-     --glass-a — статичное стекло (.card), --glass-a-strong — «живое» (.glass,
-     blur компенсирует прозрачность). Блики: сверху светлее, снизу темнее. */
-  --glass-a: 0.86;
-  --glass-a-strong: 0.66;
+  /* Материал поверхностей по прототипу CMR: плоские непрозрачные
+     карточки (стекло выключено — блики обнулены, рамка сплошная).
+     Токены glass-* сохранены как точки управления совместимости. */
+  --glass-a: 1;
+  --glass-a-strong: 0.94;
   --glass: 255 255 255;
-  --glass-border-rgb: 229 229 229;
-  --glass-border-a: 0.9;
-  --glass-spec-top: 0.45;
-  --glass-spec-ring: 0.07;
-  --glass-spec-bot: 0.03;
+  --glass-border-rgb: 228 226 220;
+  --glass-border-a: 1;
+  --glass-spec-top: 0;
+  --glass-spec-ring: 0;
+  --glass-spec-bot: 0;
 
-  /* Ambient-фон: 3 мягких пятна, на них «читается» стекло */
-  --ambient-a: 0.1;
-  --ambient-1: 148 163 184;
-  --ambient-2: 240 209 169;
-  --ambient-3: 137 165 149;
+  /* Акцентный цвет (CTA/лендинг) — индиго прототипа CMR, совпадает
+     с primary: главный CTA, числа метрик, акцентные подчёркивания. */
+  --color-accent: 79 70 229;
+  --color-accent-soft: 236 234 253;
+  --color-accent-hover: 67 56 229;
+
+  /* Ambient-фон: почти выключен — у прототипа фон ровный,
+     остаётся едва заметная глубина в тонах новой палитры */
+  --ambient-a: 0.05;
+  --ambient-1: 79 70 229;
+  --ambient-2: 224 177 105;
+  --ambient-3: 62 155 98;
+
+  /* Тени карточек (sh-1/sh-2 прототипа CMR) */
+  --shadow-card: 0 1px 2px rgb(23 26 23 / 0.05);
+  --shadow-card-hover: 0 2px 6px rgb(23 26 23 / 0.08), 0 10px 28px -16px rgb(23 26 23 / 0.28);
 }
 
 .dark {
-  --color-canvas: 10 10 10;
-  --color-surface: 23 23 23;
-  --color-surface-2: 38 38 38;
-  --color-border: 38 38 38;
-  --color-ink: 250 250 250;
-  --color-ink-muted: 163 163 163;
-  --color-ink-faint: 82 82 82;
-  --color-primary: 250 250 250;
-  --color-primary-hover: 229 229 229;
-  --color-primary-soft: 38 38 38;
-  --color-secondary: 229 229 229;
-  --color-secondary-soft: 38 38 38;
-  --color-destructive: 239 68 68;
-  --color-destructive-soft: 69 10 10;
-  --color-success: 45 160 122;
-  --color-success-soft: 7 40 30;
-  --color-success-text: 105 190 155;
-  --color-warning: 234 179 8;
-  --color-warning-soft: 113 63 18;
-  --color-warning-text: 253 224 71;
-  --color-danger: 239 68 68;
-  --color-danger-soft: 69 10 10;
-  --color-danger-text: 252 165 165;
-  --color-info-text: 250 250 250;
+  --color-canvas: 23 25 27;
+  --color-surface: 31 34 36;
+  --color-surface-2: 25 28 30;
+  --color-surface-3: 36 39 42;
+  --color-border: 44 47 49;
+  --color-border-strong: 58 62 64;
+  --color-ink: 232 234 231;
+  --color-ink-muted: 142 148 142;
+  --color-ink-faint: 111 117 112;
+  --color-primary: 142 138 245;
+  --color-primary-hover: 167 163 250;
+  --color-primary-soft: 38 36 71;
+  --color-secondary: 232 234 231;
+  --color-secondary-soft: 36 39 42;
+  --color-destructive: 229 139 144;
+  --color-destructive-soft: 46 32 34;
+  --color-success: 111 195 140;
+  --color-success-soft: 29 43 34;
+  --color-success-text: 111 195 140;
+  --color-warning: 224 177 105;
+  --color-warning-soft: 44 39 24;
+  --color-warning-text: 224 177 105;
+  --color-danger: 229 139 144;
+  --color-danger-soft: 46 32 34;
+  --color-danger-text: 229 139 144;
+  --color-info-text: 142 138 245;
   color-scheme: dark;
 
-  /* Liquid Glass (dark): материал темнее и прозрачнее, кромка светится */
-  --glass-a: 0.78;
-  --glass-a-strong: 0.58;
-  --glass: 24 24 24;
-  --glass-border-rgb: 255 255 255;
-  --glass-border-a: 0.14;
-  --glass-spec-top: 0.12;
-  --glass-spec-ring: 0.1;
-  --glass-spec-bot: 0.22;
+  /* Материал поверхностей (dark) по прототипу CMR: плоские тёмные
+     поверхности, сплошная рамка, блики выключены */
+  --glass-a: 1;
+  --glass-a-strong: 0.94;
+  --glass: 31 34 36;
+  --glass-border-rgb: 44 47 49;
+  --glass-border-a: 1;
+  --glass-spec-top: 0;
+  --glass-spec-ring: 0;
+  --glass-spec-bot: 0;
 
-  /* Ambient (dark): глубокие тона, заметнее, чем в light, но без неона */
-  --ambient-a: 0.22;
+  /* Акцент (dark): светлее для читаемости на тёмном фоне (прототип CMR) */
+  --color-accent: 142 138 245;
+  --color-accent-soft: 38 36 71;
+  --color-accent-hover: 167 163 250;
+
+  /* Ambient (dark): глубокие тона, чуть заметнее light, без неона */
+  --ambient-a: 0.1;
   --ambient-1: 52 84 118;
   --ambient-2: 118 82 40;
   --ambient-3: 30 62 48;
+
+  /* Тени карточек (dark): темнее и дальше (прототип CMR) */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-card-hover: 0 2px 6px rgb(0 0 0 / 0.4), 0 12px 32px -18px rgb(0 0 0 / 0.7);
 }
 
 @layer base {
@@ -186,6 +214,17 @@
     @apply hover:-translate-y-0.5 hover:shadow-card-hover
            transition duration-200 ease-soft;
   }
+  /* 3D-наклон карточек при наведении (лендинг).
+     perspective на родителе + rotateX/Y на самой карточке. */
+  .tilt-card {
+    perspective: 800px;
+  }
+  .tilt-card > * {
+    transition: transform 0.3s ease-soft;
+  }
+  .tilt-card:hover > * {
+    transform: rotateX(2deg) rotateY(-2deg) scale(1.02);
+  }
   /* Плотная (непрозрачная) карточка — выход для блоков поверх пёстрого
      контента, где просвечивание мешает читаемости */
   .card-solid {
@@ -236,6 +275,16 @@
   }
   .btn-outline {
     @apply btn bg-transparent border border-border text-ink hover:bg-canvas;
+  }
+  /* Акцентная CTA-кнопка (лендинг): плоский индиго прототипа CMR —
+     тот же материал, что у .btn-primary, без градиента. */
+  .btn-accent {
+    @apply btn text-white px-5 active:scale-[.98];
+    background: rgb(var(--color-accent));
+    box-shadow: 0 2px 8px rgb(var(--color-accent) / 0.25);
+  }
+  .btn-accent:hover {
+    filter: brightness(1.08);
   }
 
   /* Сегментированный переключатель (каталог: Со скидкой/Розница) */
@@ -323,18 +372,22 @@
   }
 }
 
-/* Тёмная тема — компонентные переопределения (из бэкапа нового дизайна) */
+/* Тёмная тема — компонентные переопределения.
+   Инверсия «белым по тёмному» осталась только у нейтральных контролов
+   (segmented-control, badge-solid). Главные акценты (btn-primary,
+   nav-link-active, badge-primary, ад-хок bg-primary.text-white) —
+   индиго прототипа CMR: фон --color-primary (142 138 245), тёмный текст. */
 .dark .btn-primary {
-  background-color: #fafafa;
-  color: #262626;
+  background-color: rgb(142 138 245);
+  color: #14161a;
 }
 .dark .btn-primary:hover {
-  background-color: #e5e5e5;
-  color: #262626;
+  background-color: rgb(167 163 250);
+  color: #14161a;
 }
 .dark .nav-link-active {
-  background-color: #ffffff1a !important;
-  color: #fff !important;
+  background-color: rgb(38 36 71) !important;
+  color: rgb(167 163 250) !important;
 }
 .dark .segmented-control > a.active,
 .dark .segmented-control > a[aria-pressed='true'],
@@ -353,8 +406,8 @@
   color: #fafafa;
 }
 .dark .badge-primary {
-  background-color: #fafafa;
-  color: #262626;
+  background-color: rgb(142 138 245);
+  color: #14161a;
 }
 /* Инверсия фото в тёмной теме ОТКЛЮЧЕНА (2026-09-09, решение пользователя).
    Приём рассчитан на фото с белым фоном, но после rembg-пайплайна фон
@@ -363,11 +416,10 @@
    показываются как есть — на светлой плитке-подложке (bg-white у контейнера).
    Класс .no-dark-invert сохраняется для графики, где инверсия недопустима. */
 /* Ад-хок связки bg-primary text-white в страницах (переключатели вида/цены,
-   пагинация, табы фильтров) — та же инверсия, что у .btn-primary выше,
-   иначе активный пункт белым по белому в тёмной теме. */
+   пагинация, табы фильтров) — в тёмной теме фон уже индиго из токена,
+   меняется только текст на тёмный (accent-ink прототипа CMR). */
 .dark .bg-primary.text-white {
-  background-color: #fafafa;
-  color: #262626;
+  color: #14161a;
 }
 
 @layer utilities {
@@ -386,4 +438,114 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* ============================================================
+   Landing page — premium visual effects
+   ============================================================ */
+
+/* Animated gradient orbs for hero background */
+@keyframes float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+@keyframes float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-40px, 20px) scale(1.05); }
+  66% { transform: translate(25px, -15px) scale(0.9); }
+}
+@keyframes float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, 30px) scale(1.08); }
+}
+
+.hero-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  will-change: transform;
+}
+.hero-orb-1 {
+  width: 400px; height: 400px;
+  background: rgb(var(--color-accent) / 0.15);
+  animation: float-1 12s ease-in-out infinite;
+}
+.hero-orb-2 {
+  width: 300px; height: 300px;
+  background: rgb(var(--color-accent-hover) / 0.1);
+  animation: float-2 15s ease-in-out infinite;
+}
+.hero-orb-3 {
+  width: 250px; height: 250px;
+  background: rgb(var(--ambient-1) / 0.12);
+  animation: float-3 10s ease-in-out infinite;
+}
+
+/* Gradient text animation */
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animated-gradient-text {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--color-accent)),
+    rgb(var(--color-accent-hover)),
+    rgb(var(--color-accent)),
+    rgb(var(--color-primary))
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-shift 6s ease-in-out infinite;
+}
+
+/* Glow effect for accent cards */
+.accent-glow {
+  position: relative;
+}
+.accent-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgb(var(--color-accent) / 0.3), transparent 60%);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.accent-glow:hover::after {
+  opacity: 1;
+}
+
+/* Section gradient bands */
+.section-gradient-warm {
+  background: linear-gradient(
+    180deg,
+    rgb(var(--color-accent) / 0.04) 0%,
+    transparent 100%
+  );
+}
+.section-gradient-dark {
+  background: linear-gradient(
+    180deg,
+    rgb(var(--color-ink) / 0.03) 0%,
+    transparent 100%
+  );
+}
+
+/* Animated border gradient */
+@keyframes border-rotate {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-orb { animation: none !important; }
+  .animated-gradient-text { animation: none !important; }
 }

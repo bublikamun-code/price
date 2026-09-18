@@ -19,6 +19,8 @@ const total = ref(0)
 const page = ref(1)
 const removingSku = ref<string | null>(null)
 const addingSku = ref<string | null>(null)
+const addAllLoading = ref(false)
+const favQty = reactive<Record<string, number>>({})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
@@ -51,16 +53,38 @@ async function removeFav(f: FavoriteRead) {
   }
 }
 
+function getFavQty(sku: string): number {
+  return favQty[sku] ?? 1
+}
+function setFavQty(sku: string, v: number) {
+  favQty[sku] = Math.max(1, Math.floor(v) || 1)
+}
+
 async function addToCart(f: FavoriteRead) {
   if (addingSku.value) return
   addingSku.value = f.sku
   error.value = ''
   try {
-    await cart.add({ sku: f.sku, quantity: 1 })
+    await cart.add({ sku: f.sku, quantity: getFavQty(f.sku) })
   } catch (e) {
     error.value = getErrorMessage(e, 'Не удалось добавить в корзину')
   } finally {
     addingSku.value = null
+  }
+}
+
+async function addAllToCart() {
+  if (addAllLoading.value) return
+  addAllLoading.value = true
+  error.value = ''
+  try {
+    for (const f of favorites.value) {
+      await cart.add({ sku: f.sku, quantity: getFavQty(f.sku) })
+    }
+  } catch (e) {
+    error.value = getErrorMessage(e, 'Не удалось добавить все товары в корзину')
+  } finally {
+    addAllLoading.value = false
   }
 }
 
@@ -100,6 +124,17 @@ onMounted(load)
     </div>
 
     <div v-else>
+      <div class="flex items-center justify-between mb-4">
+        <button
+          v-if="favorites.length"
+          type="button"
+          class="btn-accent px-5 py-2.5 text-sm"
+          :disabled="addAllLoading"
+          @click="addAllToCart"
+        >
+          {{ addAllLoading ? 'Добавление…' : 'Добавить всё в корзину' }}
+        </button>
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
         <article v-for="f in favorites" :key="f.product_id" class="card card-hover p-5 flex flex-col">
           <div class="aspect-square bg-canvas rounded-card mb-4 flex items-center justify-center overflow-hidden">
@@ -127,20 +162,29 @@ onMounted(load)
 
           <div class="mt-auto">
             <div v-if="f.has_discount" class="flex items-baseline gap-2 mb-3">
-              <span class="text-xl font-bold text-primary">{{ f.client_price }} {{ f.currency }}</span>
-              <span class="text-sm text-ink-faint line-through">{{ f.retail_price }} {{ f.currency }}</span>
+              <span class="text-xl font-bold text-primary">{{ formatMoney(f.client_price, f.currency) }}</span>
+              <span class="text-sm text-ink-faint line-through">{{ formatMoney(f.retail_price, f.currency) }}</span>
             </div>
             <div v-else class="mb-3">
-              <span class="text-xl font-bold">{{ f.retail_price }} {{ f.currency }}</span>
+              <span class="text-xl font-bold">{{ formatMoney(f.retail_price, f.currency) }}</span>
             </div>
-            <button
-              class="btn-primary w-full py-2"
-              :disabled="addingSku === f.sku"
-              @click="addToCart(f)"
-            >
-              <span v-if="addingSku === f.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-              <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" /> В корзину
-            </button>
+            <div class="flex items-stretch gap-2">
+              <input
+                type="number"
+                min="1"
+                :value="getFavQty(f.sku)"
+                class="input py-2 w-16 text-center shrink-0"
+                @input="setFavQty(f.sku, +($event.target as HTMLInputElement).value)"
+              >
+              <button
+                class="btn-primary flex-1 py-2"
+                :disabled="addingSku === f.sku"
+                @click="addToCart(f)"
+              >
+                <span v-if="addingSku === f.sku" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" /> В корзину
+              </button>
+            </div>
           </div>
         </article>
       </div>

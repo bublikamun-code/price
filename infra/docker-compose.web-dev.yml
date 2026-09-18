@@ -14,5 +14,11 @@ services:
       - ../apps/web:/app            # исходники с хот-релоадом
       - /app/node_modules           # анонимный том: зависимости внутри контейнера
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    environment:
+      # В dev-режиме дев-сервер :3000 не проксирует /api — ходим напрямую в API.
+      # Перекрывает NUXT_PUBLIC_API_BASE="" из docker-compose.yml (там это
+      # same-origin через nginx :8081, единый вход §14).
+      # Origin http://localhost:3000 разрешён в CORS API (cors_origins).
+      NUXT_PUBLIC_API_BASE: "http://localhost:8000"
     healthcheck:
       start_period: 120s            # dev: npm install при старте занимает время

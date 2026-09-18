@@ -4,5 +4,6 @@
       <NuxtPage />
     </NuxtLayout>
     <CookieConsentBanner />
+    <GlobalSearch />
   </div>
 </template>

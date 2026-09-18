@@ -69,6 +69,19 @@ function goPage(p: number) {
   load()
 }
 
+// Окно пагинации (1 ... 4 5 6 ... 20)
+function paginationWindow(total: number, current: number, window = 2): (number | '...')[] {
+  const pages: (number | '...')[] = []
+  const start = Math.max(2, current - window)
+  const end = Math.min(total - 1, current + window)
+  pages.push(1)
+  if (start > 2) pages.push('...')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < total - 1) pages.push('...')
+  if (total > 1) pages.push(total)
+  return pages
+}
+
 function formatDateTime(s: string): string {
   return new Date(s).toLocaleString('ru-RU')
 }
@@ -205,13 +218,15 @@ onMounted(load)
       <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
-      <button
-        v-for="pgn in totalPages"
-        :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
-        :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-        @click="goPage(pgn)"
-      >{{ pgn }}</button>
+      <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
+        <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
+        <button
+          v-else
+          class="w-10 h-10 rounded-pill font-medium text-sm"
+          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          @click="goPage(pgn as number)"
+        >{{ pgn }}</button>
+      </template>
       <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>

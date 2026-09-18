@@ -37,6 +37,38 @@ const stock = ref<'' | StockStatus>('')
 
 const brands = ref<ManagerBrand[]>([])
 
+// Сортировка (клиентская)
+const sortField = ref<'sku' | 'name' | 'brand' | 'base_price' | 'stock_qty'>('sku')
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+function toggleSort(field: typeof sortField.value) {
+  if (sortField.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortDir.value = field === 'name' || field === 'sku' || field === 'brand' ? 'asc' : 'desc'
+  }
+}
+
+function sortIcon(field: string): string {
+  if (sortField.value !== field) return 'heroicons:chevron-up-down'
+  return sortDir.value === 'asc' ? 'heroicons:chevron-up' : 'heroicons:chevron-down'
+}
+
+const sortedRows = computed(() => {
+  const arr = [...rows.value]
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  return arr.sort((a, b) => {
+    const f = sortField.value
+    if (f === 'sku') return dir * a.sku.localeCompare(b.sku, 'ru')
+    if (f === 'name') return dir * a.name.localeCompare(b.name, 'ru')
+    if (f === 'brand') return dir * (a.brand?.name ?? '').localeCompare(b.brand?.name ?? '', 'ru')
+    if (f === 'base_price') return dir * (Number(a.base_price) - Number(b.base_price))
+    // stock_qty
+    return dir * ((a.stock_qty ?? 0) - (b.stock_qty ?? 0))
+  })
+})
+
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / perPage.value)))
 const shownFrom = computed(() => (total.value === 0 ? 0 : (page.value - 1) * perPage.value + 1))
 const shownTo = computed(() => Math.min(page.value * perPage.value, total.value))
@@ -86,6 +118,19 @@ function goPage(p: number) {
   if (p < 1 || p > totalPages.value || p === page.value) return
   page.value = p
   load()
+}
+
+// Окно пагинации (1 ... 4 5 6 ... 20)
+function paginationWindow(total: number, current: number, window = 2): (number | '...')[] {
+  const pages: (number | '...')[] = []
+  const start = Math.max(2, current - window)
+  const end = Math.min(total - 1, current + window)
+  pages.push(1)
+  if (start > 2) pages.push('...')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < total - 1) pages.push('...')
+  if (total > 1) pages.push(total)
+  return pages
 }
 
 // Бренды для фильтра — тот же источник, что и на странице брендов.
@@ -314,7 +359,7 @@ onUnmounted(() => {
       <div v-for="i in 8" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0" />
     </div>
 
-    <div v-else-if="!rows.length" class="card p-12 text-center text-ink-muted">
+    <div v-else-if="!sortedRows.length" class="card p-12 text-center text-ink-muted">
       <Icon name="heroicons:cube" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
       <p>{{ appliedQ || brandId || stock ? 'По этим фильтрам товаров нет' : 'Товаров пока нет' }}</p>
     </div>
@@ -324,19 +369,29 @@ onUnmounted(() => {
         <table class="w-full text-sm">
           <thead>
             <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-              <th class="px-4 py-3 font-medium">Артикул</th>
-              <th class="px-4 py-3 font-medium">Наименование</th>
-              <th class="px-4 py-3 font-medium">Бренд</th>
+              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('sku')">
+                <span class="inline-flex items-center gap-1">Артикул <Icon :name="sortIcon('sku')" class="w-3.5 h-3.5" /></span>
+              </th>
+              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('name')">
+                <span class="inline-flex items-center gap-1">Наименование <Icon :name="sortIcon('name')" class="w-3.5 h-3.5" /></span>
+              </th>
+              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('brand')">
+                <span class="inline-flex items-center gap-1">Бренд <Icon :name="sortIcon('brand')" class="w-3.5 h-3.5" /></span>
+              </th>
               <th class="px-4 py-3 font-medium">Серия</th>
-              <th class="px-4 py-3 font-medium text-right">Базовая цена</th>
+              <th class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink" @click="toggleSort('base_price')">
+                <span class="inline-flex items-center justify-end gap-1">Базовая цена <Icon :name="sortIcon('base_price')" class="w-3.5 h-3.5" /></span>
+              </th>
               <th class="px-4 py-3 font-medium text-right">Цена менеджера</th>
-              <th class="px-4 py-3 font-medium text-right">Остатки</th>
+              <th class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink" @click="toggleSort('stock_qty')">
+                <span class="inline-flex items-center justify-end gap-1">Остатки <Icon :name="sortIcon('stock_qty')" class="w-3.5 h-3.5" /></span>
+              </th>
               <th class="px-4 py-3 font-medium">Статус</th>
               <th class="px-4 py-3 font-medium text-right" />
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in rows" :key="p.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
+            <tr v-for="p in sortedRows" :key="p.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
               <td class="px-4 py-3 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
               <td class="px-4 py-3 max-w-64 truncate" :title="p.name">{{ p.name }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ p.brand?.name || '—' }}</td>
@@ -371,13 +426,15 @@ onUnmounted(() => {
         <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
           <Icon name="heroicons:chevron-left" class="w-5 h-5" />
         </button>
-        <button
-          v-for="pgn in totalPages"
-          :key="pgn"
-          class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-          @click="goPage(pgn)"
-        >{{ pgn }}</button>
+        <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
+          <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
+          <button
+            v-else
+            class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
+            :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+            @click="goPage(pgn as number)"
+          >{{ pgn }}</button>
+        </template>
         <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
           <Icon name="heroicons:chevron-right" class="w-5 h-5" />
         </button>

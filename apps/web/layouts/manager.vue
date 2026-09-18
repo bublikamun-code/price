@@ -6,6 +6,17 @@
 useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 const route = useRoute()
 const auth = useAuth()
+
+const SIDEBAR_KEY = 'manager-sidebar-collapsed'
+const collapsed = ref(false)
+onMounted(() => {
+  collapsed.value = localStorage.getItem(SIDEBAR_KEY) === '1'
+})
+function toggleSidebar() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(SIDEBAR_KEY, collapsed.value ? '1' : '0')
+}
+
 const navItems = [
   { to: '/manager', label: 'Дашборд', icon: 'heroicons:chart-bar' },
   { to: '/manager/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
@@ -18,6 +29,7 @@ const navItems = [
   { to: '/manager/news', label: 'Новости', icon: 'heroicons:newspaper' },
   { to: '/manager/currency', label: 'Курсы валют', icon: 'heroicons:banknotes' },
   { to: '/manager/audit', label: 'Аудит', icon: 'heroicons:shield-check' },
+  { to: '/manager/analytics', label: 'Аналитика', icon: 'heroicons:presentation-chart-line' },
 ]
 // Пункт только для роли ADMIN (§11 RBAC).
 const adminNavItem = { to: '/manager/admin', label: 'Администрирование', icon: 'heroicons:shield-check' }
@@ -43,28 +55,48 @@ function isActive(to: string) {
     <div class="flex-1 flex justify-center">
       <div class="container-app flex">
         <aside class="hidden lg:block shrink-0 sticky top-[68px] self-start py-4 pr-4">
-          <div class="glass p-3 w-60">
-            <p class="px-3 mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Управление</p>
-            <nav class="flex flex-col gap-1">
+          <div
+            class="glass p-3 transition-all duration-200"
+            :class="collapsed ? 'w-16' : 'w-60'"
+          >
+            <button
+              class="btn-ghost p-2 mb-2 w-full flex"
+              :class="collapsed ? 'justify-center' : 'justify-end'"
+              :title="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+              :aria-label="collapsed ? 'Развернуть меню' : 'Свернуть меню'"
+              @click="toggleSidebar"
+            >
+              <Icon :name="collapsed ? 'heroicons:chevron-right' : 'heroicons:chevron-left'" class="w-4 h-4" />
+            </button>
+            <p v-if="!collapsed" class="px-3 mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Управление</p>
+            <nav class="flex flex-col gap-1" :class="collapsed ? 'items-center' : ''">
               <NuxtLink
                 v-for="item in navItems"
                 :key="item.to"
                 :to="item.to"
                 class="nav-link"
-                :class="{ 'nav-link-active': isActive(item.to) }"
+                :class="[
+                  collapsed ? 'w-10 h-10 justify-center px-0 py-0 shrink-0' : '',
+                  isActive(item.to) ? 'nav-link-active' : '',
+                ]"
+                :title="collapsed ? item.label : ''"
               >
-                <Icon :name="item.icon" class="w-5 h-5" />
-                <span>{{ item.label }}</span>
+                <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
+                <span v-if="!collapsed">{{ item.label }}</span>
               </NuxtLink>
               <NuxtLink
                 v-if="auth.isAdmin"
                 :key="adminNavItem.to"
                 :to="adminNavItem.to"
                 class="nav-link"
-                :class="{ 'nav-link-active': isActive(adminNavItem.to) }"
+                :class="[
+                  collapsed ? 'w-10 h-10 justify-center px-0 py-0 shrink-0' : '',
+                  isActive(adminNavItem.to) ? 'nav-link-active' : '',
+                ]"
+                :title="collapsed ? adminNavItem.label : ''"
               >
-                <Icon :name="adminNavItem.icon" class="w-5 h-5" />
-                <span>{{ adminNavItem.label }}</span>
+                <Icon :name="adminNavItem.icon" class="w-5 h-5 shrink-0" />
+                <span v-if="!collapsed">{{ adminNavItem.label }}</span>
               </NuxtLink>
             </nav>
           </div>

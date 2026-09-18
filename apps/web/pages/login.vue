@@ -243,7 +243,7 @@ function backToStep1() {
     <p class="text-xs text-ink-faint text-center mt-6">
       Нет доступа? Обратитесь к вашему менеджеру для создания учётной записи.
     </p>
-  </div>
 
-<ManagerContactModal :show="showContactModal" @close="showContactModal = false" />
+    <ManagerContactModal :show="showContactModal" @close="showContactModal = false" />
+  </div>
 </template>

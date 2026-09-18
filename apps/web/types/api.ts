@@ -568,6 +568,7 @@ export interface RecentOrderItem {
   client_name: string
   status: OrderStatus
   total_amount: string // BYN
+  seq?: number | null
 }
 
 export interface DashboardData {

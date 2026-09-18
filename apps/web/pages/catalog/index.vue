@@ -186,8 +186,54 @@ async function load() {
   }
 }
 
+// Debounced поиск: срабатывает через 300мс после последнего ввода
+let searchTimer: ReturnType<typeof setTimeout>
+function onSearchInput() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    applyFilters()
+  }, 300)
+}
+
+// Массовое добавление в корзину из табличного вида
+const selectedSkus = ref<Set<string>>(new Set())
+const bulkAdding = ref(false)
+const selectAll = computed({
+  get: () => products.value.length > 0 && products.value.every(p => selectedSkus.value.has(p.sku)),
+  set: (v: boolean) => {
+    if (v) {
+      products.value.forEach(p => selectedSkus.value.add(p.sku))
+    } else {
+      products.value.forEach(p => selectedSkus.value.delete(p.sku))
+    }
+    selectedSkus.value = new Set(selectedSkus.value)
+  },
+})
+function toggleSku(sku: string) {
+  const s = new Set(selectedSkus.value)
+  if (s.has(sku)) s.delete(sku)
+  else s.add(sku)
+  selectedSkus.value = s
+}
+async function bulkAddToCart() {
+  if (bulkAdding.value || !selectedSkus.value.size) return
+  bulkAdding.value = true
+  error.value = ''
+  try {
+    for (const sku of selectedSkus.value) {
+      await cart.add({ sku, quantity: getQty(sku) })
+    }
+    selectedSkus.value = new Set()
+  } catch (e) {
+    error.value = getErrorMessage(e, 'Не удалось добавить выбранные товары')
+  } finally {
+    bulkAdding.value = false
+  }
+}
+
 function applyFilters() {
   page.value = 1
+  selectedSkus.value = new Set()
   load()
 }
 function resetFilters() {
@@ -198,12 +244,27 @@ function resetFilters() {
   selectedModel.value = ''
   sort.value = 'name'
   page.value = 1
+  selectedSkus.value = new Set()
   load()
 }
 function goPage(p: number) {
   if (p < 1 || p > totalPages.value || p === page.value) return
   page.value = p
+  selectedSkus.value = new Set()
   load()
+}
+
+// Окно пагинации (1 ... 4 5 6 ... 20)
+function paginationWindow(total: number, current: number, window = 2): (number | '...')[] {
+  const pages: (number | '...')[] = []
+  const start = Math.max(2, current - window)
+  const end = Math.min(total - 1, current + window)
+  pages.push(1)
+  if (start > 2) pages.push('...')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < total - 1) pages.push('...')
+  if (total > 1) pages.push(total)
+  return pages
 }
 
 // Экспорт каталога (§16 п.16): Celery-задача собирает файл, статус опрашиваем.
@@ -275,6 +336,7 @@ function pollExport(jobId: string): Promise<void> {
 
 onUnmounted(() => {
   if (exportTimer) clearTimeout(exportTimer)
+  clearTimeout(searchTimer)
 })
 
 // мини-помощники для карточки (в карточках каталога — thumb, §16 п.17)
@@ -428,6 +490,7 @@ onMounted(load)
                 v-model="q"
                 class="input pl-10"
                 placeholder="Артикул, наименование"
+                @input="onSearchInput"
                 @keyup.enter="applyFilters"
               >
             </div>
@@ -603,8 +666,16 @@ onMounted(load)
             <table class="w-full text-sm table-fixed">
               <thead>
                 <tr class="text-ink-muted text-left bg-surface-2 border-b border-border text-[11px] sm:text-xs">
-                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[15%] sm:w-[12%] truncate">Арт.</th>
-                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[31%] sm:w-[35%] truncate">Наименование</th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[5%] sm:w-[4%] text-center">
+                    <input
+                      type="checkbox"
+                      :checked="selectAll"
+                      class="rounded border-border"
+                      @change="selectAll = ($event.target as HTMLInputElement).checked"
+                    >
+                  </th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[13%] sm:w-[11%] truncate">Арт.</th>
+                  <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium w-[28%] sm:w-[32%] truncate">Наименование</th>
                   <th class="px-2 py-1.5 sm:py-2 font-medium w-[10%] hidden sm:table-cell">Наличие</th>
                   <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium text-right w-[20%] sm:w-[14%]">Цена</th>
                   <th class="px-1 sm:px-2 py-1.5 sm:py-2 font-medium text-center w-[18%] sm:w-[19%] whitespace-nowrap">Кол-во</th>
@@ -612,7 +683,15 @@ onMounted(load)
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
+                <tr v-for="p in products" :key="p.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150" :class="{ 'bg-primary/5': selectedSkus.has(p.sku) }">
+                  <td class="px-1 sm:px-2 py-1.5 sm:py-2 text-center">
+                    <input
+                      type="checkbox"
+                      :checked="selectedSkus.has(p.sku)"
+                      class="rounded border-border"
+                      @change="toggleSku(p.sku)"
+                    >
+                  </td>
                   <td class="px-1 sm:px-2 py-1.5 sm:py-2 font-mono text-[11px] sm:text-xs max-w-0 truncate" :title="p.sku">{{ p.sku }}</td>
                   <td class="px-1 sm:px-2 py-1.5 sm:py-2 max-w-0 truncate" :title="p.name">
                     <NuxtLink :to="`/catalog/${p.sku}`" class="font-medium hover:text-primary transition-colors">
@@ -673,6 +752,32 @@ onMounted(load)
           </div>
         </div>
 
+        <!-- Floating bulk-add bar (list view only) -->
+        <div
+          v-if="selectedSkus.size > 0 && viewMode === 'list'"
+          class="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 card shadow-xl flex items-center gap-4 px-5 py-3"
+        >
+          <span class="text-sm font-medium whitespace-nowrap">
+            Выбрано: {{ selectedSkus.size }} {{ pluralize(selectedSkus.size, 'товар', 'товара', 'товаров') }}
+          </span>
+          <button
+            class="btn-primary px-5 py-2 text-sm whitespace-nowrap"
+            :disabled="bulkAdding"
+            @click="bulkAddToCart"
+          >
+            <span v-if="bulkAdding" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
+            Добавить в корзину
+          </button>
+          <button
+            class="btn-ghost p-1.5 text-ink-faint hover:text-danger"
+            title="Снять выделение"
+            @click="selectedSkus = new Set()"
+          >
+            <Icon name="heroicons:x-mark" class="w-4 h-4" />
+          </button>
+        </div>
+
         <!-- Пагинация: на десктопе прилипает к низу экрана — кнопки страниц
             видны всегда, строк таблицы/карточек помещается сколько влезает;
             на мобильном — обычный поток под списком (инаже перекрыла бы
@@ -685,13 +790,15 @@ onMounted(load)
             <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
               <Icon name="heroicons:chevron-left" class="w-5 h-5" />
             </button>
-            <button
-              v-for="pgn in totalPages"
-              :key="pgn"
-              class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
-              :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-              @click="goPage(pgn)"
-            >{{ pgn }}</button>
+            <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
+              <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
+              <button
+                v-else
+                class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
+                :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+                @click="goPage(pgn as number)"
+              >{{ pgn }}</button>
+            </template>
             <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
               <Icon name="heroicons:chevron-right" class="w-5 h-5" />
             </button>

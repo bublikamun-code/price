@@ -40,10 +40,89 @@ const page = ref(1)
 const statusFilter = ref<'' | OrderStatus>('')
 const changingId = ref<string | null>(null)
 
+// Поиск (клиентская фильтрация по текущей странице с 300ms debounce)
+const searchQuery = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+const debouncedSearch = ref('')
+
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    debouncedSearch.value = searchQuery.value.trim()
+  }, 300)
+}
+
+// Сортировка (клиентская)
+const sortField = ref<'created_at' | 'client_name' | 'total_amount'>('created_at')
+const sortDir = ref<'asc' | 'desc'>('desc')
+
+function toggleSort(field: typeof sortField.value) {
+  if (sortField.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortDir.value = 'desc'
+  }
+}
+
+function sortIcon(field: string): string {
+  if (sortField.value !== field) return 'heroicons:chevron-up-down'
+  return sortDir.value === 'asc' ? 'heroicons:chevron-up' : 'heroicons:chevron-down'
+}
+
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
 // client_name / client_company / seq приходят из API (см. types/api.ts OrderRead)
 const orderRows = computed<OrderRead[]>(() => orders.value)
+
+// Клиентский поиск + сортировка
+const displayedRows = computed(() => {
+  let result = orderRows.value
+  if (debouncedSearch.value) {
+    const q = debouncedSearch.value.toLowerCase()
+    result = result.filter(o => {
+      const num = formatOrderNumber(o.seq, o.id).toLowerCase()
+      const name = (o.client_name ?? '').toLowerCase()
+      const company = (o.client_company ?? '').toLowerCase()
+      return num.includes(q) || name.includes(q) || company.includes(q)
+    })
+  }
+  return [...result].sort((a, b) => {
+    const dir = sortDir.value === 'asc' ? 1 : -1
+    if (sortField.value === 'created_at') {
+      return dir * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    }
+    if (sortField.value === 'client_name') {
+      return dir * (a.client_name ?? '').localeCompare(b.client_name ?? '', 'ru')
+    }
+    // total_amount
+    return dir * (Number(a.total_amount) - Number(b.total_amount))
+  })
+})
+
+// Подсчёт статусов из текущей страницы
+const statusCounts = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const o of orders.value) {
+    counts[o.status] = (counts[o.status] || 0) + 1
+  }
+  return counts
+})
+
+// Окно пагинации (1 ... 4 5 6 ... 20)
+function paginationWindow(totalPg: number, current: number, window = 2): (number | '...')[] {
+  const pages: (number | '...')[] = []
+  const start = Math.max(2, current - window)
+  const end = Math.min(totalPg - 1, current + window)
+  pages.push(1)
+  if (start > 2) pages.push('...')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < totalPg - 1) pages.push('...')
+  if (totalPg > 1) pages.push(totalPg)
+  return pages
+}
+
+const paginationPages = computed(() => paginationWindow(totalPages.value, page.value))
 
 async function load() {
   loading.value = true
@@ -101,6 +180,8 @@ function formatDate(s: string): string {
   return new Date(s).toLocaleDateString('ru-RU')
 }
 
+onUnmounted(() => { if (searchTimer) clearTimeout(searchTimer) })
+
 onMounted(load)
 </script>
 
@@ -114,15 +195,34 @@ onMounted(load)
       </p>
     </div>
 
+    <!-- Поиск -->
+    <div class="mb-4 max-w-sm">
+      <div class="relative">
+        <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="input pl-10"
+          placeholder="Поиск по номеру или клиенту…"
+          @input="onSearchInput"
+        >
+      </div>
+    </div>
+
     <!-- Фильтр статусов -->
     <div class="flex flex-wrap gap-2 mb-6">
       <button
         v-for="tab in STATUS_TABS"
         :key="tab.value || 'all'"
-        class="px-3.5 py-1.5 rounded-pill text-sm font-medium transition-colors"
+        class="px-3.5 py-1.5 rounded-pill text-sm font-medium transition-colors inline-flex items-center gap-1.5"
         :class="statusFilter === tab.value ? 'bg-primary text-white' : 'bg-surface border border-border text-ink-muted hover:border-primary/60'"
         @click="applyStatus(tab.value)"
-      >{{ tab.label }}</button>
+      >
+        {{ tab.label }}
+        <span v-if="!tab.value ? orders.length : statusCounts[tab.value]" class="text-xs opacity-70">
+          {{ !tab.value ? orders.length : (statusCounts[tab.value] || 0) }}
+        </span>
+      </button>
     </div>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
@@ -134,9 +234,9 @@ onMounted(load)
       <div v-for="i in 5" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!orders.length" class="card p-12 text-center text-ink-muted">
+    <div v-else-if="!displayedRows.length" class="card p-12 text-center text-ink-muted">
       <Icon name="heroicons:clipboard-document-list" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
-      <p>Заявок по этому фильтру нет</p>
+      <p>{{ debouncedSearch ? 'По этому запросу ничего не найдено' : 'Заявок по этому фильтру нет' }}</p>
     </div>
 
     <div v-else class="card overflow-hidden">
@@ -145,15 +245,21 @@ onMounted(load)
           <thead>
             <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
               <th class="px-4 py-3 font-medium">№</th>
-              <th class="px-4 py-3 font-medium">Дата</th>
-              <th class="px-4 py-3 font-medium">Клиент</th>
-              <th class="px-4 py-3 font-medium text-right">Сумма</th>
+              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('created_at')">
+                <span class="inline-flex items-center gap-1">Дата <Icon :name="sortIcon('created_at')" class="w-3.5 h-3.5" /></span>
+              </th>
+              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('client_name')">
+                <span class="inline-flex items-center gap-1">Клиент <Icon :name="sortIcon('client_name')" class="w-3.5 h-3.5" /></span>
+              </th>
+              <th class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink" @click="toggleSort('total_amount')">
+                <span class="inline-flex items-center justify-end gap-1">Сумма <Icon :name="sortIcon('total_amount')" class="w-3.5 h-3.5" /></span>
+              </th>
               <th class="px-4 py-3 font-medium">Статус</th>
               <th class="px-4 py-3 font-medium text-right">Действие</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="o in orderRows" :key="o.id" class="border-t border-border hover:bg-canvas/60">
+            <tr v-for="o in displayedRows" :key="o.id" class="border-t border-border hover:bg-canvas/60">
               <td class="px-4 py-3 font-mono text-xs whitespace-nowrap" :title="o.id">{{ formatOrderNumber(o.seq, o.id) }}</td>
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatDate(o.created_at) }}</td>
               <td class="px-4 py-3">
@@ -191,13 +297,15 @@ onMounted(load)
       <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
-      <button
-        v-for="pgn in totalPages"
-        :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
-        :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-        @click="goPage(pgn)"
-      >{{ pgn }}</button>
+      <template v-for="(pgn, idx) in paginationPages" :key="idx">
+        <span v-if="pgn === '...'" class="w-10 h-10 flex items-center justify-center text-ink-faint text-sm">…</span>
+        <button
+          v-else
+          class="w-10 h-10 rounded-pill font-medium text-sm"
+          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          @click="goPage(pgn as number)"
+        >{{ pgn }}</button>
+      </template>
       <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
