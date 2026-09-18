@@ -5,7 +5,7 @@
       <div class="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-4 text-center">
         <div v-for="(m, i) in metrics" :key="m.label">
           <div class="text-3xl lg:text-4xl font-bold text-accent mb-1">
-            {{ displayValues[i] }}{{ m.suffix }}
+            {{ displayValues[i] }}{{ m.target === 0 ? '' : m.suffix }}
           </div>
           <div class="text-sm text-ink-muted">{{ m.label }}</div>
         </div>
