@@ -76,10 +76,27 @@ TAG=v0.3-design-fixed ./infra/scripts/deploy-prod.sh   # любой тег/ко�
 
 1. `~/pp/bin/status.sh` — кто жив.
 2. Диск/квоты: `df -h`, `du -sh ~/pp/* | sort -rh | head`.
-3. Лимит процессов тарифа (было 03.09): в логе PG `could not fork ... Resource
-   temporarily unavailable`. Лечится у хостера/апгрейдом тарифа; временно —
-   убить лишнее, `start-all.sh`.
-4. Вернуть watchdog в cron: строка есть в crontab, закомментирована (`*/5 * * * * .../watchdog.sh`).
+3. Лимит процессов тарифа (было 03.09 и 19.09): в логе PG `could not fork ... Resource
+   temporarily unavailable`. Лимит **150 процессов+потоков**, обычное потребление
+   стека ~92 → любой полный reload стека его пробивает. Лечится у хостера
+   (просить nproc ≥ 300); временно — убить всё пользователем
+   (`pkill -9 -u h215691` — из панели срабатывает даже при исчерпанной квоте:
+   crond форкает под root, одиночная команда исполняется без доп. форка),
+   затем канонический подъём (см. ниже).
+4. **Канонический подъём — только так:** `set -a; source ~/pp/app/api/.env; set +a;
+   bash ~/pp/bin/start-all.sh`. Без `source .env` MinIO поднимается со случайными
+   root-кредами → `readyz` отдаёт `s3: fail`. PG — не PM2-процесс: если убит,
+   поднимать `~/pp/opt/pg/bin/pg_ctl -D ~/pp/var/pgdata start` (start-all делает
+   это сам, но только при своём запуске).
+5. **OpenBLAS-цикл воркера/API**: `pp-worker`/`pp-api` падают при старте с
+   `OpenBLAS blas_thread_init: pthread_create failed ... Aborted` — numpy (через
+   `services/banner.py`, `services/manager_catalog.py`, `tasks/photo_zip.py`)
+   пытается создать 48 потоков и упирается в лимит задач тарифа. Лечится
+   `OPENBLAS_NUM_THREADS=1` (+ `OMP_NUM_THREADS=1`) в `env` pp-api/pp-worker/pp-beat
+   в `~/pp/ecosystem.config.js` (добавлено 19.09; при пересоздании файла — вернуть).
+6. Watchdog в cron держать ЗАКОММЕНТИРОВАННЫМ: его `start-all.sh` на каждой
+   проверке при впритык занятой квоте порождает лавину перезапусков
+   (19.09 из-за этого второй всплеск до ~7500 процессов в мониторе панели).
 
 ### Бэкапы не уходят на CRM
 
