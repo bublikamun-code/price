@@ -132,6 +132,8 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Стабильный скроллбар: без прыжка ширины вьюпорта при смене высоты контента */
+    scrollbar-gutter: stable;
   }
 
   body {

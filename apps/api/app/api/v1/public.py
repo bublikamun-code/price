@@ -152,8 +152,10 @@ async def get_photo(
     return Response(
         content=data,
         media_type=media_type,
-        # Публичные неизменяемые ассеты — кэш может быть общим (в отличие от files.py).
-        headers={"Cache-Control": "public, max-age=300"},
+        # Публичные неизменяемые ассеты (ключ содержит uuid/hash) — кэшируем
+        # агрессивно: без этого каждое касание фильтров перезапрашивает все фото
+        # и карточки «моргают» (аудит UX 19.09).
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
 

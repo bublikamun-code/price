@@ -143,6 +143,9 @@ function hiddenFilterCount<T extends { id: string }>(items: T[], key: string): n
 // Seq-guard против гонок: медленный ответ с устаревшими фильтрами не должен
 // перетирать результат свежего запроса (P2 §3.3).
 let loadSeq = 0
+// Первая загрузка — скелетоны; повторные (фильтры/сортировка/пагинация) —
+// старый список с затемнением, без моргания и прыжков высоты (аудит UX 19.09)
+const firstLoadDone = ref(false)
 
 async function load() {
   const seq = ++loadSeq
@@ -182,7 +185,10 @@ async function load() {
     if (seq !== loadSeq) return
     error.value = getErrorMessage(e, 'Не удалось загрузить каталог')
   } finally {
-    if (seq === loadSeq) loading.value = false
+    if (seq === loadSeq) {
+      loading.value = false
+      firstLoadDone.value = true
+    }
   }
 }
 
@@ -548,8 +554,8 @@ onMounted(load)
 
       <!-- Сетка / Список -->
       <div class="flex-1 min-w-0">
-        <!-- Skeletons -->
-        <template v-if="loading">
+        <!-- Skeletons: только при первой загрузке; повторные — старый список с затемнением -->
+        <template v-if="loading && !firstLoadDone">
           <div v-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
             <div v-for="i in 6" :key="i" class="card p-5">
               <div class="skeleton h-28 sm:h-52 mb-4 rounded-card"/>
@@ -572,7 +578,7 @@ onMounted(load)
 
         <!-- Плитка: на мобильном — горизонтальная карточка (фото слева, цена и
              корзина справа, всё помещается без скролла), на sm+ — вертикальная -->
-        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5">
+        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5 transition-opacity duration-200" :class="loading ? 'opacity-60 pointer-events-none' : 'opacity-100'">
           <article v-for="p in products" :key="p.id" class="card card-hover p-2.5 sm:p-5 flex flex-row sm:flex-col gap-2.5 sm:gap-0">
             <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю
                  ширину карточки, единая высота у всех (object-contain) -->
@@ -661,7 +667,7 @@ onMounted(load)
         </div>
 
         <!-- Список -->
-        <div v-else class="card overflow-hidden">
+        <div v-else class="card overflow-hidden transition-opacity duration-200" :class="loading ? 'opacity-60 pointer-events-none' : 'opacity-100'">
           <div class="overflow-x-auto">
             <table class="w-full text-sm table-fixed">
               <thead>
