@@ -6,6 +6,13 @@ const STORAGE_KEY = 'cookie_consent'
 
 const visible = ref(false)
 
+// Пока баннер виден — освобождаем место над ним (иначе накрывает футер
+// на коротких страницах; аудит UX 19.09)
+watch(visible, (v) => {
+  if (typeof document === 'undefined') return
+  document.body.classList.toggle('has-cookie-banner', v)
+}, { immediate: true })
+
 onMounted(() => {
   try {
     if (!localStorage.getItem(STORAGE_KEY)) {

@@ -111,11 +111,14 @@ const selectedStock = ref<string>('') // '' | IN_STOCK | PREORDER
 const selectedModel = ref<string>('') // Щит распределительный / Щит мультимедиа / Аксессуары
 selectedModel.value = (route.query.model as string) || ''
 const sort = ref<Sort>('name')
+// Восстановление состояния из URL при F5 (аудит UX 19.09)
+const qSort = route.query.sort as string
+if (qSort && ['name', '-name', 'price', '-price', 'sku'].includes(qSort)) sort.value = qSort as Sort
+const qStock = route.query.stock as string
+if (qStock === 'IN_STOCK' || qStock === 'PREORDER') selectedStock.value = qStock
 const page = ref(1)
 const viewMode = ref<'grid' | 'list'>('grid')
 
-// --- UI-примитивы Select (reka-ui): value не может быть пустой строкой, поэтому
-// пустые фильтры маппятся на сентинелы; смена селекта = сразу applyFilters() ---
 // Сворачиваемые группы фильтров (паттерн для новых фильтров: добавь ключ +
 // оберни секцию как Производитель/Серия — кнопка-заголовок со счётчиком)
 const collapsedGroups = reactive({ brands: false, series: false, stock: false, models: false })
@@ -652,7 +655,7 @@ onMounted(load)
 
         <!-- Плитка: на мобильном — горизонтальная карточка (фото слева, цена и
              корзина справа, всё помещается без скролла), на sm+ — вертикальная -->
-        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5" :class="loading ? 'pointer-events-none' : ''">
+        <div v-else-if="viewMode === 'grid'" key="grid" class="ui-fade-in grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5" :class="loading ? 'pointer-events-none' : ''">
           <article v-for="p in products" :key="p.id" class="card card-hover p-2.5 sm:p-5 flex flex-row sm:flex-col gap-2.5 sm:gap-0">
             <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю
                  ширину карточки, единая высота у всех (object-contain) -->
@@ -662,7 +665,7 @@ onMounted(load)
                 :src="thumbOf(p.photo_key)!"
                 :alt="p.name"
                 loading="lazy"
-                class="w-full h-full object-contain"
+                class="img-fade w-full h-full object-contain"
               >
               <Icon v-else name="heroicons:photo" class="w-8 h-8 sm:w-10 sm:h-10 text-ink-faint" />
               <button
@@ -741,7 +744,7 @@ onMounted(load)
         </div>
 
         <!-- Список -->
-        <div v-else class="card overflow-hidden" :class="loading ? 'pointer-events-none' : ''">
+        <div v-else key="list" class="ui-fade-in card overflow-hidden" :class="loading ? 'pointer-events-none' : ''">
           <div class="overflow-x-auto">
             <table class="w-full text-sm table-fixed">
               <thead>

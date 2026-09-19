@@ -551,3 +551,15 @@
   .hero-orb { animation: none !important; }
   .animated-gradient-text { animation: none !important; }
 }
+
+/* Плавные появления (аудит UX 19.09): переключение вида, ленивые фото */
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.ui-fade-in { animation: ui-fade-in 0.25s ease both; }
+.img-fade { animation: ui-fade-in 0.4s ease both; }
+
+/* Место под cookie-баннер, чтобы он не накрывал футер на коротких страницах */
+body.has-cookie-banner footer,
+body.has-cookie-banner .app-footer { padding-bottom: 96px; }
