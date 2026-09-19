@@ -119,6 +119,42 @@ const sort = ref<Sort>('name')
 const page = ref(1)
 const viewMode = ref<'grid' | 'list'>('grid')
 
+// --- UI-примитивы Select (reka-ui): value не может быть пустой строкой, поэтому
+// пустые фильтры маппятся на сентинелы; смена селекта = сразу applyFilters() ---
+const ANY_STOCK = 'any'
+const ALL_MODELS = 'all'
+const stockUiOptions = stockOptions.map((o) => ({
+  value: o.value === '' ? ANY_STOCK : o.value,
+  label: o.label,
+}))
+const selectedStockUi = computed({
+  get: () => (selectedStock.value === '' ? ANY_STOCK : selectedStock.value),
+  set: (v: string) => {
+    selectedStock.value = v === ANY_STOCK ? '' : v
+    applyFilters()
+  },
+})
+const modelUiOptions = computed(() =>
+  modelOptions.value.map((o) => ({
+    value: o.value === '' ? ALL_MODELS : o.value,
+    label: o.label,
+  })),
+)
+const selectedModelUi = computed({
+  get: () => (selectedModel.value === '' ? ALL_MODELS : selectedModel.value),
+  set: (v: string) => {
+    selectedModel.value = v === ALL_MODELS ? '' : v
+    applyFilters()
+  },
+})
+const sortUi = computed({
+  get: () => sort.value,
+  set: (v: string) => {
+    sort.value = v as Sort
+    applyFilters()
+  },
+})
+
 // Видимость панели фильтров:
 // - десктоп (lg+): панель всегда показана (кнопки скрытия нет)
 // - мобильный (<lg): aside открыт только как шторка (drawerOpen), по умолчанию закрыт
@@ -413,8 +449,17 @@ onMounted(load)
           </div>
           <!-- Мобильный ряд 2 — своя строка (basis-full): сортировка (тянется) | экспорт -->
           <div class="flex items-center gap-2 basis-full sm:contents">
-            <!-- Сортировка -->
-            <BaseSelect v-model="sort" :options="sortOptions" class="flex-1 sm:flex-none sm:min-w-[180px]" @change="applyFilters" />
+            <!-- Сортировка (UI-примитив Select, reka-ui) -->
+            <Select v-model="sortUi">
+              <SelectTrigger aria-label="Сортировка" class="flex-1 sm:flex-none sm:min-w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in sortOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <!-- Экспорт каталога под текущие фильтры (на узких — иконка) -->
             <div class="relative shrink-0">
               <button
@@ -540,8 +585,26 @@ onMounted(load)
 
           <div class="mb-3 sm:mb-4">
             <label class="label">Наличие</label>
-            <BaseSelect v-model="selectedStock" :options="stockOptions" class="min-w-[150px]" @change="applyFilters" />
-            <BaseSelect v-model="selectedModel" :options="modelOptions" class="min-w-[190px]" @change="applyFilters" />
+            <Select v-model="selectedStockUi">
+              <SelectTrigger aria-label="Наличие" class="min-w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in stockUiOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Select v-model="selectedModelUi">
+              <SelectTrigger aria-label="Модель" class="min-w-[190px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in modelUiOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <button

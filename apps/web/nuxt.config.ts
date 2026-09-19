@@ -18,6 +18,10 @@ export default defineNuxtConfig({
   // Tailwind подключается через модуль; конфиг в tailwind.config.ts
   css: ['~/assets/css/main.css'],
 
+  // pathPrefix: false — UI-примитивы из components/ui/select/ доступны как
+  // <Select>/<SelectTrigger>, а не <UiSelectSelect*> (модель shadcn-vue)
+  components: [{ path: '~/components', pathPrefix: false }],
+
   colorMode: {
     preference: 'dark',   // новый дизайн — тёмный по умолчанию
     fallback: 'dark',
