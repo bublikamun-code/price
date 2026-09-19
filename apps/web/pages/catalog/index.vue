@@ -121,45 +121,14 @@ const viewMode = ref<'grid' | 'list'>('grid')
 
 // --- UI-примитивы Select (reka-ui): value не может быть пустой строкой, поэтому
 // пустые фильтры маппятся на сентинелы; смена селекта = сразу applyFilters() ---
-const ANY_STOCK = 'any'
-const ALL_MODELS = 'all'
 // Сворачиваемые группы фильтров (паттерн для новых фильтров: добавь ключ +
 // оберни секцию как Производитель/Серия — кнопка-заголовок со счётчиком)
 const collapsedGroups = reactive({ brands: false, series: false })
 function toggleGroup(key: keyof typeof collapsedGroups) {
   collapsedGroups[key] = !collapsedGroups[key]
 }
-const stockUiOptions = stockOptions.map((o) => ({
-  value: o.value === '' ? ANY_STOCK : o.value,
-  label: o.label,
-}))
-const selectedStockUi = computed({
-  get: () => (selectedStock.value === '' ? ANY_STOCK : selectedStock.value),
-  set: (v: string) => {
-    selectedStock.value = v === ANY_STOCK ? '' : v
-    applyFilters()
-  },
-})
-const modelUiOptions = computed(() =>
-  modelOptions.value.map((o) => ({
-    value: o.value === '' ? ALL_MODELS : o.value,
-    label: o.label,
-  })),
-)
-const selectedModelUi = computed({
-  get: () => (selectedModel.value === '' ? ALL_MODELS : selectedModel.value),
-  set: (v: string) => {
-    selectedModel.value = v === ALL_MODELS ? '' : v
-    applyFilters()
-  },
-})
-const sortUi = computed({
-  get: () => sort.value,
-  set: (v: string) => {
-    sort.value = v as Sort
-    applyFilters()
-  },
-})
+// Пилот shadcn-vue Select (reka-ui) откачен: popper-портал моргал и сдвигал
+// контент при открытии. Селекты — усиленный BaseSelect (рендер в потоке).
 
 // Видимость панели фильтров:
 // - десктоп (lg+): панель всегда показана (кнопки скрытия нет)
@@ -456,17 +425,9 @@ onMounted(load)
           <!-- Мобильный ряд 2 — своя строка (basis-full); на десктопе остаётся
                единым блоком: сортировка | экспорт в одной линии без пустот -->
           <div class="flex items-center gap-2 basis-full sm:basis-auto sm:gap-3">
-            <!-- Сортировка (UI-примитив Select, reka-ui) -->
-            <Select v-model="sortUi">
-              <SelectTrigger aria-label="Сортировка" class="flex-1 sm:flex-none sm:min-w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="o in sortOptions" :key="o.value" :value="o.value">
-                  {{ o.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <!-- Сортировка: BaseSelect — рендер в потоке без портала/popper
+                 (reka-портал давал моргание и сдвиг, аудит UX 19.09) -->
+            <BaseSelect v-model="sort" :options="sortOptions" class="flex-1 sm:flex-none sm:min-w-[180px]" @change="applyFilters" />
             <!-- Экспорт каталога под текущие фильтры (на узких — иконка) -->
             <div class="relative shrink-0">
               <button
@@ -610,26 +571,8 @@ onMounted(load)
 
           <div class="mb-3 sm:mb-4 space-y-2">
             <label class="label">Наличие</label>
-            <Select v-model="selectedStockUi">
-              <SelectTrigger aria-label="Наличие" class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="o in stockUiOptions" :key="o.value" :value="o.value">
-                  {{ o.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Select v-model="selectedModelUi">
-              <SelectTrigger aria-label="Модель" class="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="o in modelUiOptions" :key="o.value" :value="o.value">
-                  {{ o.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <BaseSelect v-model="selectedStock" :options="stockOptions" class="w-full" @change="applyFilters" />
+            <BaseSelect v-model="selectedModel" :options="modelOptions" class="w-full" @change="applyFilters" />
           </div>
 
           <button
