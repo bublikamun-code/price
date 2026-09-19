@@ -398,8 +398,8 @@ onMounted(load)
         <div class="flex-1 min-w-0 flex items-baseline gap-2 sm:block">
           <h1 class="text-xl sm:text-2xl font-bold">Каталог</h1>
           <p class="text-xs sm:text-sm text-ink-muted sm:mt-1">
-            <template v-if="!loading">{{ products.length }} из {{ total }}</template>
-            <template v-else>Загрузка…</template>
+            <!-- при повторных загрузках держим прежний текст: никакой мигалки -->
+            {{ products.length }} из {{ total }}
           </p>
         </div>
         <div class="contents sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-2">
@@ -512,16 +512,21 @@ onMounted(load)
           </div>
 
           <div class="mb-3 sm:mb-4">
-            <label class="label">Поиск</label>
             <div class="relative">
-              <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
+              <Icon name="heroicons:magnifying-glass" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
               <input
                 v-model="q"
-                class="input pl-10"
-                placeholder="Артикул, наименование"
+                class="input pl-9 pr-9 py-2 text-sm"
+                placeholder="Артикул, наименование…"
                 @input="onSearchInput"
                 @keyup.enter="applyFilters"
               >
+              <!-- тихий индикатор поиска: без смены контента и прыжков -->
+              <span
+                v-if="loading"
+                class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
+                aria-hidden="true"
+              />
             </div>
           </div>
 
@@ -858,8 +863,9 @@ onMounted(load)
             на мобильном — обычный поток под списком (инаже перекрыла бы
             нижнюю навигацию) -->
         <div
-          v-if="!loading && totalPages > 1"
-          class="mt-4 py-1.5 card rounded-card backdrop-blur-[20px] lg:sticky lg:bottom-3 lg:z-10"
+          v-if="totalPages > 1"
+          class="mt-4 py-1.5 card rounded-card backdrop-blur-[20px] lg:sticky lg:bottom-3 lg:z-10 transition-opacity duration-200"
+          :class="loading ? 'opacity-40 pointer-events-none' : 'opacity-100'"
         >
           <nav class="flex items-center justify-center gap-1">
             <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
