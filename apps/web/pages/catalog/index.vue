@@ -652,7 +652,7 @@ onMounted(load)
 
         <!-- Плитка: на мобильном — горизонтальная карточка (фото слева, цена и
              корзина справа, всё помещается без скролла), на sm+ — вертикальная -->
-        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5 transition-opacity duration-200" :class="loading ? 'opacity-60 pointer-events-none' : 'opacity-100'">
+        <div v-else-if="viewMode === 'grid'" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-5" :class="loading ? 'pointer-events-none' : ''">
           <article v-for="p in products" :key="p.id" class="card card-hover p-2.5 sm:p-5 flex flex-row sm:flex-col gap-2.5 sm:gap-0">
             <!-- Фото: мобильный — компактный квадрат слева, десктоп — на всю
                  ширину карточки, единая высота у всех (object-contain) -->
@@ -741,7 +741,7 @@ onMounted(load)
         </div>
 
         <!-- Список -->
-        <div v-else class="card overflow-hidden transition-opacity duration-200" :class="loading ? 'opacity-60 pointer-events-none' : 'opacity-100'">
+        <div v-else class="card overflow-hidden" :class="loading ? 'pointer-events-none' : ''">
           <div class="overflow-x-auto">
             <table class="w-full text-sm table-fixed">
               <thead>
