@@ -107,9 +107,14 @@ TAG=v0.3-design-fixed ./infra/scripts/deploy-prod.sh   # любой тег/ко�
 
 ### Мониторинг с CRM слепой
 
-`~/portal-monitor.log` на CRM проверяет только `GET /healthz` (живость edge-nginx,
-а не приложения). Доработать: проверять ещё `http://portal-87-232-64-23.nip.io/`
-на `200` и `/api/v1/healthz` (API за прокси).
+**Обновлено 19.09:** `monitor_portal.sh` на CRM (v2) проверяет и `/readyz`
+(db+redis+s3) — при живом, но нерабочем API пишет `DEGRADED ready=no` вместо
+ложного `OK`. Состояние: `~/portal-monitor.log` на CRM-ноде.
+
+### Логи PM2
+
+Ротация — `pm2-logrotate` (max 20 МБ, 5 копий, установлен 19.09).
+Старые всплески (OpenBLAS-спам 55 МБ) обрезаны, хвосты в `*.log.keep`.
 
 ## Локальный dev
 
