@@ -8,7 +8,7 @@ const forwarded = useForwardProps(props)
 <template>
   <SelectItem
     v-bind="forwarded"
-    class="w-full cursor-pointer select-none rounded-[18px] px-3 py-2 text-sm text-ink whitespace-nowrap outline-none transition-colors flex items-center justify-between gap-2 data-[highlighted]:bg-surface-2 data-[state=checked]:bg-ink/5 data-[state=checked]:font-semibold"
+    class="w-full cursor-pointer select-none rounded-[12px] px-2.5 py-1.5 text-sm text-ink whitespace-nowrap outline-none transition-colors flex items-center justify-between gap-2 data-[highlighted]:bg-surface-2 data-[state=checked]:bg-ink/5 data-[state=checked]:font-semibold"
   >
     <SelectItemText><slot /></SelectItemText>
     <SelectItemIndicator as-child>

@@ -123,6 +123,12 @@ const viewMode = ref<'grid' | 'list'>('grid')
 // пустые фильтры маппятся на сентинелы; смена селекта = сразу applyFilters() ---
 const ANY_STOCK = 'any'
 const ALL_MODELS = 'all'
+// Сворачиваемые группы фильтров (паттерн для новых фильтров: добавь ключ +
+// оберни секцию как Производитель/Серия — кнопка-заголовок со счётчиком)
+const collapsedGroups = reactive({ brands: false, series: false })
+function toggleGroup(key: keyof typeof collapsedGroups) {
+  collapsedGroups[key] = !collapsedGroups[key]
+}
 const stockUiOptions = stockOptions.map((o) => ({
   value: o.value === '' ? ANY_STOCK : o.value,
   label: o.label,
@@ -409,7 +415,7 @@ onMounted(load)
     <!-- Заголовок + тулбар: подняты к верхней границе меню (sidebar).
          Мобайл: заголовок делит строку с фильтрами и видом (2 ряда вместо 3),
          экспорт — иконка; на sm+ обёртки растворяются в колонку справа. -->
-    <div class="flex flex-wrap items-center justify-between gap-2 -mt-2 lg:-mt-4 mb-3 sm:mb-8 sm:flex-nowrap sm:gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-2 -mt-2 lg:-mt-4 mb-3 sm:mb-5 sm:flex-nowrap sm:gap-4">
         <div class="flex-1 min-w-0 flex items-baseline gap-2 sm:block">
           <h1 class="text-xl sm:text-2xl font-bold">Каталог</h1>
           <p class="text-xs sm:text-sm text-ink-muted sm:mt-1">
@@ -447,8 +453,9 @@ onMounted(load)
               </button>
             </div>
           </div>
-          <!-- Мобильный ряд 2 — своя строка (basis-full): сортировка (тянется) | экспорт -->
-          <div class="flex items-center gap-2 basis-full sm:contents">
+          <!-- Мобильный ряд 2 — своя строка (basis-full); на десктопе остаётся
+               единым блоком: сортировка | экспорт в одной линии без пустот -->
+          <div class="flex items-center gap-2 basis-full sm:basis-auto sm:gap-3">
             <!-- Сортировка (UI-примитив Select, reka-ui) -->
             <Select v-model="sortUi">
               <SelectTrigger aria-label="Сортировка" class="flex-1 sm:flex-none sm:min-w-[180px]">
@@ -548,45 +555,63 @@ onMounted(load)
           </div>
 
           <div v-if="filters.brands.length" class="mb-3 sm:mb-4">
-            <label class="label">Производитель</label>
-            <label v-for="b in visibleFilterItems(filters.brands, 'brands')" :key="b.id" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
-              <input v-model="selectedBrands" type="checkbox" :value="b.id" class="rounded border-border" @change="applyFilters" >
-              {{ b.name }}
-            </label>
             <button
-              v-if="hiddenFilterCount(filters.brands, 'brands')"
-              class="btn-ghost text-xs py-1 mt-1 text-primary"
-              @click="expandedFilters.brands = true"
-            >Показать все ({{ filters.brands.length }})</button>
-            <button
-              v-else-if="filters.brands.length > FILTER_COLLAPSED && expandedFilters.brands"
-              class="btn-ghost text-xs py-1 mt-1 text-primary"
-              @click="expandedFilters.brands = false"
-            >Скрыть</button>
+              class="label w-full flex items-center justify-between cursor-pointer"
+              :aria-expanded="!collapsedGroups.brands"
+              @click="toggleGroup('brands')"
+            >
+              <span>Производитель<template v-if="selectedBrands.length"> · <span class="text-primary font-semibold">{{ selectedBrands.length }}</span></template></span>
+              <Icon name="heroicons:chevron-down" class="w-4 h-4 text-ink-faint transition-transform" :class="collapsedGroups.brands ? '-rotate-90' : ''" />
+            </button>
+            <div v-show="!collapsedGroups.brands" class="mt-1">
+              <label v-for="b in visibleFilterItems(filters.brands, 'brands')" :key="b.id" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
+                <input v-model="selectedBrands" type="checkbox" :value="b.id" class="rounded border-border" @change="applyFilters" >
+                {{ b.name }}
+              </label>
+              <button
+                v-if="hiddenFilterCount(filters.brands, 'brands')"
+                class="btn-ghost text-xs py-1 mt-1 text-primary"
+                @click="expandedFilters.brands = true"
+              >Показать все ({{ filters.brands.length }})</button>
+              <button
+                v-else-if="filters.brands.length > FILTER_COLLAPSED && expandedFilters.brands"
+                class="btn-ghost text-xs py-1 mt-1 text-primary"
+                @click="expandedFilters.brands = false"
+              >Скрыть</button>
+            </div>
           </div>
 
           <div v-if="filters.series.length" class="mb-3 sm:mb-4">
-            <label class="label">Серия</label>
-            <label v-for="s in visibleFilterItems(filters.series, 'series')" :key="s.id" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
-              <input v-model="selectedSeries" type="checkbox" :value="s.id" class="rounded border-border" @change="applyFilters" >
-              {{ s.name }}
-            </label>
             <button
-              v-if="hiddenFilterCount(filters.series, 'series')"
-              class="btn-ghost text-xs py-1 mt-1 text-primary"
-              @click="expandedFilters.series = true"
-            >Показать все ({{ filters.series.length }})</button>
-            <button
-              v-else-if="filters.series.length > FILTER_COLLAPSED && expandedFilters.series"
-              class="btn-ghost text-xs py-1 mt-1 text-primary"
-              @click="expandedFilters.series = false"
-            >Скрыть</button>
+              class="label w-full flex items-center justify-between cursor-pointer"
+              :aria-expanded="!collapsedGroups.series"
+              @click="toggleGroup('series')"
+            >
+              <span>Серия<template v-if="selectedSeries.length"> · <span class="text-primary font-semibold">{{ selectedSeries.length }}</span></template></span>
+              <Icon name="heroicons:chevron-down" class="w-4 h-4 text-ink-faint transition-transform" :class="collapsedGroups.series ? '-rotate-90' : ''" />
+            </button>
+            <div v-show="!collapsedGroups.series" class="mt-1">
+              <label v-for="s in visibleFilterItems(filters.series, 'series')" :key="s.id" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
+                <input v-model="selectedSeries" type="checkbox" :value="s.id" class="rounded border-border" @change="applyFilters" >
+                {{ s.name }}
+              </label>
+              <button
+                v-if="hiddenFilterCount(filters.series, 'series')"
+                class="btn-ghost text-xs py-1 mt-1 text-primary"
+                @click="expandedFilters.series = true"
+              >Показать все ({{ filters.series.length }})</button>
+              <button
+                v-else-if="filters.series.length > FILTER_COLLAPSED && expandedFilters.series"
+                class="btn-ghost text-xs py-1 mt-1 text-primary"
+                @click="expandedFilters.series = false"
+              >Скрыть</button>
+            </div>
           </div>
 
-          <div class="mb-3 sm:mb-4">
+          <div class="mb-3 sm:mb-4 space-y-2">
             <label class="label">Наличие</label>
             <Select v-model="selectedStockUi">
-              <SelectTrigger aria-label="Наличие" class="min-w-[150px]">
+              <SelectTrigger aria-label="Наличие" class="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -596,7 +621,7 @@ onMounted(load)
               </SelectContent>
             </Select>
             <Select v-model="selectedModelUi">
-              <SelectTrigger aria-label="Модель" class="min-w-[190px]">
+              <SelectTrigger aria-label="Модель" class="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

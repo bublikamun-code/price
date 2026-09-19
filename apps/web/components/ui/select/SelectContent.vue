@@ -13,6 +13,9 @@ import {
 const props = withDefaults(defineProps<SelectContentProps>(), {
   position: 'popper',
   sideOffset: 6,
+  // немодальный режим: без блокировки прокрутки страницы — иначе при
+  // открытии «моргает» экран и пропадает прилипшая пагинация (аудит UX 19.09)
+  modal: false,
 })
 const emits = defineEmits<SelectContentEmits>()
 const forwarded = useForwardPropsEmits(props, emits)
@@ -22,7 +25,7 @@ const forwarded = useForwardPropsEmits(props, emits)
   <SelectPortal>
     <SelectContent
       v-bind="forwarded"
-      class="relative z-50 glass rounded-[18px] p-1.5 shadow-xl min-w-[var(--reka-select-trigger-width)] max-h-[var(--reka-select-content-available-height)]"
+      class="relative z-50 glass rounded-[16px] p-1 shadow-lg min-w-[160px] max-w-[280px]"
     >
       <SelectScrollUpButton class="flex items-center justify-center py-1">
         <Icon name="heroicons:chevron-up" class="w-4 h-4 text-ink-faint" />
