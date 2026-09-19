@@ -382,7 +382,7 @@
    nav-link-active, badge-primary, ад-хок bg-primary.text-white) —
    нейтральный графит (stone) — замена индиго прототипа CMR, 19.09: фон --color-primary (214 211 209), тёмный текст. */
 .dark .btn-primary {
-  background-color: rgb(142 138 245);
+  background-color: rgb(214 211 209);
   color: #14161a;
 }
 .dark .btn-primary:hover {
@@ -410,7 +410,7 @@
   color: #fafafa;
 }
 .dark .badge-primary {
-  background-color: rgb(142 138 245);
+  background-color: rgb(214 211 209);
   color: #14161a;
 }
 /* Инверсия фото в тёмной теме ОТКЛЮЧЕНА (2026-09-09, решение пользователя).
