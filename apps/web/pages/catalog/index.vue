@@ -36,11 +36,6 @@ const modelOptions = computed(() => [
   { value: '', label: 'Все модели' },
   ...(filters.value.models ?? []).map((m) => ({ value: m, label: m })),
 ])
-const stockOptions = [
-  { value: '', label: 'Любое' },
-  { value: 'IN_STOCK', label: 'В наличии' },
-  { value: 'PREORDER', label: 'Под заказ' },
-]
 
 const loading = ref(true)
 const error = ref('')
@@ -123,7 +118,7 @@ const viewMode = ref<'grid' | 'list'>('grid')
 // пустые фильтры маппятся на сентинелы; смена селекта = сразу applyFilters() ---
 // Сворачиваемые группы фильтров (паттерн для новых фильтров: добавь ключ +
 // оберни секцию как Производитель/Серия — кнопка-заголовок со счётчиком)
-const collapsedGroups = reactive({ brands: false, series: false })
+const collapsedGroups = reactive({ brands: false, series: false, stock: false, models: false })
 function toggleGroup(key: keyof typeof collapsedGroups) {
   collapsedGroups[key] = !collapsedGroups[key]
 }
@@ -369,6 +364,21 @@ function attrChips(p: ProductCard): { label: string; value: string }[] {
   return out.slice(0, 4)
 }
 const stockLabel: Record<string, string> = { IN_STOCK: 'В наличии', PREORDER: 'Под заказ', ARCHIVED: 'Снят с производства' }
+// Фильтры «Наличие»/«Модель»: чекбоксы в стиле Производитель/Серия.
+// Бэкенд принимает одиночное значение — чекбокс работает как переключатель:
+// клик по выбранному снимает фильтр (= «Любое»/«Все модели»).
+const stockCheckOptions = [
+  { value: 'IN_STOCK', label: 'В наличии' },
+  { value: 'PREORDER', label: 'Под заказ' },
+]
+function toggleStock(v: string) {
+  selectedStock.value = selectedStock.value === v ? '' : v
+  applyFilters()
+}
+function toggleModel(m: string) {
+  selectedModel.value = selectedModel.value === m ? '' : m
+  applyFilters()
+}
 // Табличный вид: статус — иконка + тултип (классы — те же, что у бейджей наличия).
 const STOCK_ICON: Record<string, { icon: string; cls: string }> = {
   IN_STOCK: { icon: 'heroicons:check-circle-20-solid', cls: 'text-success' },
@@ -384,7 +394,7 @@ onMounted(load)
     <!-- Заголовок + тулбар: подняты к верхней границе меню (sidebar).
          Мобайл: заголовок делит строку с фильтрами и видом (2 ряда вместо 3),
          экспорт — иконка; на sm+ обёртки растворяются в колонку справа. -->
-    <div class="flex flex-wrap items-center justify-between gap-2 -mt-2 lg:-mt-4 mb-3 sm:mb-5 sm:flex-nowrap sm:gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-2 -mt-2 lg:-mt-4 mb-3 sm:mb-5 sm:gap-4">
         <div class="flex-1 min-w-0 flex items-baseline gap-2 sm:block">
           <h1 class="text-xl sm:text-2xl font-bold">Каталог</h1>
           <p class="text-xs sm:text-sm text-ink-muted sm:mt-1">
@@ -569,10 +579,38 @@ onMounted(load)
             </div>
           </div>
 
-          <div class="mb-3 sm:mb-4 space-y-2">
-            <label class="label">Наличие</label>
-            <BaseSelect v-model="selectedStock" :options="stockOptions" class="w-full" @change="applyFilters" />
-            <BaseSelect v-model="selectedModel" :options="modelOptions" class="w-full" @change="applyFilters" />
+          <div class="mb-3 sm:mb-4">
+            <button
+              class="label w-full flex items-center justify-between cursor-pointer"
+              :aria-expanded="!collapsedGroups.stock"
+              @click="toggleGroup('stock')"
+            >
+              <span>Наличие<template v-if="selectedStock"> · <span class="text-primary font-semibold">{{ stockLabel[selectedStock] }}</span></template></span>
+              <Icon name="heroicons:chevron-down" class="w-4 h-4 text-ink-faint transition-transform" :class="collapsedGroups.stock ? '-rotate-90' : ''" />
+            </button>
+            <div v-show="!collapsedGroups.stock" class="mt-1">
+              <label v-for="o in stockCheckOptions" :key="o.value" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
+                <input type="checkbox" :checked="selectedStock === o.value" class="rounded border-border" @change="toggleStock(o.value)">
+                {{ o.label }}
+              </label>
+            </div>
+          </div>
+
+          <div class="mb-3 sm:mb-4">
+            <button
+              class="label w-full flex items-center justify-between cursor-pointer"
+              :aria-expanded="!collapsedGroups.models"
+              @click="toggleGroup('models')"
+            >
+              <span>Модель<template v-if="selectedModel"> · <span class="text-primary font-semibold">1</span></template></span>
+              <Icon name="heroicons:chevron-down" class="w-4 h-4 text-ink-faint transition-transform" :class="collapsedGroups.models ? '-rotate-90' : ''" />
+            </button>
+            <div v-show="!collapsedGroups.models" class="mt-1">
+              <label v-for="o in modelOptions" :key="o.value || 'all'" class="flex items-center gap-2 text-sm py-0.5 sm:py-1 cursor-pointer">
+                <input type="checkbox" :checked="selectedModel === o.value" class="rounded border-border" @change="toggleModel(String(o.value))">
+                {{ o.value ? o.label : 'Все модели' }}
+              </label>
+            </div>
           </div>
 
           <button
