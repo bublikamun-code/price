@@ -9,9 +9,11 @@
    Палитра светлой и тёмной темы — из прототипа CMR shell-v2
    (/Users/yaroslav/cmr-svetvdome/tools/mockups/shell-v2-prototype.html,
    решение пользователя 2026-09-17 «взять стиль с СМР-прототипа»):
-   тёплый серо-бежевый фон + белые поверхности, индиго-акцент
-   #4f46e5, плоские карточки с тонкой рамкой и мягкими тенями.
-   Не менять значения без согласования — это зафиксированный дизайн.
+   тёплый серо-бежевый фон + белые поверхности, плоские карточки с тонкой
+   рамкой и мягкими тенями.
+   РЕШЕНО 2026-09-19 (пользователь: «синий не нравится»): акцент переведён
+   с индиго #4f46e5 на нейтральный тёплый графит (stone) — значения ниже.
+   Дальше не менять без согласования.
    ============================================================ */
 
 :root {
@@ -24,9 +26,9 @@
   --color-ink: 23 26 23;
   --color-ink-muted: 124 130 124;
   --color-ink-faint: 154 160 154;
-  --color-primary: 79 70 229;
-  --color-primary-hover: 67 56 229;
-  --color-primary-soft: 236 234 253;
+  --color-primary: 87 83 78;
+  --color-primary-hover: 68 64 60;
+  --color-primary-soft: 237 233 228;
   --color-secondary: 23 26 23;
   --color-secondary-soft: 245 244 241;
   --color-destructive: 194 71 79;
@@ -40,7 +42,7 @@
   --color-danger: 194 71 79;
   --color-danger-soft: 251 233 234;
   --color-danger-text: 152 45 51;
-  --color-info-text: 79 70 229;
+  --color-info-text: 68 64 60;
 
   /* Материал поверхностей по прототипу CMR: плоские непрозрачные
      карточки (стекло выключено — блики обнулены, рамка сплошная).
@@ -54,16 +56,16 @@
   --glass-spec-ring: 0;
   --glass-spec-bot: 0;
 
-  /* Акцентный цвет (CTA/лендинг) — индиго прототипа CMR, совпадает
+  /* Акцентный цвет (CTA/лендинг) — нейтральный графит (stone) — замена индиго прототипа CMR, 19.09, совпадает
      с primary: главный CTA, числа метрик, акцентные подчёркивания. */
-  --color-accent: 79 70 229;
-  --color-accent-soft: 236 234 253;
-  --color-accent-hover: 67 56 229;
+  --color-accent: 87 83 78;
+  --color-accent-soft: 237 233 228;
+  --color-accent-hover: 68 64 60;
 
   /* Ambient-фон: почти выключен — у прототипа фон ровный,
      остаётся едва заметная глубина в тонах новой палитры */
   --ambient-a: 0.05;
-  --ambient-1: 79 70 229;
+  --ambient-1: 120 113 108;
   --ambient-2: 224 177 105;
   --ambient-3: 62 155 98;
 
@@ -82,9 +84,9 @@
   --color-ink: 232 234 231;
   --color-ink-muted: 142 148 142;
   --color-ink-faint: 111 117 112;
-  --color-primary: 142 138 245;
-  --color-primary-hover: 167 163 250;
-  --color-primary-soft: 38 36 71;
+  --color-primary: 214 211 209;
+  --color-primary-hover: 231 229 228;
+  --color-primary-soft: 41 37 36;
   --color-secondary: 232 234 231;
   --color-secondary-soft: 36 39 42;
   --color-destructive: 229 139 144;
@@ -98,7 +100,7 @@
   --color-danger: 229 139 144;
   --color-danger-soft: 46 32 34;
   --color-danger-text: 229 139 144;
-  --color-info-text: 142 138 245;
+  --color-info-text: 214 211 209;
   color-scheme: dark;
 
   /* Материал поверхностей (dark) по прототипу CMR: плоские тёмные
@@ -113,9 +115,9 @@
   --glass-spec-bot: 0;
 
   /* Акцент (dark): светлее для читаемости на тёмном фоне (прототип CMR) */
-  --color-accent: 142 138 245;
-  --color-accent-soft: 38 36 71;
-  --color-accent-hover: 167 163 250;
+  --color-accent: 214 211 209;
+  --color-accent-soft: 41 37 36;
+  --color-accent-hover: 231 229 228;
 
   /* Ambient (dark): глубокие тона, чуть заметнее light, без неона */
   --ambient-a: 0.1;
@@ -278,7 +280,7 @@
   .btn-outline {
     @apply btn bg-transparent border border-border text-ink hover:bg-canvas;
   }
-  /* Акцентная CTA-кнопка (лендинг): плоский индиго прототипа CMR —
+  /* Акцентная CTA-кнопка (лендинг): плоский нейтральный графит (stone) — замена индиго прототипа CMR, 19.09 —
      тот же материал, что у .btn-primary, без градиента. */
   .btn-accent {
     @apply btn text-white px-5 active:scale-[.98];
@@ -378,7 +380,7 @@
    Инверсия «белым по тёмному» осталась только у нейтральных контролов
    (segmented-control, badge-solid). Главные акценты (btn-primary,
    nav-link-active, badge-primary, ад-хок bg-primary.text-white) —
-   индиго прототипа CMR: фон --color-primary (142 138 245), тёмный текст. */
+   нейтральный графит (stone) — замена индиго прототипа CMR, 19.09: фон --color-primary (214 211 209), тёмный текст. */
 .dark .btn-primary {
   background-color: rgb(142 138 245);
   color: #14161a;
