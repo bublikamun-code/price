@@ -83,6 +83,21 @@ export default defineNuxtConfig({
     appManifest: false,
   },
 
+  // Только для `nuxt dev`: при NUXT_PUBLIC_API_BASE="" клиент шлёт запросы в
+  // тот же origin, а на хосте их некому принять (в docker это делает nginx из
+  // docker-compose). Проксируем /api на локальный API, иначе локальный стенд
+  // отдаёт 404 и вход в кабинет невозможен. В production-сборку vite не входит.
+  vite: {
+    server: {
+      proxy: {
+        '/api': {
+          target: process.env.API_INTERNAL_BASE || 'http://localhost:8000',
+          changeOrigin: true,
+        },
+      },
+    },
+  },
+
   // Глобальные middleware (см. SITEMAP §1)
-  // routeRules — ISR/caching по мере необходимости
+  // routeRules — ISR/кэширование по мере необходимости
 })

@@ -18,7 +18,7 @@ function openReview() {
     @click="openReview"
   >
     <span class="min-w-0 flex-1">
-      <span class="block text-xs font-semibold uppercase tracking-wide text-ink-on-service/70">Текущая заявка</span>
+      <span class="block text-xs font-bold uppercase tracking-[0.16em] text-ink-on-service/70">Текущая заявка</span>
       <strong class="mt-0.5 block text-sm font-semibold">
         {{ count }} {{ count === 1 ? 'позиция' : count < 5 ? 'позиции' : 'позиций' }}
         <span v-if="total" class="font-normal text-ink-on-service/70"> · {{ formatMoney(total.amount, total.currency) }}</span>

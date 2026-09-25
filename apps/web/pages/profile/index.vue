@@ -9,6 +9,7 @@ const auth = useAuth()
 const { request } = useApi()
 
 const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB'] as const
+const currencyOptions = CURRENCIES.map((currency) => ({ value: currency, label: currency }))
 const currencySaving = ref(false)
 const currencySaved = ref(false)
 const currencyError = ref('')
@@ -31,9 +32,8 @@ async function setDisplayCurrency(code: string) {
   }
 }
 
-function onCurrencyChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  void setDisplayCurrency(value)
+function onCurrencyChange(value: string | number) {
+  void setDisplayCurrency(String(value))
 }
 
 interface MyTerms {
@@ -153,16 +153,14 @@ const roleLabel = computed(() => {
     <section id="profile-currency" class="grid scroll-mt-24 border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="currency-heading">
       <h2 id="currency-heading" class="text-sm font-bold text-ink">Валюта</h2>
       <div class="max-w-sm">
-        <label for="profile-currency" class="label">Валюта отображения прайсов</label>
-        <select
-          id="profile-currency"
-          class="input"
-          :value="auth.user?.displayCurrency"
-          :disabled="currencySaving"
-          @change="onCurrencyChange"
-        >
-          <option v-for="currency in CURRENCIES" :key="currency" :value="currency">{{ currency }}</option>
-        </select>
+        <UiField for="profile-currency-select" label="Валюта отображения прайсов">
+          <UiSelect
+            :model-value="auth.user?.displayCurrency ?? ''"
+            :options="currencyOptions"
+            :disabled="currencySaving"
+            @update:model-value="onCurrencyChange"
+          />
+        </UiField>
         <p class="mt-2 text-sm text-ink-muted">Изменение сохраняется через PATCH /auth/me.</p>
         <p v-if="currencySaved" class="mt-2 text-sm font-semibold text-success-text" role="status">Валюта сохранена.</p>
         <p v-if="currencyError" class="mt-2 text-sm text-danger-text" role="alert">{{ currencyError }}</p>

@@ -114,7 +114,7 @@ onMounted(load)
       </template>
     </PageHeading>
 
-    <div class="-mx-4 mb-5 overflow-x-auto px-4 sm:mx-0 sm:px-0" data-testid="orders-status-filter">
+    <div class="mb-5 overflow-x-auto" data-testid="orders-status-filter">
       <div class="flex min-w-max gap-1 border-b border-border" role="tablist" aria-label="Фильтр по статусу">
         <button v-for="tab in STATUS_TABS" :key="tab.value || 'all'" type="button" role="tab" class="min-h-11 border-b-2 px-3 text-sm font-semibold transition-colors" :class="statusFilter === tab.value ? 'border-action text-action' : 'border-transparent text-ink-muted hover:text-ink'" :aria-selected="statusFilter === tab.value" :data-testid="`orders-status-${tab.value || 'all'}`" @click="applyStatus(tab.value)">{{ tab.label }}</button>
       </div>
@@ -139,7 +139,7 @@ onMounted(load)
         <UiTableFrame caption="Заявки клиента" overflow-label="Список заявок с горизонтальной прокруткой">
           <template #header>
             <tr class="border-b border-border bg-surface-2 text-xs font-semibold text-ink-muted">
-              <th scope="col" class="px-4 py-3">Заявка</th><th scope="col" class="px-4 py-3">Дата</th><th scope="col" class="px-4 py-3">Статус</th><th scope="col" class="px-4 py-3 text-right">Сумма</th><th scope="col" class="px-4 py-3 text-right"><span class="sr-only">Действия</span></th>
+              <th scope="col" class="px-4 py-3">Заявка</th><th scope="col" class="px-4 py-3">Дата</th><th scope="col" class="px-4 py-3">Статус</th><th scope="col" class="px-4 py-3 text-right">Сумма</th><th scope="col" class="w-px px-4 py-3 text-right"><span class="sr-only">Действия</span></th>
             </tr>
           </template>
           <tr v-for="order in orders" :key="order.id" class="border-b border-border last:border-b-0 hover:bg-surface-2" :data-testid="`orders-row-${order.id}`">
@@ -147,7 +147,7 @@ onMounted(load)
             <td class="whitespace-nowrap px-4 py-3.5 text-sm text-ink-muted">{{ formatDate(order.createdAt) }}</td>
             <td class="px-4 py-3.5"><UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot /></td>
             <td class="numeric whitespace-nowrap px-4 py-3.5 text-right font-semibold text-ink">{{ formatMoney(order.total.amount, order.total.currency) }}</td>
-            <td class="px-4 py-3 text-right whitespace-nowrap">
+            <td class="w-px whitespace-nowrap px-4 py-3 text-right">
               <NuxtLink :to="`/orders/${order.id}`" class="inline-flex min-h-8 items-center justify-center gap-2 px-2.5 py-1 text-xs font-semibold text-ink hover:bg-surface-2"><Icon name="heroicons:eye" class="size-4" />Открыть</NuxtLink>
               <UiButton variant="ghost" size="compact" :loading="repeatingId === order.id" :disabled="repeatingId !== null" :data-testid="`orders-repeat-${order.id}`" @click="repeatOrder(order)"><template #leading><Icon name="heroicons:arrow-path" class="size-4" /></template>Повторить</UiButton>
               <UiButton variant="ghost" size="compact" :loading="pdfActiveId === order.id" :disabled="pdfActiveId !== null" :data-testid="`orders-pdf-${order.id}`" @click="exportOrderPdf(order.id)"><template #leading><Icon name="heroicons:document-arrow-down" class="size-4" /></template>PDF</UiButton>
