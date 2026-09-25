@@ -237,6 +237,29 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _check_prod_security(self) -> "Settings":
+        """Продовые инварианты безопасности проверяем на старте, fail fast."""
+        if self.env != "prod":
+            return self
+
+        errors: list[str] = []
+        if not self.cookie_secure:
+            errors.append("COOKIE_SECURE=true")
+        if self.jwt_algorithm != "RS256":
+            errors.append("JWT_ALGORITHM=RS256")
+        if any(
+            "localhost" in origin.lower() or "127.0.0.1" in origin.lower()
+            for origin in self.cors_origin_list
+        ):
+            errors.append("CORS_ORIGINS без localhost/127.0.0.1")
+        if self.secret_key == "change-me-to-a-long-random-string" or len(self.secret_key) < 32:
+            errors.append("SECRET_KEY не должен быть дефолтным или короче 32 символов")
+
+        if errors:
+            raise ValueError("Некорректные продовые настройки безопасности: " + "; ".join(errors))
+        return self
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -35,7 +35,7 @@ def export_rate_key(request) -> str:
     token = None
     if auth and auth.lower().startswith("bearer "):
         token = auth.split(" ", 1)[1].strip()
-    token = token or request.cookies.get("access_token")
+    token = token or request.cookies.get("auth_token") or request.cookies.get("access_token")
     if token:
         try:
             payload = decode_token(token)

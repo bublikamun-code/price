@@ -7,7 +7,6 @@ slug серии: модель Series не имеет slug-колонки (slug �
 фронту в деталке бренда (PublicSeriesOut.slug), дальше ходит по кругу как
 непрозрачный токен: /public/series/{slug}/products.
 """
-import asyncio
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,10 +60,10 @@ class PublicCatalogService:
         brand = await public_repo.get_brand_by_slug(self.db, slug)
         if brand is None:
             raise NotFoundError("Бренд не найден")
-        series, stats = await asyncio.gather(
-            public_repo.fetch_brand_series(self.db, brand_id=brand.id),
-            public_repo.fetch_brand_stats(self.db, brand.id),
-        )
+        # Одна AsyncSession не поддерживает параллельные операции, поэтому
+        # два независимых чтения выполняем последовательно в прежнем порядке.
+        series = await public_repo.fetch_brand_series(self.db, brand_id=brand.id)
+        stats = await public_repo.fetch_brand_stats(self.db, brand.id)
         return PublicBrandDetailOut(
             id=brand.id,
             name=brand.name,

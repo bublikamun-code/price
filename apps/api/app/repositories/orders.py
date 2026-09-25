@@ -1,11 +1,13 @@
 """Репозиторий заявок. См. ARCHITECTURE_PLAN.md §9."""
 import uuid
+from datetime import datetime
 
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.models.enums import OrderStatus
-from app.models.order import Order, OrderItem
+from app.models.order import Order, OrderIdempotency, OrderItem
 from app.models.user import User
 
 # PG-последовательность сквозных номеров (создаётся миграцией 0009;
@@ -44,13 +46,21 @@ async def fetch_orders(
     db: AsyncSession,
     *,
     client_id: uuid.UUID | None = None,
+    organization_id: uuid.UUID | None = None,
     manager_id: uuid.UUID | None = None,
     status: OrderStatus | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[Order]:
     stmt = select(Order)
-    if client_id is not None:
+    if organization_id is not None:
+        legacy_filter = (
+            Order.organization_id.is_(None) & (Order.client_id == client_id)
+            if client_id is not None
+            else Order.organization_id.is_(None)
+        )
+        stmt = stmt.where(or_(Order.organization_id == organization_id, legacy_filter))
+    elif client_id is not None:
         stmt = stmt.where(Order.client_id == client_id)
     if manager_id is not None:
         stmt = stmt.where(Order.manager_id == manager_id)
@@ -65,17 +75,104 @@ async def count_orders(
     db: AsyncSession,
     *,
     client_id: uuid.UUID | None = None,
+    organization_id: uuid.UUID | None = None,
     manager_id: uuid.UUID | None = None,
     status: OrderStatus | None = None,
 ) -> int:
     stmt = select(func.count(Order.id))
-    if client_id is not None:
+    if organization_id is not None:
+        legacy_filter = (
+            Order.organization_id.is_(None) & (Order.client_id == client_id)
+            if client_id is not None
+            else Order.organization_id.is_(None)
+        )
+        stmt = stmt.where(or_(Order.organization_id == organization_id, legacy_filter))
+    elif client_id is not None:
         stmt = stmt.where(Order.client_id == client_id)
     if manager_id is not None:
         stmt = stmt.where(Order.manager_id == manager_id)
     if status is not None:
         stmt = stmt.where(Order.status == status)
     return int(await db.scalar(stmt) or 0)
+
+
+def _v2_scope_filter(*, client_id: uuid.UUID, organization_id: uuid.UUID | None):
+    """Commercial visibility for the authenticated client v2 collection.
+
+    In USER scope only the caller's legacy/NULL-organization orders are visible.
+    In ORGANIZATION scope all orders owned by the selected organization are
+    visible, plus the caller's legacy/NULL-organization compatibility orders.
+    This predicate is intentionally separate from the v1 fetch/count methods:
+    their offset and legacy behavior must remain untouched.
+    """
+    if organization_id is None:
+        return and_(Order.client_id == client_id, Order.organization_id.is_(None))
+    return or_(
+        Order.organization_id == organization_id,
+        and_(Order.organization_id.is_(None), Order.client_id == client_id),
+    )
+
+
+async def fetch_orders_v2_page(
+    db: AsyncSession,
+    *,
+    client_id: uuid.UUID,
+    organization_id: uuid.UUID | None,
+    status: OrderStatus | None = None,
+    limit: int,
+    after: dict[str, str] | None = None,
+) -> list[Order]:
+    """Fetch a bounded, stable keyset page without loading order items."""
+    stmt = select(Order).options(
+        load_only(
+            Order.id,
+            Order.seq,
+            Order.organization_id,
+            Order.client_id,
+            Order.status,
+            Order.total_amount,
+            Order.currency_code,
+            Order.exchange_rate,
+            Order.rate_source,
+            Order.created_at,
+            Order.updated_at,
+            Order.version,
+        )
+    )
+    stmt = stmt.where(_v2_scope_filter(client_id=client_id, organization_id=organization_id))
+    if status is not None:
+        stmt = stmt.where(Order.status == status)
+    if after is not None:
+        after_created_at = datetime.fromisoformat(after["value"])
+        after_id = uuid.UUID(after["id"])
+        stmt = stmt.where(
+            or_(
+                Order.created_at < after_created_at,
+                and_(Order.created_at == after_created_at, Order.id < after_id),
+            )
+        )
+    stmt = stmt.order_by(Order.created_at.desc(), Order.id.desc()).limit(limit)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_idempotency_record(
+    db: AsyncSession, *, user_id: uuid.UUID, idempotency_key: str
+) -> OrderIdempotency | None:
+    return await db.scalar(
+        select(OrderIdempotency).where(
+            OrderIdempotency.user_id == user_id,
+            OrderIdempotency.idempotency_key == idempotency_key,
+        )
+    )
+
+
+async def add_idempotency_record(
+    db: AsyncSession, *, record: OrderIdempotency
+) -> OrderIdempotency:
+    db.add(record)
+    await db.flush()
+    return record
 
 
 async def get_order_items(db: AsyncSession, *, order_id: uuid.UUID) -> list[OrderItem]:

@@ -94,7 +94,20 @@ async def _run_photo_zip(job_id: uuid.UUID, user_id: str, s3_key: str) -> dict:
 
     await set_job_state(job_id, status=STATUS_RUNNING)
 
-    data = storage.get_bytes(settings.s3_bucket_tmp, s3_key)
+    try:
+        data = storage.get_bytes(settings.s3_bucket_tmp, s3_key)
+    finally:
+        # Архив уже прочитан в память; очищаем временный объект и при ошибке
+        # парсинга, чтобы ZIP-файлы не накапливались в tmp-бакете.
+        try:
+            storage.delete_object(settings.s3_bucket_tmp, s3_key)
+        except storage.StorageError as exc:
+            log.warning(
+                "photozip.tmp_object_delete_failed",
+                job_id=str(job_id),
+                s3_key=s3_key,
+                error=str(exc),
+            )
     files = matched = unmatched = 0
     errors: list[str] = []
 

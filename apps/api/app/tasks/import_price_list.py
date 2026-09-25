@@ -98,7 +98,17 @@ async def _run_import(version_id: uuid.UUID) -> dict:
             # цикличности на верхнем уровне модуля.
             from app.tasks.notifications import dispatch_price_changed
 
-            dispatch_price_changed.delay(str(version_id))
+            try:
+                dispatch_price_changed.delay(str(version_id))
+            except Exception as exc:
+                # Импорт уже зафиксирован как DONE. Не откатываем его из-за
+                # недоступного брокера, но оставляем явный сигнал для алерта и
+                # ручной повторной постановки уведомления.
+                log.exception(
+                    "import.price_notification_dispatch_failed",
+                    version_id=str(version_id),
+                    error=str(exc),
+                )
         except SchemaError as exc:
             # Файл целиком непригоден: версия DONE с одной ошибкой схемы.
             await _finalize(db, version, ok=0, err=1, total=0,
@@ -119,9 +129,22 @@ async def _run_import(version_id: uuid.UUID) -> dict:
 
 async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
     """Скачать → распарсить → нормализовать → upsert батчами → архивация → финал."""
-    data = _strip_bom(storage.get_bytes(
-        settings.s3_bucket_tmp, f"{version.id}/{version.filename}"
-    ))
+    s3_key = f"{version.id}/{version.filename}"
+    try:
+        data = storage.get_bytes(settings.s3_bucket_tmp, s3_key)
+    finally:
+        # CSV уже прочитан в память; временный объект не нужен даже при ошибке
+        # разбора и не должен бессрочно накапливаться в tmp-бакете.
+        try:
+            storage.delete_object(settings.s3_bucket_tmp, s3_key)
+        except storage.StorageError as exc:
+            log.warning(
+                "import.tmp_object_delete_failed",
+                version_id=str(version.id),
+                s3_key=s3_key,
+                error=str(exc),
+            )
+    data = _strip_bom(data)
     header_line = data.split(b"\n", 1)[0].decode("utf-8", "replace")
     separator = detect_separator(header_line)
 

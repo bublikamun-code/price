@@ -73,6 +73,7 @@ async def test_create_archived_forbidden(api_client, session_factory):
     await _login(api_client, CLIENT_EMAIL)
     r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "A-2", "quantity": 1}], "delivery_point": "Склад Минск"})
     assert r.status_code == 400
+    assert r.headers["X-Error-Code"] == "PRODUCT_UNAVAILABLE"
 
 
 async def test_create_unknown_sku(api_client, session_factory):
@@ -81,6 +82,88 @@ async def test_create_unknown_sku(api_client, session_factory):
     await _login(api_client, CLIENT_EMAIL)
     r = await api_client.post("/api/v1/orders", json={"items": [{"sku": "NOPE", "quantity": 1}], "delivery_point": "Склад Минск"})
     assert r.status_code == 404
+    assert r.headers["X-Error-Code"] == "PRODUCT_NOT_FOUND"
+
+
+async def test_create_order_idempotency_replays_same_result(api_client, session_factory):
+    """Повтор с тем же ключом и payload не создаёт вторую заявку."""
+    sf = session_factory
+    await _seed(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+    payload = {
+        "items": [{"sku": "A-1", "quantity": 1}],
+        "delivery_point": "Склад Минск",
+    }
+
+    first = await api_client.post(
+        "/api/v1/orders", json=payload, headers={"Idempotency-Key": "submit-001"}
+    )
+    second = await api_client.post(
+        "/api/v1/orders", json=payload, headers={"Idempotency-Key": "submit-001"}
+    )
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+    assert first.headers["X-Idempotency-Replayed"] == "false"
+    assert second.headers["X-Idempotency-Replayed"] == "true"
+    assert second.json()["total_amount"] == first.json()["total_amount"]
+
+
+async def test_create_order_idempotency_rejects_changed_payload(api_client, session_factory):
+    """Тот же ключ с другим payload даёт стабильный конфликт."""
+    sf = session_factory
+    await _seed(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+    base = {
+        "items": [{"sku": "A-1", "quantity": 1}],
+        "delivery_point": "Склад Минск",
+    }
+    first = await api_client.post(
+        "/api/v1/orders", json=base, headers={"Idempotency-Key": "submit-002"}
+    )
+    changed = await api_client.post(
+        "/api/v1/orders",
+        json={**base, "items": [{"sku": "A-1", "quantity": 2}]},
+        headers={"Idempotency-Key": "submit-002"},
+    )
+
+    assert first.status_code == 201, first.text
+    assert changed.status_code == 409
+    assert changed.headers["X-Error-Code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+async def test_create_order_with_structured_delivery(api_client, session_factory):
+    """Структурированная доставка сохраняется отдельными полями заказа."""
+    sf = session_factory
+    await _seed(sf)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    r = await api_client.post(
+        "/api/v1/orders",
+        json={
+            "items": [{"sku": "A-1", "quantity": 1}],
+            "delivery": {
+                "method": "DELIVERY",
+                "address": "Минск, ул. Примерная, 1",
+                "contact_name": "Иван",
+                "phone": "+375291234567",
+                "preferred_date": "2026-10-02",
+                "comment": "После 14:00",
+            },
+        },
+    )
+    assert r.status_code == 201, r.text
+    order = r.json()
+    assert order["delivery_method"] == "delivery"
+    assert order["delivery_address"] == "Минск, ул. Примерная, 1"
+    assert order["delivery_contact_name"] == "Иван"
+    assert order["delivery_phone"] == "+375291234567"
+    assert order["delivery_preferred_date"] == "2026-10-02"
+    assert order["delivery_comment"] == "После 14:00"
 
 
 # =========================================================
@@ -148,6 +231,46 @@ async def test_order_exceeds_stock_returns_422(api_client, session_factory):
     })
     assert r.status_code == 422
     assert "S-1" in r.json()["detail"]
+
+
+async def test_duplicate_order_lines_are_aggregated_before_stock_validation(api_client, session_factory):
+    """Две строки одного SKU не обходят проверку остатка суммарной quantity."""
+    sf = session_factory
+    brand = await create_brand(sf, name="Alpha")
+    await create_product(sf, sku="S-DUP", name="Widget", brand=brand, base_price=10, stock_qty=10)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    r = await api_client.post("/api/v1/orders", json={
+        "items": [
+            {"sku": "S-DUP", "quantity": 6},
+            {"sku": "S-DUP", "quantity": 6},
+        ],
+        "delivery_point": "Склад Минск",
+    })
+    assert r.status_code == 422
+    assert "S-DUP" in r.json()["detail"]
+
+
+async def test_duplicate_order_lines_are_merged_into_one_item(api_client, session_factory):
+    """В совместимом v1 payload дубли агрегируются, а не создают две позиции."""
+    sf = session_factory
+    brand = await create_brand(sf, name="Alpha")
+    await create_product(sf, sku="S-MERGE", name="Widget", brand=brand, base_price=10, stock_qty=20)
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL)
+
+    r = await api_client.post("/api/v1/orders", json={
+        "items": [
+            {"sku": "S-MERGE", "quantity": 2, "note": "первая"},
+            {"sku": "S-MERGE", "quantity": 3, "note": "вторая"},
+        ],
+        "delivery_point": "Склад Минск",
+    })
+    assert r.status_code == 201, r.text
+    assert len(r.json()["items"]) == 1
+    assert r.json()["items"][0]["quantity"] == 5
+    assert r.json()["items"][0]["note"] == "первая\nвторая"
 
 
 async def test_order_with_null_stock_not_limited(api_client, session_factory):
@@ -316,6 +439,7 @@ async def test_cancel_completed_conflict(api_client, session_factory):
 
     r = await api_client.post(f"/api/v1/orders/{order_id}/cancel")
     assert r.status_code == 409
+    assert r.headers["X-Error-Code"] == "ORDER_NOT_CANCELABLE"
 
 
 # =========================================================

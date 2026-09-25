@@ -7,6 +7,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -339,7 +340,9 @@ async def download_export(
     content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if fmt == "xlsx" else "text/csv"
     filename = f"catalog-export-{job_id}.{fmt}"
     try:
-        body = storage.get_bytes(settings.s3_bucket_exports, s3_key)
+        body = await run_in_threadpool(
+            storage.get_bytes, settings.s3_bucket_exports, s3_key
+        )
     except storage.StorageError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     import io

@@ -1,0 +1,10 @@
+{
+  "type": "https://priceweb.local/problems/stale-resource-version",
+  "title": "Корзина уже изменена",
+  "status": 409,
+  "detail": "Ожидалась версия 1, актуальная версия 2",
+  "instance": "/api/v2/cart/items",
+  "code": "STALE_RESOURCE_VERSION",
+  "requestId": "v2-fixture-cart-stale-001",
+  "errors": []
+}

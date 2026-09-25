@@ -1,7 +1,7 @@
-"""Репозиторий корзины. См. ARCHITECTURE_PLAN.md §19 (persist-корзина в БД)."""
+"""Scoped cart persistence used by legacy API v1 and organization-aware API v2."""
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,33 +9,76 @@ from app.models.catalog import Brand, Product, Series
 from app.models.order import Cart, CartItem
 
 
-async def get_or_create_cart(db: AsyncSession, *, user_id: uuid.UUID) -> Cart:
-    """Корзина пользователя, при отсутствии — создаётся.
+def _scope_filter(*, user_id: uuid.UUID, organization_id: uuid.UUID | None):
+    if organization_id is None:
+        return and_(Cart.user_id == user_id, Cart.organization_id.is_(None))
+    return and_(
+        Cart.user_id == user_id,
+        Cart.organization_id == organization_id,
+    )
 
-    Гонка check-then-insert (аудит 2026-09-06): два параллельных запроса
-    могли создать по корзине. Теперь ``uq_carts_user_id`` (миграция 0009)
-    детерминирует победителя: проигравший INSERT благодаря
-    ``ON CONFLICT DO NOTHING`` не падает и читает корзину победителя.
-    ORM-вариант с SAVEPOINT в async-сессии ненадёжен: ``begin_nested``
-    флашит pending-объекты ещё до создания точки сохранения, а после
-    UniqueViolation транзакция остаётся повреждённой.
-    """
-    cart = await db.scalar(select(Cart).where(Cart.user_id == user_id))
+
+async def get_or_create_cart(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    organization_id: uuid.UUID | None = None,
+) -> Cart:
+    """Return one cart for a user/scope, creating it atomically when absent."""
+    where = _scope_filter(user_id=user_id, organization_id=organization_id)
+    cart = await db.scalar(select(Cart).where(where))
     if cart is not None:
         return cart
 
-    # name дублирует ORM-дефолт модели: Core-INSERT обходит python-дефолты;
-    # id обязателен по той же причине (UUIDPrimaryKey.default=uuid4).
+    if organization_id is None:
+        conflict_filter = Cart.organization_id.is_(None)
+        conflict_columns = [Cart.user_id]
+    else:
+        conflict_filter = Cart.organization_id.is_not(None)
+        conflict_columns = [Cart.user_id, Cart.organization_id]
+
     stmt = (
         pg_insert(Cart)
-        .values(user_id=user_id, name="Корзина", id=uuid.uuid4())
-        .on_conflict_do_nothing(index_elements=[Cart.user_id])
+        .values(
+            user_id=user_id,
+            organization_id=organization_id,
+            name="Корзина",
+            id=uuid.uuid4(),
+            version=1,
+        )
+        .on_conflict_do_nothing(
+            index_elements=conflict_columns,
+            index_where=conflict_filter,
+        )
     )
     await db.execute(stmt)
-    cart = await db.scalar(select(Cart).where(Cart.user_id == user_id))
-    if cart is None:  # невозможен: DO NOTHING + существующий или вставленный ряд
-        raise RuntimeError(f"cart for user {user_id} missing after upsert")
+    cart = await db.scalar(select(Cart).where(where))
+    if cart is None:
+        raise RuntimeError(
+            f"cart for user {user_id}, organization {organization_id} missing after upsert"
+        )
     return cart
+
+
+async def get_cart_for_update(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    organization_id: uuid.UUID | None,
+) -> Cart | None:
+    return await db.scalar(
+        select(Cart)
+        .where(
+            _scope_filter(user_id=user_id, organization_id=organization_id)
+        )
+        .with_for_update()
+    )
+
+
+async def bump_cart_version(db: AsyncSession, *, cart: Cart) -> int:
+    cart.version += 1
+    await db.flush()
+    return cart.version
 
 
 async def fetch_cart_items(db: AsyncSession, *, cart_id: uuid.UUID) -> list[CartItem]:
@@ -46,9 +89,11 @@ async def fetch_cart_items(db: AsyncSession, *, cart_id: uuid.UUID) -> list[Cart
 
 
 async def fetch_cart_items_detailed(db: AsyncSession, *, cart_id: uuid.UUID):
-    """Позиции корзины с товаром/брендом/серией. Возвращает list[Row]:
-    ``row[0]`` — CartItem, ``row[1]`` — Product (или None если удалён),
-    ``row.brand_name`` и ``row.photo_key`` — labeled-колонки (могут быть None)."""
+    """Cart lines with safe presentation joins plus the legacy photo key.
+
+    Row shape is ``row[0]=CartItem``, ``row[1]=Product`` and labeled
+    ``brand_name``/``photo_key``. API v2 deliberately ignores ``photo_key``.
+    """
     stmt = (
         select(
             CartItem,
@@ -84,7 +129,7 @@ async def upsert_cart_item(
     quantity: int,
     note: str | None,
 ) -> CartItem:
-    """Добавить (создать) или увеличить quantity если уже есть."""
+    """Add a line or increment it if the product is already present."""
     existing = await get_cart_item(db, cart_id=cart_id, product_id=product_id)
     if existing is not None:
         existing.quantity += quantity
@@ -101,10 +146,25 @@ async def upsert_cart_item(
 async def update_cart_item(
     db: AsyncSession, *, item: CartItem, quantity: int | None, note: str | None
 ) -> CartItem:
+    """Legacy partial update: omitted/null note leaves the existing note."""
     if quantity is not None:
         item.quantity = quantity
     if note is not None:
         item.note = note
+    await db.flush()
+    return item
+
+
+async def replace_cart_item(
+    db: AsyncSession,
+    *,
+    item: CartItem,
+    quantity: int,
+    note: str | None,
+) -> CartItem:
+    """V2 full replacement; ``note=None`` explicitly clears the note."""
+    item.quantity = quantity
+    item.note = note
     await db.flush()
     return item
 

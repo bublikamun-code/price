@@ -60,6 +60,12 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
     telegram_id: Mapped[int | None] = mapped_column(
         BigInteger, unique=True, index=True, nullable=True
     )
+    active_organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Opt-in на дайджест изменения цен (§20.4): включён + источники отслеживания.
     # Источники: 'cart', 'favorite', 'orders'. По умолчанию все три.

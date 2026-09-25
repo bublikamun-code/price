@@ -20,10 +20,13 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.models.enums import FileAssetType, FileVisibility
 from app.models.file import FileAsset
 from app.repositories import file_assets as file_assets_repo
 from app.services import storage
+
+log = get_logger("app.services.file_assets")
 
 _READ_CHUNK = 1024 * 1024
 
@@ -140,16 +143,59 @@ async def upload_asset(
         upload.file,
         content_type=content_type or "application/octet-stream",
     )
-    return await file_assets_repo.create_file_asset(
-        db,
-        type=type,
-        s3_key=key,
-        filename_display=upload.filename or key,
-        content_type=upload.content_type,
-        size_bytes=size_bytes,
-        brand_id=brand_id,
-        visibility=visibility,
-    )
+    try:
+        return await file_assets_repo.create_file_asset(
+            db,
+            type=type,
+            s3_key=key,
+            filename_display=upload.filename or key,
+            content_type=upload.content_type,
+            size_bytes=size_bytes,
+            brand_id=brand_id,
+            visibility=visibility,
+        )
+    except Exception:
+        # Flush не создал строку — уникальный ключ больше не на что опереться,
+        # поэтому откатываем транзакцию и убираем новый S3-объект.
+        await db.rollback()
+        await _delete_uploaded_object(key, reason="db_flush_failed")
+        raise
+
+
+async def _delete_uploaded_object(key: str, *, reason: str) -> None:
+    """Best-effort удаление объекта, созданного до записи в БД."""
+    try:
+        await run_in_threadpool(
+            storage.delete_object, settings.s3_bucket_pdfs, key
+        )
+    except storage.StorageError as exc:
+        # Исходная ошибка БД должна остаться основной; cleanup-ошибка попадает
+        # в лог, чтобы осиротевший ключ можно было найти и удалить вручную.
+        log.warning(
+            "file_upload.s3_cleanup_failed",
+            key=key,
+            reason=reason,
+            error=str(exc),
+        )
+
+
+async def cleanup_uncommitted_upload(db: AsyncSession, asset: FileAsset) -> None:
+    """Удалить объект только если после неуспешного commit записи в БД нет."""
+    try:
+        persisted = await db.get(FileAsset, asset.id)
+    except Exception as exc:
+        # Неизвестный результат commit опасен для данных: не удаляем объект,
+        # который уже может быть записан, но явно фиксируем невозможность проверки.
+        log.exception(
+            "file_upload.commit_state_unknown",
+            asset_id=str(asset.id),
+            s3_key=asset.s3_key,
+            error=str(exc),
+        )
+        return
+    if persisted is not None:
+        return
+    await _delete_uploaded_object(asset.s3_key, reason="db_commit_failed")
 
 
 def issue_download_url(asset: FileAsset) -> str:

@@ -10,7 +10,17 @@ POST /export, статус — GET /export/{job_id}. Все эндпоинты �
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -205,7 +215,9 @@ async def download_products_export(
     s3_key = state["s3_key"]
     filename = f"products-full-{job_id}.csv"
     try:
-        body = storage.get_bytes(settings.s3_bucket_exports, s3_key)
+        body = await run_in_threadpool(
+            storage.get_bytes, settings.s3_bucket_exports, s3_key
+        )
     except storage.StorageError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return StreamingResponse(

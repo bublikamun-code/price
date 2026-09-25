@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import select
 
 import app.api.v1.manager.orders as manager_orders_router
+from app.models.catalog import Product
 from app.models.enums import UserRole
 from app.models.system import AuditLog
 from app.models.user import User
@@ -89,6 +90,64 @@ async def test_change_status_valid_transition(api_client, session_factory):
     assert o["manager_id"] == str(manager.id)
 
 
+async def test_change_status_with_if_match_rejects_stale_version(api_client, session_factory):
+    """If-Match защищает manager update от перезаписи устаревшего статуса."""
+    sf = session_factory
+    order_id, manager, _ = await _seed_and_order(sf, api_client)
+    await _login(api_client, MANAGER_EMAIL)
+
+    first = await api_client.patch(
+        f"/api/v1/manager/orders/{order_id}",
+        json={"status": "IN_PROGRESS"},
+        headers={"If-Match": '"1"'},
+    )
+    stale = await api_client.patch(
+        f"/api/v1/manager/orders/{order_id}",
+        json={"status": "SHIPPED"},
+        headers={"If-Match": '"1"'},
+    )
+
+    assert first.status_code == 200, first.text
+    assert first.json()["version"] == 2
+    assert stale.status_code == 409
+    assert stale.headers["X-Error-Code"] == "STALE_RESOURCE_VERSION"
+
+
+async def test_manager_confirmation_rechecks_stock_without_reserving(api_client, session_factory):
+    """Manager confirmation проверяет текущий остаток, но не списывает его."""
+    sf = session_factory
+    order_id, _manager, _client = await _seed_and_order(sf, api_client)
+    async with sf() as session:
+        product = await session.scalar(
+            select(Product).where(Product.sku == "A-1")
+        )
+        product.stock_qty = 1
+        await session.commit()
+    await _login(api_client, MANAGER_EMAIL)
+
+    blocked = await api_client.patch(
+        f"/api/v1/manager/orders/{order_id}", json={"status": "IN_PROGRESS"}
+    )
+    assert blocked.status_code == 422
+    assert blocked.headers["X-Error-Code"] == "INSUFFICIENT_STOCK"
+
+    async with sf() as session:
+        product = await session.scalar(
+            select(Product).where(Product.sku == "A-1")
+        )
+        product.stock_qty = 2
+        await session.commit()
+    accepted = await api_client.patch(
+        f"/api/v1/manager/orders/{order_id}", json={"status": "IN_PROGRESS"}
+    )
+    assert accepted.status_code == 200, accepted.text
+    async with sf() as session:
+        product = await session.scalar(
+            select(Product).where(Product.sku == "A-1")
+        )
+        assert product.stock_qty == 2
+
+
 async def test_change_status_invalid_transition_conflict(api_client, session_factory):
     sf = session_factory
     order_id, manager, _ = await _seed_and_order(sf, api_client)
@@ -97,6 +156,7 @@ async def test_change_status_invalid_transition_conflict(api_client, session_fac
     # NEW → COMPLETED запрещено (надо через IN_PROGRESS, SHIPPED)
     r = await api_client.patch(f"/api/v1/manager/orders/{order_id}", json={"status": "COMPLETED"})
     assert r.status_code == 409
+    assert r.headers["X-Error-Code"] == "INVALID_ORDER_TRANSITION"
 
 
 async def test_change_status_writes_audit_log(api_client, session_factory):

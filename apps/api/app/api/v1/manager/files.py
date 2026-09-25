@@ -72,7 +72,14 @@ async def upload_file(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        # Коммит принадлежит роутеру (§4), но S3 очищается только после отката
+        # и проверки, что запись всё-таки не появилась в БД.
+        await db.rollback()
+        await file_assets_service.cleanup_uncommitted_upload(db, asset)
+        raise
     return FileAssetOut.from_asset(
         asset, brand_name=brand.name if brand is not None else None
     )

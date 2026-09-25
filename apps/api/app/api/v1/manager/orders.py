@@ -5,10 +5,10 @@
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.orders import _to_read
+from app.api.v1.orders import _order_error_to_http, _to_read
 from app.core.deps import require_role
 from app.core.logging import get_logger
 from app.db.session import get_db
@@ -18,12 +18,36 @@ from app.repositories import orders as orders_repo
 from app.schemas import MetaPage
 from app.schemas.order import OrderListPage, OrderRead, OrderStatusUpdate
 from app.services import email as email_service
-from app.services.order import OrderService
+from app.services.order import OrderError, OrderService
 from app.tasks.notifications import send_telegram
 
 log = get_logger("app.api.manager_orders")
 
 router = APIRouter(prefix="/orders", tags=["manager:orders"])
+
+
+def _parse_if_match(value: str | None) -> int | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if normalized.startswith("W/"):
+        normalized = normalized[2:].strip()
+    normalized = normalized.strip('"')
+    try:
+        version = int(normalized)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="If-Match должен содержать целую версию ресурса",
+            headers={"X-Error-Code": "INVALID_IF_MATCH"},
+        ) from exc
+    if version < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="If-Match должен содержать положительную версию ресурса",
+            headers={"X-Error-Code": "INVALID_IF_MATCH"},
+        )
+    return version
 
 
 @router.get("", response_model=OrderListPage)
@@ -53,8 +77,8 @@ async def get_order(
 ) -> OrderRead:
     try:
         order = await OrderService(db).get(manager, order_id, as_manager=True)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except OrderError as e:
+        raise _order_error_to_http(e)
     clients = await orders_repo.fetch_users_by_ids(db, [order.client_id])
     return await _to_read(db, order, with_items=True, clients=clients)
 
@@ -64,21 +88,20 @@ async def update_order(
     order_id: uuid.UUID,
     payload: OrderStatusUpdate,
     manager: User = Depends(require_role(UserRole.MANAGER)),
+    if_match: str | None = Header(default=None, alias="If-Match"),
     db: AsyncSession = Depends(get_db),
 ) -> OrderRead:
     service = OrderService(db)
     try:
         order = await service.change_status(
-            manager, order_id, payload.status, payload.manager_id
+            manager,
+            order_id,
+            payload.status,
+            payload.manager_id,
+            expected_version=_parse_if_match(if_match),
         )
-    except ValueError as e:
-        msg = str(e)
-        code = (
-            status.HTTP_404_NOT_FOUND
-            if "не найден" in msg
-            else status.HTTP_409_CONFLICT
-        )
-        raise HTTPException(status_code=code, detail=msg)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     await db.commit()
     await db.refresh(order)
     # Email-уведомление клиенту о новом статусе (fire-and-forget, ошибки — в лог).

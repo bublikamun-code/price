@@ -13,6 +13,16 @@ class UserRole(str, enum.Enum):
     ADMIN = "ADMIN"
 
 
+class OrganizationRole(str, enum.Enum):
+    """Роль человека внутри коммерческой организации."""
+
+    OWNER = "OWNER"
+    BUYER = "BUYER"
+    CONTACT = "CONTACT"
+    VIEWER = "VIEWER"
+
+
+
 class StockStatus(str, enum.Enum):
     """Решение §16 п.2: упрощено до 2 значений + АРХИВ для soft-delete."""
     IN_STOCK = "IN_STOCK"     # «В наличии»

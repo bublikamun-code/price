@@ -6,7 +6,7 @@ import asyncio
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,19 +30,26 @@ from app.schemas.order import (
 from app.services import export as export_service
 from app.services import storage
 from app.services import email as email_service
-from app.services.order import OrderService, StockExceededError
+from app.services.order import (
+    OrderError,
+    OrderService,
+    StockExceededError,
+)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-def _from_value_error(e: ValueError) -> HTTPException:
-    msg = str(e)
-    code = (
-        status.HTTP_404_NOT_FOUND
-        if "не найден" in msg
-        else status.HTTP_400_BAD_REQUEST
+def _order_error_to_http(e: OrderError) -> HTTPException:
+    status_code = (
+        status.HTTP_422_UNPROCESSABLE_ENTITY
+        if isinstance(e, StockExceededError)
+        else e.status_code
     )
-    return HTTPException(status_code=code, detail=msg)
+    return HTTPException(
+        status_code=status_code,
+        detail=e.detail,
+        headers={"X-Error-Code": e.code},
+    )
 
 
 async def _to_read(
@@ -84,23 +91,77 @@ async def list_orders(
 @router.post("", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 async def create_order(
     payload: OrderCreate,
+    response: Response,
     user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> OrderRead:
     service = OrderService(db)
+    record = None
+
+    if idempotency_key is not None:
+        idempotency_key = idempotency_key.strip()
+        if not idempotency_key or len(idempotency_key) > 255:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Idempotency-Key должен содержать от 1 до 255 символов",
+                headers={"X-Error-Code": "INVALID_IDEMPOTENCY_KEY"},
+            )
+        request_hash = await service.request_fingerprint(user, payload)
+        try:
+            replayed = await service.find_idempotent_order(
+                user,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+            if replayed is not None:
+                response.headers["X-Idempotency-Replayed"] = "true"
+                return await _to_read(
+                    db, replayed, with_items=True, clients={user.id: user}
+                )
+            record = await service.reserve_idempotency(
+                user,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+            if record is None:
+                # Конкурентный submit выиграл unique-constraint после commit.
+                replayed = await service.find_idempotent_order(
+                    user,
+                    idempotency_key=idempotency_key,
+                    request_hash=request_hash,
+                )
+                if replayed is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Не удалось повторно получить результат idempotent submit",
+                        headers={"X-Error-Code": "IDEMPOTENCY_IN_PROGRESS"},
+                    )
+                response.headers["X-Idempotency-Replayed"] = "true"
+                return await _to_read(
+                    db, replayed, with_items=True, clients={user.id: user}
+                )
+        except OrderError as e:
+            raise _order_error_to_http(e)
+
     try:
         order = await service.create(user, payload)
+        if record is not None:
+            record.order_id = order.id
+            await db.flush()
     except StockExceededError as e:
-        # 422: фронт показывает деталь ошибки пользователю (остатки при заказе).
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    except ValueError as e:
-        raise _from_value_error(e)
+        raise _order_error_to_http(e)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     await db.commit()
     await db.refresh(order)
     # Email-уведомление менеджеру о новой заявке (fire-and-forget: ошибки
-    # постановки в очередь не роняют запрос).
+    # постановки в очередь не роняют запрос). Retry с тем же ключом не
+    # дублирует уведомление.
     _notify_manager_order_created(order, user, items_count=len(payload.items))
     # user уже загружен — обогащаем ответ без доп. запроса.
+    if record is not None:
+        response.headers["X-Idempotency-Replayed"] = "false"
     return await _to_read(db, order, with_items=True, clients={user.id: user})
 
 
@@ -130,8 +191,8 @@ async def get_order(
 ) -> OrderRead:
     try:
         order = await OrderService(db).get(user, order_id, as_manager=False)
-    except ValueError as e:
-        raise _from_value_error(e)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     clients = await orders_repo.fetch_users_by_ids(db, [order.client_id])
     return await _to_read(db, order, with_items=True, clients=clients)
 
@@ -158,8 +219,8 @@ async def start_order_pdf(
         order = await OrderService(db).get(
             user, order_id, as_manager=user.role != UserRole.CLIENT
         )
-    except ValueError as e:
-        raise _from_value_error(e)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     job_id = await export_service.start_order_pdf(user=user, order=order)
     return ExportStartOut(job_id=job_id)
 
@@ -212,8 +273,8 @@ async def export_order_xlsx(
         order = await OrderService(db).get(
             user, order_id, as_manager=user.role != UserRole.CLIENT
         )
-    except ValueError as e:
-        raise _from_value_error(e)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     clients = await orders_repo.fetch_users_by_ids(db, [order.client_id])
     client = clients[order.client_id]
     items = await orders_repo.get_order_items(db, order_id=order.id)
@@ -235,8 +296,8 @@ async def repeat_order(
 ) -> CartRead:
     try:
         cart = await OrderService(db).repeat(user, order_id)
-    except ValueError as e:
-        raise _from_value_error(e)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     await db.commit()
     return cart
 
@@ -250,14 +311,8 @@ async def cancel_order(
     service = OrderService(db)
     try:
         order = await service.cancel(user, order_id)
-    except ValueError as e:
-        msg = str(e)
-        code = (
-            status.HTTP_404_NOT_FOUND
-            if "не найден" in msg
-            else status.HTTP_409_CONFLICT
-        )
-        raise HTTPException(status_code=code, detail=msg)
+    except OrderError as e:
+        raise _order_error_to_http(e)
     await db.commit()
     await db.refresh(order)
     # user уже загружен — обогащаем ответ без доп. запроса.

@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "organizationId": null,
+    "version": 2,
+    "items": [
+      {
+        "productId": "66666666-6666-4666-8666-666666666666",
+        "sku": "SKU-REPEAT-1",
+        "name": "Повторяемый товар",
+        "brandName": "Trade Brand",
+        "stockStatus": "IN_STOCK",
+        "quantity": 4,
+        "note": "Поставка отдельной строкой",
+        "unitPrice": {
+          "amount": "10.00",
+          "currency": "BYN"
+        },
+        "lineTotal": {
+          "amount": "40.00",
+          "currency": "BYN"
+        }
+      }
+    ],
+    "total": {
+      "amount": "40.00",
+      "currency": "BYN"
+    },
+    "totalItems": 1,
+    "exchangeRate": {
+      "value": "1.0000",
+      "scale": 4,
+      "source": "BYN"
+    }
+  },
+  "meta": {
+    "requestId": "v2-fixture-cart-repeat-001"
+  }
+}

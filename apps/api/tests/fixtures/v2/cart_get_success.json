@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "organizationId": "77777777-7777-4777-8777-777777777777",
+    "version": 4,
+    "items": [
+      {
+        "productId": "66666666-6666-4666-8666-666666666666",
+        "sku": "SKU-CART-1",
+        "name": "Товар корзины",
+        "brandName": "Trade Brand",
+        "stockStatus": "IN_STOCK",
+        "quantity": 2,
+        "note": "Поставка отдельной строкой",
+        "unitPrice": {
+          "amount": "20.00",
+          "currency": "USD"
+        },
+        "lineTotal": {
+          "amount": "40.00",
+          "currency": "USD"
+        }
+      }
+    ],
+    "total": {
+      "amount": "40.00",
+      "currency": "USD"
+    },
+    "totalItems": 1,
+    "exchangeRate": {
+      "value": "2.0000",
+      "scale": 4,
+      "source": "FIXED"
+    }
+  },
+  "meta": {
+    "requestId": "v2-fixture-cart-get-001"
+  }
+}

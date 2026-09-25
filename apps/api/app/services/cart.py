@@ -1,15 +1,16 @@
 """Сервис корзины (persist в БД). См. ARCHITECTURE_PLAN.md §19.
 
-Корзина — одна активная на пользователя. Актуальные цены считаются через
+Корзина v1 хранится в legacy USER scope. Актуальные цены считаются через
 ``PricingService`` на лету (в корзине цена НЕ замораживается — только в заказе).
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import StockStatus
-from app.repositories import cart as cart_repo, catalog as catalog_repo
+from app.repositories import cart as cart_repo
+from app.repositories import catalog as catalog_repo
 from app.schemas.cart import (
-    CartBulkAddOut,
     CartBulkAdded,
+    CartBulkAddOut,
     CartBulkItemIn,
     CartBulkRejected,
     CartItemRead,
@@ -25,14 +26,21 @@ class CartService:
         self.db = db
         self.pricing = PricingService(db)
 
-    async def view(self, user) -> CartRead:
-        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+    async def view(self, user, *, organization_id=None) -> CartRead:
+        cart = await cart_repo.get_or_create_cart(
+            self.db, user_id=user.id, organization_id=None
+        )
         rows = await cart_repo.fetch_cart_items_detailed(self.db, cart_id=cart.id)
 
         # Батч-цены на все товары корзины (аудит 2026-09-06, N+1): курс и
         # скидки — один запрос на корзину, а не на каждую позицию.
         products = [row[1] for row in rows if row[1] is not None]
-        prices = await self.pricing.price_products(products, user, "fixed")
+        prices = await self.pricing.price_products(
+            products,
+            user,
+            "fixed",
+            organization_id=organization_id,
+        )
 
         items: list[CartItemRead] = []
         total = 0.0
@@ -67,17 +75,28 @@ class CartService:
             id=cart.id, items=items, total_amount=round(total, 2), total_items=len(items)
         )
 
-    async def add(self, user, sku: str, quantity: int, note: str | None) -> CartRead:
+    async def add(
+        self,
+        user,
+        sku: str,
+        quantity: int,
+        note: str | None,
+        *,
+        organization_id=None,
+    ) -> CartRead:
         product = await catalog_repo.get_by_sku(self.db, sku)
         if product is None:
             raise ValueError("Товар не найден")
         if product.stock_status == StockStatus.ARCHIVED:
             raise ValueError("Архивный товар нельзя добавить в корзину")
-        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+        cart = await cart_repo.get_or_create_cart(
+            self.db, user_id=user.id, organization_id=None
+        )
         await cart_repo.upsert_cart_item(
             self.db, cart_id=cart.id, product_id=product.id, quantity=quantity, note=note
         )
-        return await self.view(user)
+        await cart_repo.bump_cart_version(self.db, cart=cart)
+        return await self.view(user, organization_id=organization_id)
 
     async def add_bulk(
         self, user, items: list[CartBulkItemIn]
@@ -92,7 +111,9 @@ class CartService:
         products = await catalog_repo.get_by_skus(
             self.db, [item.sku for item in items]
         )
-        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+        cart = await cart_repo.get_or_create_cart(
+            self.db, user_id=user.id, organization_id=None
+        )
 
         added: list[CartBulkAdded] = []
         rejected: list[CartBulkRejected] = []
@@ -109,6 +130,8 @@ class CartService:
                 quantity=item.qty, note=None,
             )
             added.append(CartBulkAdded(sku=item.sku, quantity=row.quantity))
+        if added:
+            await cart_repo.bump_cart_version(self.db, cart=cart)
         return CartBulkAddOut(added=added, rejected=rejected)
 
     async def update(
@@ -117,28 +140,37 @@ class CartService:
         product = await catalog_repo.get_by_sku(self.db, sku)
         if product is None:
             raise ValueError("Товар не найден")
-        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+        cart = await cart_repo.get_or_create_cart(
+            self.db, user_id=user.id, organization_id=None
+        )
         item = await cart_repo.get_cart_item(
             self.db, cart_id=cart.id, product_id=product.id
         )
         if item is None:
             raise ValueError("Позиции нет в корзине")
         await cart_repo.update_cart_item(self.db, item=item, quantity=quantity, note=note)
+        await cart_repo.bump_cart_version(self.db, cart=cart)
         return await self.view(user)
 
     async def delete_item(self, user, sku: str) -> CartRead:
         product = await catalog_repo.get_by_sku(self.db, sku)
         if product is None:
             raise ValueError("Товар не найден")
-        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+        cart = await cart_repo.get_or_create_cart(
+            self.db, user_id=user.id, organization_id=None
+        )
         ok = await cart_repo.delete_cart_item(
             self.db, cart_id=cart.id, product_id=product.id
         )
         if not ok:
             raise ValueError("Позиции нет в корзине")
+        await cart_repo.bump_cart_version(self.db, cart=cart)
         return await self.view(user)
 
     async def clear(self, user) -> CartRead:
-        cart = await cart_repo.get_or_create_cart(self.db, user_id=user.id)
+        cart = await cart_repo.get_or_create_cart(
+            self.db, user_id=user.id, organization_id=None
+        )
         await cart_repo.clear_cart(self.db, cart_id=cart.id)
+        await cart_repo.bump_cart_version(self.db, cart=cart)
         return await self.view(user)

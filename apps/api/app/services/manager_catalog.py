@@ -84,6 +84,26 @@ def _to_webp(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+async def _delete_photo_objects_best_effort(
+    keys: tuple[str, ...], *, reason: str
+) -> None:
+    """Удалить только новые S3-ключи после отката БД, не скрывая сбой cleanup."""
+    for key in keys:
+        try:
+            await run_in_threadpool(
+                storage.delete_object, settings.s3_bucket_photos, key
+            )
+        except storage.StorageError as exc:
+            # Ошибка очистки не должна заменять исходную ошибку БД, но должна
+            # оставаться видимой: иначе осиротевший ключ нельзя будет найти.
+            log.warning(
+                "photo_upload.s3_cleanup_failed",
+                key=key,
+                reason=reason,
+                error=str(exc),
+            )
+
+
 class ManagerCatalogService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -273,31 +293,56 @@ class ManagerCatalogService:
         slug = _slugify(series.name)
         key_large = f"{PHOTO_KEY_PREFIX}{slug}.webp"
         key_thumb = f"{PHOTO_KEY_PREFIX}{slug}_thumb.webp"
-        await run_in_threadpool(
-            storage.upload_fileobj,
-            settings.s3_bucket_photos,
-            key_large,
-            io.BytesIO(large),
-            content_type="image/webp",
-        )
-        await run_in_threadpool(
-            storage.upload_fileobj,
-            settings.s3_bucket_photos,
-            key_thumb,
-            io.BytesIO(thumb),
-            content_type="image/webp",
-        )
+        previous_key = series.photo_key
+        try:
+            await run_in_threadpool(
+                storage.upload_fileobj,
+                settings.s3_bucket_photos,
+                key_large,
+                io.BytesIO(large),
+                content_type="image/webp",
+            )
+            await run_in_threadpool(
+                storage.upload_fileobj,
+                settings.s3_bucket_photos,
+                key_thumb,
+                io.BytesIO(thumb),
+                content_type="image/webp",
+            )
 
-        series.photo_key = key_large
-        await audit_repo.create_audit(
-            self.db,
-            actor_id=manager.id,
-            action="series.photo.update",
-            target_type="series",
-            target_id=series.id,
-            after={"photo_key": key_large},
-        )
-        await self.db.commit()
+            series.photo_key = key_large
+            await audit_repo.create_audit(
+                self.db,
+                actor_id=manager.id,
+                action="series.photo.update",
+                target_type="series",
+                target_id=series.id,
+                after={"photo_key": key_large},
+            )
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            # Проверяем БД после отката: если commit фактически прошёл или
+            # результат неизвестен, объект нельзя считать гарантированным сиротой.
+            cleanup_allowed = previous_key != key_large
+            try:
+                persisted = await get_series(self.db, series_id)
+                cleanup_allowed = persisted is not None and (
+                    persisted.photo_key != key_large
+                )
+            except Exception as exc:
+                log.exception(
+                    "series_photo.commit_state_unknown",
+                    series_id=str(series_id),
+                    s3_key=key_large,
+                    error=str(exc),
+                )
+                cleanup_allowed = False
+            if cleanup_allowed:
+                await _delete_photo_objects_best_effort(
+                    (key_large, key_thumb), reason="series_photo_db_failed"
+                )
+            raise
         await invalidate_tags(CATALOG_TAG, FILTERS_TAG)
         return SeriesPhotoOut(
             photo_key=key_large,
@@ -326,33 +371,55 @@ class ManagerCatalogService:
         stem = uuid.uuid4().hex[:8]
         key_large = f"{PRODUCT_PHOTO_KEY_PREFIX}{product_id}/{stem}.webp"
         key_thumb = f"{PRODUCT_PHOTO_KEY_PREFIX}{product_id}/{stem}_thumb.webp"
-        await run_in_threadpool(
-            storage.upload_fileobj,
-            settings.s3_bucket_photos,
-            key_large,
-            io.BytesIO(large),
-            content_type="image/webp",
-        )
-        await run_in_threadpool(
-            storage.upload_fileobj,
-            settings.s3_bucket_photos,
-            key_thumb,
-            io.BytesIO(thumb),
-            content_type="image/webp",
-        )
+        try:
+            await run_in_threadpool(
+                storage.upload_fileobj,
+                settings.s3_bucket_photos,
+                key_large,
+                io.BytesIO(large),
+                content_type="image/webp",
+            )
+            await run_in_threadpool(
+                storage.upload_fileobj,
+                settings.s3_bucket_photos,
+                key_thumb,
+                io.BytesIO(thumb),
+                content_type="image/webp",
+            )
 
-        await catalog_repo.add_product_photo(
-            self.db, product_id=product.id, photo_key=key_large
-        )
-        await audit_repo.create_audit(
-            self.db,
-            actor_id=manager.id,
-            action="product.photo.add",
-            target_type="product",
-            target_id=product.id,
-            after={"photo_key": key_large},
-        )
-        await self.db.commit()
+            await catalog_repo.add_product_photo(
+                self.db, product_id=product.id, photo_key=key_large
+            )
+            await audit_repo.create_audit(
+                self.db,
+                actor_id=manager.id,
+                action="product.photo.add",
+                target_type="product",
+                target_id=product.id,
+                after={"photo_key": key_large},
+            )
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            # Ключи уникальны, но удалять их можно лишь после проверки, что
+            # строка ProductPhoto действительно не зафиксирована.
+            try:
+                persisted = await catalog_repo.get_product_photo(
+                    self.db, product_id=product.id, photo_key=key_large
+                )
+            except Exception as exc:
+                log.exception(
+                    "product_photo.commit_state_unknown",
+                    product_id=str(product.id),
+                    s3_key=key_large,
+                    error=str(exc),
+                )
+                persisted = True
+            if persisted is None:
+                await _delete_photo_objects_best_effort(
+                    (key_large, key_thumb), reason="product_photo_db_failed"
+                )
+            raise
         await invalidate_tags(CATALOG_TAG, FILTERS_TAG)
         return ProductPhotoOut(photo_key=key_large)
 

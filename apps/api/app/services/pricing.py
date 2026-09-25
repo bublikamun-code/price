@@ -19,6 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Product
+from app.models.organization import (
+    OrganizationBrandTerm,
+    OrganizationPricingAgreement,
+)
 from app.models.pricing import ExchangeRate, UserBrand
 
 TWO_PLACES = Decimal("0.01")
@@ -90,10 +94,18 @@ class PricingService:
         self.db = db
 
     async def get_discount_for_brand(
-        self, user_id, brand_id
+        self, user_id, brand_id, *, organization_id=None
     ) -> Decimal | None:
         if brand_id is None:
             return None
+        if organization_id is not None:
+            row = await self.db.scalar(
+                select(OrganizationBrandTerm.discount_percent).where(
+                    OrganizationBrandTerm.organization_id == organization_id,
+                    OrganizationBrandTerm.brand_id == brand_id,
+                )
+            )
+            return _to_decimal(row) if row is not None else None
         row = await self.db.scalar(
             select(UserBrand.discount_percent).where(
                 UserBrand.user_id == user_id, UserBrand.brand_id == brand_id
@@ -101,21 +113,40 @@ class PricingService:
         )
         return _to_decimal(row) if row is not None else None
 
-    async def get_discounts_for_brands(self, user_id, brand_ids) -> dict:
-        """Скидки клиента по нескольким брендам одним IN-запросом.
+    async def get_discounts_for_brands(
+        self, user_id, brand_ids, *, organization_id=None
+    ) -> dict:
+        """Return discounts for several brands, preferring organization terms.
 
-        Возвращает ``{brand_id: Decimal | None}`` только для брендов, где
-        скидка заведена (у остальных приоритет §8 — базовая цена).
+        In an organization scope, a missing organization term is intentionally
+        not filled from the legacy user term. User terms are used only in the
+        legacy USER scope.
         """
         ids = {b for b in brand_ids if b is not None}
         if not ids:
             return {}
-        res = await self.db.execute(
-            select(UserBrand.brand_id, UserBrand.discount_percent).where(
-                UserBrand.user_id == user_id, UserBrand.brand_id.in_(ids)
+        discounts: dict = {}
+        if organization_id is not None:
+            res = await self.db.execute(
+                select(
+                    OrganizationBrandTerm.brand_id,
+                    OrganizationBrandTerm.discount_percent,
+                ).where(
+                    OrganizationBrandTerm.organization_id == organization_id,
+                    OrganizationBrandTerm.brand_id.in_(ids),
+                )
             )
-        )
-        return {bid: _to_decimal(d) for bid, d in res.all()}
+            discounts = {bid: _to_decimal(d) for bid, d in res.all()}
+        missing = ids - discounts.keys()
+        if missing and organization_id is None:
+            res = await self.db.execute(
+                select(UserBrand.brand_id, UserBrand.discount_percent).where(
+                    UserBrand.user_id == user_id,
+                    UserBrand.brand_id.in_(missing),
+                )
+            )
+            discounts.update({bid: _to_decimal(d) for bid, d in res.all()})
+        return discounts
 
     async def get_latest_rate(self, currency: str) -> ExchangeRate | None:
         """Последний курс для валюты (по fetched_at)."""
@@ -129,17 +160,41 @@ class PricingService:
         )
         return await self.db.scalar(stmt)
 
-    async def resolve_rate(self, user, calc_mode: str) -> ResolvedRate:
-        """Разрешает display-курс: fixed (по договору) | nbrb_current (§17.2/17.3)."""
-        currency = (user.display_currency or "BYN").upper()
+    async def resolve_rate(
+        self, user, calc_mode: str, *, organization_id=None
+    ) -> ResolvedRate:
+        """Resolve organization terms first, then legacy user terms."""
+        selected_organization_id = organization_id
+        agreement = None
+        if selected_organization_id is not None:
+            agreement = await self.db.scalar(
+                select(OrganizationPricingAgreement).where(
+                    OrganizationPricingAgreement.organization_id
+                    == selected_organization_id
+                )
+            )
+
+        currency = (
+            (agreement.display_currency if agreement is not None else user.display_currency)
+            or "BYN"
+        ).upper()
         if currency == "BYN":
             return ResolvedRate("BYN", None, 1, "BYN")
 
-        # Фиксация по договору
-        if calc_mode == "fixed" and user.fixed_rate_id is not None:
-            fixed = await self.db.get(ExchangeRate, user.fixed_rate_id)
+        fixed_rate_id = (
+            agreement.fixed_rate_id
+            if agreement is not None
+            else user.fixed_rate_id
+        )
+        if calc_mode == "fixed" and fixed_rate_id is not None:
+            fixed = await self.db.get(ExchangeRate, fixed_rate_id)
             if fixed is not None:
-                return ResolvedRate(currency, _to_decimal(fixed.rate), fixed.scale or 1, "FIXED")
+                return ResolvedRate(
+                    currency,
+                    _to_decimal(fixed.rate),
+                    fixed.scale or 1,
+                    "FIXED",
+                )
 
         # Текущий курс НБ РБ
         rate = await self.get_latest_rate(currency)
@@ -166,10 +221,17 @@ class PricingService:
             "has_discount": has_discount(base_byn, client_byn),
         }
 
-    async def price_product(self, product: Product, user, calc_mode: str) -> dict:
+    async def price_product(
+        self, product: Product, user, calc_mode: str, *, organization_id=None
+    ) -> dict:
         """Считает цены для одного товара под клиента. Возвращает dict для DTO."""
-        resolved = await self.resolve_rate(user, calc_mode)
-        discount = await self.get_discount_for_brand(user.id, product.brand_id)
+        resolved = await self.resolve_rate(
+            user, calc_mode, organization_id=organization_id
+        )
+        selected_organization_id = organization_id
+        discount = await self.get_discount_for_brand(
+            user.id, product.brand_id, organization_id=selected_organization_id
+        )
         return self._price_one(product, resolved, discount)
 
     async def price_products(
@@ -179,6 +241,7 @@ class PricingService:
         calc_mode: str,
         *,
         resolved: ResolvedRate | None = None,
+        organization_id=None,
     ) -> dict:
         """Батч-расчёт цен: ``{product_id: dict}`` той же структуры, что
         ``price_product``.
@@ -188,9 +251,14 @@ class PricingService:
         — одним IN-запросом. Формулы/округление — те же чистые функции §8/§17.
         """
         if resolved is None:
-            resolved = await self.resolve_rate(user, calc_mode)
+            resolved = await self.resolve_rate(
+                user, calc_mode, organization_id=organization_id
+            )
+        selected_organization_id = organization_id
         discounts = await self.get_discounts_for_brands(
-            user.id, [p.brand_id for p in products]
+            user.id,
+            [p.brand_id for p in products],
+            organization_id=selected_organization_id,
         )
         return {
             p.id: self._price_one(p, resolved, discounts.get(p.brand_id))

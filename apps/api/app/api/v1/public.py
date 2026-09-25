@@ -25,7 +25,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.limiter import limiter
+from app.core.limiter import PUBLIC_RATE_LIMIT, limiter
 from app.db.session import get_db
 from app.repositories.catalog import PHOTO_KEY_PREFIX
 from app.repositories.notifications import create_notification
@@ -86,7 +86,9 @@ def _validate_public_photo_key(key: str) -> str:
 
 
 @router.get("/brands", response_model=PublicBrandListEnvelope)
+@limiter.limit(PUBLIC_RATE_LIMIT)
 async def list_brands(
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> PublicBrandListEnvelope:
     """Список брендов для витрины (по имени)."""
@@ -95,7 +97,9 @@ async def list_brands(
 
 
 @router.get("/brands/{slug}", response_model=PublicBrandDetailEnvelope)
+@limiter.limit(PUBLIC_RATE_LIMIT)
 async def get_brand(
+    request: Request,
     slug: str,
     db: AsyncSession = Depends(get_db),
 ) -> PublicBrandDetailEnvelope:
@@ -253,7 +257,9 @@ async def download_catalog_pdf(
         )
         from weasyprint import HTML  # лениво, как в export_catalog (§16 п.25)
 
-        cached = HTML(string=html).write_pdf()
+        # WeasyPrint выполняет тяжёлое CPU-рендеринг, поэтому его нельзя
+        # запускать прямо в event loop async-хендлера.
+        cached = await run_in_threadpool(HTML(string=html).write_pdf)
         _catalog_pdf_cache[cache_key] = cached
 
     return Response(

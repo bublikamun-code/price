@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "sku": "V2-FIXTURE-1",
+      "name": "Fixture Product",
+      "brand": {
+        "id": "33333333-3333-4333-8333-333333333333",
+        "name": "Fixture Brand"
+      },
+      "series": null,
+      "stockStatus": "IN_STOCK",
+      "stockQuantity": 12,
+      "attributes": {
+        "model": "Аксессуары"
+      },
+      "basePrice": {
+        "amount": "100.00",
+        "currency": "BYN"
+      },
+      "retailPrice": {
+        "amount": "100.00",
+        "currency": "BYN"
+      },
+      "clientPrice": {
+        "amount": "90.00",
+        "currency": "BYN"
+      },
+      "exchangeRate": {
+        "value": "1.0000",
+        "scale": 4,
+        "source": "BYN"
+      },
+      "hasDiscount": true
+    }
+  ],
+  "meta": {
+    "requestId": "v2-fixture-catalog-001",
+    "nextCursor": null,
+    "hasMore": false,
+    "limit": 50,
+    "sort": "name"
+  }
+}

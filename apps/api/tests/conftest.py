@@ -24,8 +24,14 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.catalog import Brand, Product, Series
-from app.models.enums import StockStatus, UserRole
+from app.models.enums import OrganizationRole, StockStatus, UserRole
 from app.models.pricing import ExchangeRate, UserBrand
+from app.models.organization import (
+    Organization,
+    OrganizationBrandTerm,
+    OrganizationMembership,
+    OrganizationPricingAgreement,
+)
 from app.models.user import User
 
 # testcontainers — импортируем лениво (нужен только без TEST_DB_URL)
@@ -232,6 +238,98 @@ async def set_display_currency(session_factory, *, user: User, currency: str) ->
         db_user = await s.get(User, user.id)
         db_user.display_currency = currency.upper()
         await s.commit()
+
+
+async def create_organization(
+    session_factory,
+    *,
+    legal_name: str,
+    default_currency: str = "BYN",
+    display_name: str | None = None,
+) -> Organization:
+    async with session_factory() as s:
+        organization = Organization(
+            legal_name=legal_name,
+            display_name=display_name,
+            default_currency=default_currency.upper(),
+        )
+        s.add(organization)
+        await s.commit()
+        await s.refresh(organization)
+        return organization
+
+
+async def add_organization_membership(
+    session_factory,
+    *,
+    user: User,
+    organization: Organization,
+    role: OrganizationRole = OrganizationRole.BUYER,
+    is_active: bool = True,
+    is_primary: bool = False,
+) -> OrganizationMembership:
+    async with session_factory() as s:
+        membership = OrganizationMembership(
+            user_id=user.id,
+            organization_id=organization.id,
+            role=role,
+            is_active=is_active,
+            is_primary=is_primary,
+        )
+        s.add(membership)
+        await s.commit()
+        await s.refresh(membership)
+        return membership
+
+
+async def set_active_organization(
+    session_factory, *, user: User, organization: Organization
+) -> User:
+    async with session_factory() as s:
+        db_user = await s.get(User, user.id)
+        db_user.active_organization_id = organization.id
+        await s.commit()
+        return db_user
+
+
+async def set_organization_pricing_agreement(
+    session_factory,
+    *,
+    organization: Organization,
+    display_currency: str,
+    fixed_rate_id=None,
+    agreement_reference: str | None = None,
+) -> OrganizationPricingAgreement:
+    async with session_factory() as s:
+        agreement = OrganizationPricingAgreement(
+            organization_id=organization.id,
+            display_currency=display_currency.upper(),
+            fixed_rate_id=fixed_rate_id,
+            agreement_reference=agreement_reference,
+        )
+        s.add(agreement)
+        await s.commit()
+        await s.refresh(agreement)
+        return agreement
+
+
+async def set_organization_brand_term(
+    session_factory,
+    *,
+    organization: Organization,
+    brand: Brand,
+    percent,
+) -> OrganizationBrandTerm:
+    async with session_factory() as s:
+        term = OrganizationBrandTerm(
+            organization_id=organization.id,
+            brand_id=brand.id,
+            discount_percent=percent,
+        )
+        s.add(term)
+        await s.commit()
+        await s.refresh(term)
+        return term
 
 
 # ---------- HTTP client ----------

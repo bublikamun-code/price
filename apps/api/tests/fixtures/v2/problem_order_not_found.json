@@ -1,0 +1,10 @@
+{
+  "type": "https://priceweb.local/problems/order-not-found",
+  "title": "Заявка не найдена",
+  "status": 404,
+  "detail": "Заявка не найдена",
+  "instance": "/api/v2/orders/99999999-9999-4999-8999-999999999999",
+  "code": "ORDER_NOT_FOUND",
+  "requestId": "v2-fixture-order-not-found-001",
+  "errors": []
+}

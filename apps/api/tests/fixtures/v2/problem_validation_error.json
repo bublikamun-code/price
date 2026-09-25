@@ -1,0 +1,16 @@
+{
+  "type": "https://priceweb.local/problems/validation-error",
+  "title": "Ошибка валидации",
+  "status": 422,
+  "detail": "Проверьте корректность параметров запроса",
+  "instance": "/api/v2/orders/not-a-uuid",
+  "code": "VALIDATION_ERROR",
+  "requestId": "v2-fixture-validation-001",
+  "errors": [
+    {
+      "field": "orderId",
+      "code": "uuid_parsing",
+      "message": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 10"
+    }
+  ]
+}

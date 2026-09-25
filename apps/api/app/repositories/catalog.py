@@ -117,6 +117,71 @@ async def fetch_catalog(
     return result.all()
 
 
+async def fetch_catalog_page(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    filters: CatalogFilters,
+    sort: str = "name",
+    limit: int = 50,
+    after: dict[str, str] | None = None,
+):
+    """Fetch one cursor page using the same visible catalog rows as v1.
+
+    ``after`` contains the serialized key of the last item on the previous
+    page.  Ordering is always extended by ``Product.id`` so a page boundary is
+    deterministic even when the selected sort value is duplicated.
+    """
+    stmt = _apply_catalog_filters(_catalog_rows_stmt(user_id), filters)
+    sort_map = {
+        "name": (Product.name.asc(), Product.id.asc()),
+        "-name": (Product.name.desc(), Product.id.desc()),
+        "price": (Product.base_price.asc(), Product.id.asc()),
+        "-price": (Product.base_price.desc(), Product.id.asc()),
+        "sku": (Product.sku.asc(), Product.id.asc()),
+    }
+    order = sort_map.get(sort, sort_map["name"])
+    stmt = stmt.order_by(*order)
+
+    if after is not None:
+        last_id = uuid.UUID(after["id"])
+        last_value = after.get("value", "")
+        if sort in {"name", "-name"}:
+            comparator = (
+                or_(
+                    Product.name > last_value,
+                    (Product.name == last_value) & (Product.id > last_id),
+                )
+                if sort == "name"
+                else or_(
+                    Product.name < last_value,
+                    (Product.name == last_value) & (Product.id < last_id),
+                )
+            )
+        elif sort in {"price", "-price"}:
+            comparator = (
+                or_(
+                    Product.base_price > Decimal(last_value),
+                    (Product.base_price == Decimal(last_value)) & (Product.id > last_id),
+                )
+                if sort == "price"
+                else or_(
+                    Product.base_price < Decimal(last_value),
+                    (Product.base_price == Decimal(last_value)) & (Product.id > last_id),
+                )
+            )
+        else:
+            comparator = or_(
+                Product.sku > last_value,
+                (Product.sku == last_value) & (Product.id > last_id),
+            )
+        stmt = stmt.where(comparator)
+
+    stmt = stmt.limit(limit)
+    result = await db.execute(stmt)
+    return result.all()
+
+
 async def fetch_catalog_all(
     db: AsyncSession,
     *,
@@ -149,6 +214,34 @@ async def count_catalog(db: AsyncSession, *, filters: CatalogFilters) -> int:
 async def get_by_sku(db: AsyncSession, sku: str) -> Product | None:
     return await db.scalar(
         select(Product).where(Product.sku == sku, Product.deleted_at.is_(None))
+    )
+
+
+async def get_visible_by_id(db: AsyncSession, product_id: uuid.UUID) -> Product | None:
+    return await db.scalar(
+        select(Product).where(
+            Product.id == product_id,
+            Product.deleted_at.is_(None),
+            Product.stock_status != StockStatus.ARCHIVED,
+        )
+    )
+
+
+async def get_catalog_row(db: AsyncSession, *, user_id: uuid.UUID, product_id: uuid.UUID):
+    return (
+        await db.execute(
+            _catalog_rows_stmt(user_id).where(Product.id == product_id).limit(1)
+        )
+    ).first()
+
+
+async def get_visible_by_sku(db: AsyncSession, sku: str) -> Product | None:
+    return await db.scalar(
+        select(Product).where(
+            Product.sku == sku,
+            Product.deleted_at.is_(None),
+            Product.stock_status != StockStatus.ARCHIVED,
+        )
     )
 
 
@@ -188,6 +281,21 @@ async def get_by_skus_for_update(
         .with_for_update()
     )
     return {p.sku: p for p in res.all()}
+
+
+async def get_by_ids_for_update(
+    db: AsyncSession, product_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, Product]:
+    """Товары по UUID с блокировкой строк для manager availability check."""
+    if not product_ids:
+        return {}
+    res = await db.scalars(
+        select(Product)
+        .where(Product.id.in_(product_ids), Product.deleted_at.is_(None))
+        .order_by(Product.id)
+        .with_for_update()
+    )
+    return {product.id: product for product in res.all()}
 
 
 async def get_brand(db: AsyncSession, brand_id: uuid.UUID) -> Brand | None:

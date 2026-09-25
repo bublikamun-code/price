@@ -24,7 +24,7 @@ import jwt
 import pyotp
 import qrcode
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -35,6 +35,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.pricing import ExchangeRate
 from app.models.user import (
     ConsentLog,
     PasswordResetToken,
@@ -44,7 +45,6 @@ from app.models.user import (
 from app.models.user import (
     Session as SessionModel,
 )
-from app.models.pricing import ExchangeRate
 from app.repositories import audit as audit_repo
 from app.repositories import users as users_repo
 from app.schemas.auth import (
@@ -598,12 +598,24 @@ class AuthService:
         user = await self.db.scalar(select(User).where(User.email == email))
         if user is None or not user.is_active:
             return None
+        now = datetime.now(timezone.utc)
+        # Старые неиспользованные ссылки должны перестать работать уже при
+        # выдаче новой; обе операции коммитятся одной транзакцией сессии.
+        await self.db.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > now,
+            )
+            .values(used_at=now)
+        )
         plain = secrets.token_urlsafe(32)
         self.db.add(
             PasswordResetToken(
                 user_id=user.id,
                 token_hash=self._hash_reset_token(plain),
-                expires_at=datetime.now(timezone.utc)
+                expires_at=now
                 + timedelta(minutes=settings.password_reset_ttl_min),
             )
         )
