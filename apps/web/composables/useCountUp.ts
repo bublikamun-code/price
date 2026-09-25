@@ -3,7 +3,7 @@
 // Учитывает prefers-reduced-motion.
 export function useCountUp(target: number, duration = 1500) {
   const display = ref(0)
-  const el = ref<HTMLElement | null>(null)
+  const el = shallowRef<HTMLElement | null>(null)
   let started = false
 
   function animate() {

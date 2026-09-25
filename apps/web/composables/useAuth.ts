@@ -1,10 +1,12 @@
 // Composable авторизации (Этап 2). Реальные вызовы /api/v1/auth/*.
-// Стор хранит user/access token; refresh остаётся только в серверной httpOnly cookie.
+// Стор хранит user; access/refresh остаются только в HttpOnly-cookie.
 // Cookie-refs регистрирует плагин auth.session.ts.
 // (создание useCookie в контексте плагина надёжно и на сервере, и на клиенте;
 // прямой wpis — без гонки таймингов watcher'ов).
 // См. ARCHITECTURE_PLAN.md §6, §11.
 import { defineStore } from 'pinia'
+import { useCartStore } from '~/stores/cart'
+import { useOrdersStore } from '~/stores/orders'
 import type { TokenPair, TwoFALoginEnvelope, UserPublic, UserRole } from '~/types/api'
 
 /** Результат login(): обычный вход ИЛИ требование второго шага 2FA (§16 п.22). */
@@ -48,7 +50,6 @@ export interface UserMePatch {
 
 /** Cookie-refs, регистрируемые плагином auth.session.ts. */
 export interface CookieStore {
-  tokenC: { value: string | null }
   userC: { value: AuthUser | null }
 }
 
@@ -63,8 +64,14 @@ function csrfHeaders(): Record<string, string> {
   return csrfToken ? { 'X-CSRF-Token': csrfToken } : {}
 }
 
+/** На SSR внутренний $fetch не пробрасывает входящие cookie автоматически. */
+function serverCookieHeaders(): Record<string, string> {
+  if (!import.meta.server) return {}
+  const cookie = useRequestHeaders(['cookie']).cookie
+  return cookie ? { Cookie: cookie } : {}
+}
+
 const COOKIE_MAX_AGE = {
-  token: 60 * 60, // 1 ч
   user: 60 * 60 * 24, // 1 день
 }
 
@@ -90,7 +97,9 @@ export const useAuthStore = defineStore('auth', () => {
   // cookie-refs подключаются плагином; до этого просто храним в состоянии.
   let cookies: CookieStore | null = null
 
-  const isAuthenticated = computed(() => !!user.value && !!token.value)
+  // HttpOnly access-cookie недоступна JavaScript. Пользователь остаётся
+  // авторизованным после F5 по user-cookie, а API подтверждает сессию сам.
+  const isAuthenticated = computed(() => !!user.value)
   const isClient = computed(() => user.value?.role === 'CLIENT')
   const isManager = computed(() => ['MANAGER', 'ADMIN'].includes(user.value?.role as string))
   const isAdmin = computed(() => user.value?.role === 'ADMIN')
@@ -130,11 +139,9 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function applyTokens(t: Pick<TokenPair, 'access_token'>) {
-    token.value = t.access_token
-    if (cookies) {
-      cookies.tokenC.value = t.access_token
-    }
-    persistCookie('auth_token', t.access_token, COOKIE_MAX_AGE.token)
+    // Токен намеренно не попадает в Pinia: браузер сам хранит HttpOnly
+    // access_token, а SSR читает её из входящего запроса отдельно.
+    void t
   }
 
   /**
@@ -145,30 +152,42 @@ export const useAuthStore = defineStore('auth', () => {
    * try/catch — на случай вызова вне Nuxt-контекста (серверное продолжение
    * после await): module-state здесь — только клиентский UI-state.
    */
-  function resetClientData() {
+  function resetClientData(role: UserRole | null = user.value?.role ?? null) {
     try {
       useFavorites().resetState()
-      useCart().resetState()
       useNotifications().resetState()
+      if (role === 'CLIENT') {
+        // Browser CLIENT pages own the v2 cart/order stores exclusively.
+        useCartStore().reset()
+        useOrdersStore().reset()
+      } else {
+        // MANAGER/ADMIN and Mini App navigation keep the legacy cart state.
+        useCart().resetState()
+      }
     } catch {
       // Тихо: сброс UI-state не критичен (на сервере он и не нужен).
     }
   }
 
   function clear() {
+    const previousRole = user.value?.role ?? null
     user.value = null
     token.value = null
     if (cookies) {
-      cookies.tokenC.value = null
       cookies.userC.value = null
     }
-    persistCookie('auth_token', null, 0)
     persistCookie('auth_user', null, 0)
-    resetClientData()
+    resetClientData(previousRole)
   }
 
   function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {}
+    // На клиенте Bearer не нужен: браузер сам отправляет HttpOnly-cookie.
+    // На SSR $fetch идёт во внутренний API, поэтому заголовок строим из
+    // входящего запроса, иначе SSR не пережил бы перезагрузку.
+    const accessToken = import.meta.server
+      ? useCookie<string | null>('access_token').value
+      : null
+    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   }
 
   async function login(email: string, password: string): Promise<LoginResult> {
@@ -225,7 +244,7 @@ export const useAuthStore = defineStore('auth', () => {
     const baseURL = apiBaseURL()
     const me = await $fetch<UserPublic>('/api/v1/auth/me', {
       baseURL,
-      headers: authHeaders(),
+      headers: { ...serverCookieHeaders(), ...authHeaders() },
       credentials: 'include',
     })
     applyUser(me)
@@ -251,7 +270,7 @@ export const useAuthStore = defineStore('auth', () => {
       const pair = await $fetch<TokenPair>('/api/v1/auth/refresh', {
         baseURL,
         method: 'POST',
-        headers: csrfHeaders(),
+        headers: { ...serverCookieHeaders(), ...csrfHeaders() },
         credentials: 'include',
       })
       applyTokens(pair)
@@ -270,7 +289,7 @@ export const useAuthStore = defineStore('auth', () => {
       baseURL,
       method: 'POST',
       body: { current_password: currentPassword, new_password: newPassword },
-      headers: { ...authHeaders(), ...csrfHeaders() },
+      headers: { ...serverCookieHeaders(), ...authHeaders(), ...csrfHeaders() },
       credentials: 'include',
     })
   }
@@ -281,7 +300,7 @@ export const useAuthStore = defineStore('auth', () => {
       await $fetch('/api/v1/auth/logout', {
         baseURL,
         method: 'POST',
-        headers: { ...authHeaders(), ...csrfHeaders() },
+        headers: { ...serverCookieHeaders(), ...authHeaders(), ...csrfHeaders() },
         credentials: 'include',
       })
     } catch {

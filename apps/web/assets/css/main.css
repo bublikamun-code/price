@@ -1,429 +1,327 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;450;500;600;700;750;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================
-   Дизайн-система. Токены — RGB-триплеты для rgb()/alpha.
-   Палитра светлой и тёмной темы — из прототипа CMR shell-v2
-   (/Users/yaroslav/cmr-svetvdome/tools/mockups/shell-v2-prototype.html,
-   решение пользователя 2026-09-17 «взять стиль с СМР-прототипа»):
-   тёплый серо-бежевый фон + белые поверхности, плоские карточки с тонкой
-   рамкой и мягкими тенями.
-   РЕШЕНО 2026-09-19 (пользователь: «синий не нравится»): акцент переведён
-   с индиго #4f46e5 на нейтральный тёплый графит (stone) — значения ниже.
-   Дальше не менять без согласования.
-   ============================================================ */
-
+/*
+ * Trade design tokens. RGB triplets keep Tailwind alpha utilities available.
+ * Components should use semantic roles, never raw palette values.
+ */
 :root {
-  --color-canvas: 234 232 227;
-  --color-surface: 255 255 255;
-  --color-surface-2: 245 244 241;
-  --color-surface-3: 239 237 233;
-  --color-border: 228 226 220;
-  --color-border-strong: 213 210 202;
-  --color-ink: 23 26 23;
-  --color-ink-muted: 124 130 124;
-  --color-ink-faint: 154 160 154;
-  --color-primary: 87 83 78;
-  --color-primary-hover: 68 64 60;
-  --color-primary-soft: 237 233 228;
-  --color-secondary: 23 26 23;
-  --color-secondary-soft: 245 244 241;
-  --color-destructive: 194 71 79;
-  --color-destructive-soft: 251 233 234;
-  --color-success: 62 155 98;
-  --color-success-soft: 230 244 234;
-  --color-success-text: 30 105 64;
-  --color-warning: 180 118 31;
-  --color-warning-soft: 251 240 220;
-  --color-warning-text: 140 89 16;
-  --color-danger: 194 71 79;
-  --color-danger-soft: 251 233 234;
-  --color-danger-text: 152 45 51;
-  --color-info-text: 68 64 60;
+  color-scheme: light;
 
-  /* Материал поверхностей по прототипу CMR: плоские непрозрачные
-     карточки (стекло выключено — блики обнулены, рамка сплошная).
-     Токены glass-* сохранены как точки управления совместимости. */
+  --color-background: 245 242 235;
+  --color-surface: 255 253 248;
+  --color-surface-2: 230 233 223;
+  --color-surface-raised: 255 253 248;
+  --color-service: 27 42 36;
+  --color-service-2: 36 56 47;
+  --color-service-ink: 248 245 237;
+  --color-service-muted: 175 187 177;
+  --color-service-border: 86 110 98;
+  --color-ink: 27 42 36;
+  --color-ink-on-service: 248 245 237;
+  --color-ink-muted: 101 115 107;
+  --color-border: 200 208 199;
+  --color-border-strong: 157 171 159;
+  --color-action: 198 92 59;
+  --color-action-hover: 169 72 45;
+  --color-action-soft: 244 222 214;
+  --color-action-on: 255 255 255;
+  --color-success: 47 118 82;
+  --color-success-soft: 224 238 228;
+  --color-success-text: 29 88 58;
+  --color-warning: 168 109 25;
+  --color-warning-soft: 246 235 213;
+  --color-warning-text: 125 78 11;
+  --color-danger: 182 64 58;
+  --color-danger-on: 255 255 255;
+  --color-danger-soft: 246 226 223;
+  --color-danger-text: 145 45 40;
+  --color-info: 53 103 122;
+  --color-info-soft: 224 235 239;
+  --color-focus: 27 111 138;
+
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /*
+   * Mobile bottom lanes. The client navigation owns the lowest lane; sticky
+   * action bars, cookie consent and toasts stack above it through these tokens
+   * so no layer can silently cover another.
+   */
+  --h-mobile-nav: 4rem;
+  --bottom-nav-offset: calc(var(--h-mobile-nav) + env(safe-area-inset-bottom, 0px));
+
+  /* Legacy aliases retained while page/layout migration is completed. */
+  --color-canvas: var(--color-background);
+  --color-surface-3: var(--color-surface-2);
+  --color-primary: var(--color-action);
+  --color-primary-hover: var(--color-action-hover);
+  --color-primary-soft: var(--color-info-soft);
+  --color-secondary: var(--color-ink);
+  --color-secondary-soft: var(--color-surface-2);
+  --color-destructive: var(--color-danger);
+  --color-destructive-soft: var(--color-danger-soft);
+  --color-accent: var(--color-action);
+  --color-accent-hover: var(--color-action-hover);
+  --color-accent-soft: var(--color-danger-soft);
+  --color-ink-faint: var(--color-ink-muted);
+  --glass: var(--color-surface);
+  --glass-border-rgb: var(--color-border);
   --glass-a: 1;
-  --glass-a-strong: 0.94;
-  --glass: 255 255 255;
-  --glass-border-rgb: 228 226 220;
-  --glass-border-a: 1;
-  --glass-spec-top: 0;
-  --glass-spec-ring: 0;
-  --glass-spec-bot: 0;
+  --glass-a-strong: 1;
+  --shadow-overlay: 0 10px 30px rgb(27 42 36 / 0.2), 0 2px 8px rgb(27 42 36 / 0.12);
+  --shadow-sticky: 0 -4px 16px rgb(27 42 36 / 0.08);
+  --shadow-card: none;
+  --shadow-card-hover: none;
 
-  /* Акцентный цвет (CTA/лендинг) — нейтральный графит (stone) — замена индиго прототипа CMR, 19.09, совпадает
-     с primary: главный CTA, числа метрик, акцентные подчёркивания. */
-  --color-accent: 87 83 78;
-  --color-accent-soft: 237 233 228;
-  --color-accent-hover: 68 64 60;
-
-  /* Ambient-фон: почти выключен — у прототипа фон ровный,
-     остаётся едва заметная глубина в тонах новой палитры */
-  --ambient-a: 0.05;
-  --ambient-1: 120 113 108;
-  --ambient-2: 224 177 105;
-  --ambient-3: 62 155 98;
-
-  /* Тени карточек (sh-1/sh-2 прототипа CMR) */
-  --shadow-card: 0 1px 2px rgb(23 26 23 / 0.05);
-  --shadow-card-hover: 0 2px 6px rgb(23 26 23 / 0.08), 0 10px 28px -16px rgb(23 26 23 / 0.28);
+  --radius-control: 0;
+  --radius-surface: 2px;
+  --radius-dialog: 2px;
+  --radius-pill: 0;
 }
 
 .dark {
-  --color-canvas: 23 25 27;
-  --color-surface: 31 34 36;
-  --color-surface-2: 25 28 30;
-  --color-surface-3: 36 39 42;
-  --color-border: 44 47 49;
-  --color-border-strong: 58 62 64;
-  --color-ink: 232 234 231;
-  --color-ink-muted: 142 148 142;
-  --color-ink-faint: 111 117 112;
-  --color-primary: 214 211 209;
-  --color-primary-hover: 231 229 228;
-  --color-primary-soft: 41 37 36;
-  --color-secondary: 232 234 231;
-  --color-secondary-soft: 36 39 42;
-  --color-destructive: 229 139 144;
-  --color-destructive-soft: 46 32 34;
-  --color-success: 111 195 140;
-  --color-success-soft: 29 43 34;
-  --color-success-text: 111 195 140;
-  --color-warning: 224 177 105;
-  --color-warning-soft: 44 39 24;
-  --color-warning-text: 224 177 105;
-  --color-danger: 229 139 144;
-  --color-danger-soft: 46 32 34;
-  --color-danger-text: 229 139 144;
-  --color-info-text: 214 211 209;
   color-scheme: dark;
 
-  /* Материал поверхностей (dark) по прототипу CMR: плоские тёмные
-     поверхности, сплошная рамка, блики выключены */
-  --glass-a: 1;
-  --glass-a-strong: 0.94;
-  --glass: 31 34 36;
-  --glass-border-rgb: 44 47 49;
-  --glass-border-a: 1;
-  --glass-spec-top: 0;
-  --glass-spec-ring: 0;
-  --glass-spec-bot: 0;
-
-  /* Акцент (dark): светлее для читаемости на тёмном фоне (прототип CMR) */
-  --color-accent: 214 211 209;
-  --color-accent-soft: 41 37 36;
-  --color-accent-hover: 231 229 228;
-
-  /* Ambient (dark): глубокие тона, чуть заметнее light, без неона */
-  --ambient-a: 0.1;
-  --ambient-1: 52 84 118;
-  --ambient-2: 118 82 40;
-  --ambient-3: 30 62 48;
-
-  /* Тени карточек (dark): темнее и дальше (прототип CMR) */
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-card-hover: 0 2px 6px rgb(0 0 0 / 0.4), 0 12px 32px -18px rgb(0 0 0 / 0.7);
+  --color-background: 23 26 24;
+  --color-surface: 32 36 32;
+  --color-surface-2: 42 48 43;
+  --color-surface-raised: 37 42 37;
+  --color-service: 18 24 21;
+  --color-service-2: 26 34 29;
+  --color-service-ink: 248 245 237;
+  --color-service-muted: 174 184 176;
+  --color-service-border: 72 88 79;
+  --color-ink: 244 240 232;
+  --color-ink-on-service: 248 245 237;
+  --color-ink-muted: 174 184 176;
+  --color-border: 86 97 89;
+  --color-border-strong: 123 135 126;
+  --color-action: 217 119 87;
+  --color-action-hover: 226 138 109;
+  --color-action-soft: 76 48 42;
+  --color-action-on: 20 25 22;
+  --color-success: 112 198 154;
+  --color-success-soft: 32 55 42;
+  --color-success-text: 143 216 178;
+  --color-warning: 225 173 91;
+  --color-warning-soft: 61 48 27;
+  --color-warning-text: 236 192 124;
+  --color-danger: 238 129 122;
+  --color-danger-on: 20 25 22;
+  --color-danger-soft: 65 39 37;
+  --color-danger-text: 247 153 146;
+  --color-info: 123 180 201;
+  --color-info-soft: 31 53 61;
+  --color-focus: 111 192 218;
+  --shadow-overlay: 0 12px 34px rgb(0 0 0 / 0.42), 0 2px 8px rgb(0 0 0 / 0.32);
+  --shadow-sticky: 0 -4px 16px rgb(0 0 0 / 0.28);
 }
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    @apply border-border;
+  }
+
   html {
+    scrollbar-gutter: stable;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* Стабильный скроллбар: без прыжка ширины вьюпорта при смене высоты контента */
-    scrollbar-gutter: stable;
   }
 
   body {
-    @apply bg-canvas text-ink font-sans antialiased;
+    @apply bg-background font-sans text-ink antialiased;
   }
 
-  /* Ambient-фон: фиксированные мягкие пятна (процент непрозрачности — токен
-     темы). Слой под контентом и не ловит события. Без него blur стекла
-     не на чем «читаться». */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(52rem 52rem at 8% -12%, rgb(var(--ambient-1) / var(--ambient-a)), transparent 62%),
-      radial-gradient(64rem 64rem at 105% 6%, rgb(var(--ambient-2) / var(--ambient-a)), transparent 55%),
-      radial-gradient(58rem 58rem at 50% 115%, rgb(var(--ambient-3) / var(--ambient-a)), transparent 65%);
-  }
-
-  /* clip, не hidden: не ломает position:sticky шапки */
-  html, body {
+  html,
+  body {
     overflow-x: clip;
   }
 
-  /* Нативные чекбоксы — в цвете акцента, а не системный синий Chrome */
-  input[type='checkbox'] {
-    @apply accent-primary;
+  :where(button, a, input, select, textarea, [tabindex]):focus,
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    scroll-margin-block: 6rem 8rem;
   }
 
-  h1, h2, h3, h4 {
-    @apply font-display font-semibold text-ink;
-  }
-
-  /* Скроллбар — мягкий */
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-thumb {
-    @apply bg-border rounded-pill;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-ink-faint;
-  }
-
-  /* Клавиатурная навигация: единое мягкое кольцо фокуса (цвет — токен
-     темы). Элементы со своими ring-стилями (.btn, .input) перекрывают
-     это утилитой focus:outline-none — двойной рамки не будет. */
-  :focus-visible {
-    outline: 2px solid rgb(var(--color-primary) / 0.7);
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid rgb(var(--color-focus));
     outline-offset: 2px;
   }
 
-  /* Доступность: при системной настройке «уменьшить движение» гасим
-     все анимации и переходы (guard поверх Tailwind-анимаций и скелетонов). */
-  @media (prefers-reduced-motion: reduce) {
-    *, ::before, ::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: rgb(var(--color-action));
+  }
+
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
   }
 }
 
 @layer components {
-  /* Карточка-плитка — основной строительный блок UI.
-     Liquid Glass (уровень 2, «статичное» стекло): полупрозрачный материал
-     + световая кромка (блики в shadow-card / tailwind.config), БЕЗ
-     backdrop-filter — нулевая цена для GPU на сетках каталога. */
-  .card {
-    @apply rounded-card border border-border shadow-card
-           transition-all duration-200 ease-soft;
-    background-color: rgb(var(--color-surface) / var(--glass-a));
-    border-color: rgb(var(--glass-border-rgb) / var(--glass-border-a));
-  }
-  .card-hover {
-    @apply hover:-translate-y-0.5 hover:shadow-card-hover
-           transition duration-200 ease-soft;
-  }
-  /* 3D-наклон карточек при наведении (лендинг).
-     perspective на родителе + rotateX/Y на самой карточке. */
-  .tilt-card {
-    perspective: 800px;
-  }
-  .tilt-card > * {
-    transition: transform 0.3s ease-soft;
-  }
-  .tilt-card:hover > * {
-    transform: rotateX(2deg) rotateY(-2deg) scale(1.02);
-  }
-  /* Плотная (непрозрачная) карточка — выход для блоков поверх пёстрого
-     контента, где просвечивание мешает читаемости */
-  .card-solid {
-    background-color: rgb(var(--color-surface) / 1);
-    border-color: rgb(var(--color-border) / 1);
-  }
-
-  /* Liquid Glass (уровень 1, «живое» стекло) — только для плавающих
-     элементов, под которыми прокручивается контент: шапка, нижняя
-     навигация, попапы, тосты, дропдауны, sticky-полосы. */
+  /* Compatibility names for layouts that have not yet migrated. They are flat,
+     bordered surfaces: no glass, blur, gradient, or decorative shadow. */
+  .card,
+  .card-solid,
   .glass {
-    @apply rounded-card border shadow-card-hover
-           transition-all duration-200 ease-soft;
-    background-color: rgb(var(--color-surface) / var(--glass-a-strong));
-    border-color: rgb(var(--glass-border-rgb) / calc(var(--glass-border-a) + 0.1));
-    -webkit-backdrop-filter: blur(20px) saturate(1.6);
-    backdrop-filter: blur(20px) saturate(1.6);
-  }
-  /* Без поддержки backdrop-filter — почти плотный фон, читаемость важнее */
-  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-    .glass {
-      background-color: rgb(var(--color-surface) / 0.96);
-    }
+    @apply border border-border bg-surface;
+    border-radius: var(--radius-surface);
   }
 
-  /* Панель — рамка без фона/тени (описание и характеристики в карточке товара) */
+  .card-hover,
+  .tilt-card > *,
+  .tilt-card:hover > * {
+    transition: none;
+    transform: none;
+  }
+
   .panel {
-    @apply rounded-card border border-border;
+    @apply border border-border bg-surface;
+    border-radius: var(--radius-surface);
   }
 
-  /* Кнопки */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5
-           rounded-[18px] font-medium text-sm transition-all duration-200 ease-soft
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40
-           disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-  .btn-primary {
-    @apply btn bg-primary text-white px-5 hover:bg-primary-hover active:scale-[.98];
-    /* Стеклянная грань у плотной кнопки */
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
-  }
-  .btn-secondary {
-    @apply btn bg-canvas text-ink hover:bg-surface-2;
-  }
-  .btn-ghost {
-    @apply btn bg-transparent text-ink-muted hover:bg-canvas hover:text-ink;
-  }
-  .btn-outline {
-    @apply btn bg-transparent border border-border text-ink hover:bg-canvas;
-  }
-  /* Акцентная CTA-кнопка (лендинг): плоский нейтральный графит (stone) — замена индиго прототипа CMR, 19.09 —
-     тот же материал, что у .btn-primary, без градиента. */
-  .btn-accent {
-    @apply btn text-white px-5 active:scale-[.98];
-    background: rgb(var(--color-accent));
-    box-shadow: 0 2px 8px rgb(var(--color-accent) / 0.25);
-  }
-  .btn-accent:hover {
-    filter: brightness(1.08);
+    @apply inline-flex min-h-9 items-center justify-center gap-2 border px-3 py-1.5 text-sm font-semibold
+      transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-50;
+    border-radius: var(--radius-control);
   }
 
-  /* Сегментированный переключатель (каталог: Со скидкой/Розница) */
-  .segmented-control {
-    @apply inline-flex items-center gap-1 p-1 rounded-pill border border-border;
+  .btn-primary,
+  .btn-accent {
+    @apply btn border-action bg-action text-action-on hover:bg-action-hover;
   }
+
+  .btn-secondary {
+    @apply btn border-border-strong bg-surface text-ink hover:bg-surface-2;
+  }
+
+  .btn-outline {
+    @apply btn border-border bg-transparent text-ink hover:bg-surface-2;
+  }
+
+  .btn-ghost {
+    @apply btn border-transparent bg-transparent text-ink-muted hover:bg-surface-2 hover:text-ink;
+  }
+
+  .segmented-control {
+    @apply inline-flex items-stretch border border-border bg-surface p-0.5;
+    border-radius: var(--radius-control);
+  }
+
   .segmented-control > a,
   .segmented-control > button {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5
-           rounded-[18px] font-medium text-sm transition-all duration-200 ease-soft;
+    @apply inline-flex min-h-8 items-center justify-center gap-2 px-3 py-1 text-sm font-semibold
+      text-ink-muted transition-colors duration-100;
+    border-radius: 0;
   }
+
   .segmented-control > a.active,
   .segmented-control > a[aria-pressed='true'],
   .segmented-control > button.active,
   .segmented-control > button[aria-pressed='true'] {
-    @apply bg-canvas text-ink;
+    @apply bg-service text-ink-on-service;
   }
 
-  /* Чипы/бейджи */
-  .chip {
-    @apply inline-flex items-center gap-1 px-3 py-1 rounded-pill text-xs font-medium whitespace-nowrap;
-  }
+  .chip,
   .badge {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-pill text-xs font-medium whitespace-nowrap;
+    @apply inline-flex items-center gap-1 border border-border px-2 py-0.5 text-xs font-semibold;
+    border-radius: var(--radius-control);
   }
-  .badge-success { @apply badge bg-success-soft text-success-text; }
-  .badge-warning { @apply badge bg-warning-soft text-warning-text; }
-  .badge-danger  { @apply badge bg-danger-soft text-danger-text; }
-  .badge-info    { @apply badge bg-primary-soft text-ink; }
-  .badge-primary { @apply badge bg-primary text-white; }
-  .badge-solid   { @apply badge bg-ink text-canvas; }
 
-  /* Поля ввода: без рамки в покое, подсветка при фокусе */
+  .badge-success {
+    @apply badge border-success/40 bg-success-soft text-success-text;
+  }
+  .badge-warning {
+    @apply badge border-warning/40 bg-warning-soft text-warning-text;
+  }
+  .badge-danger {
+    @apply badge border-danger/40 bg-danger-soft text-danger-text;
+  }
+  .badge-info {
+    @apply badge border-info/40 bg-info-soft text-info;
+  }
+  .badge-primary {
+    @apply badge border-action bg-action text-action-on;
+  }
+  .badge-solid {
+    @apply badge border-service bg-service text-ink-on-service;
+  }
+
   .input {
-    @apply w-full px-4 py-2.5 rounded-[18px] bg-canvas border border-transparent
-           text-ink placeholder:text-ink-faint text-sm
-           focus:outline-none focus:border-border focus:bg-surface focus:ring-2 focus:ring-primary/15
-           transition-all duration-200;
-  }
-  /* Селекты: единый стиль вместо системного (каталог/файлы/профиль) */
-  select.input {
-    @apply pr-10 cursor-pointer rounded-[18px];
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236B7280'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z' clip-rule='evenodd'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 1rem;
-  }
-  select.input::-ms-expand {
-    display: none;
-  }
-  select.input:hover {
-    @apply border-border;
-  }
-
-  /* Числовые input: убираем нативные стрелки +/- */
-  input[type='number']::-webkit-inner-spin-button,
-  input[type='number']::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-  input[type='number'] {
-    -moz-appearance: textfield;
+    @apply block min-h-9 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink
+      placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus
+      disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-ink-muted;
+    border-radius: var(--radius-control);
   }
 
   .label {
-    @apply block text-sm font-medium text-ink mb-1.5;
+    @apply mb-1.5 block text-sm font-semibold text-ink;
   }
 
-  /* Sidebar-навигация */
   .nav-link {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-[18px] text-sm font-medium
-           text-ink-muted hover:bg-surface-2 hover:text-ink transition-colors duration-150;
+    @apply flex min-h-9 items-center gap-3 border border-transparent px-3 py-2 text-sm font-semibold
+      text-ink-on-service transition-colors duration-100 hover:bg-service-2;
+    border-radius: var(--radius-control);
   }
+
   .nav-link-active {
-    @apply bg-primary text-white;
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
+    @apply border-border-strong bg-service-2 text-ink-on-service;
   }
 
-  /* Skeleton shimmer */
   .skeleton {
-    @apply bg-gradient-to-r from-border via-surface-2 to-border bg-[length:200%_100%] animate-pulse rounded-[18px];
+    @apply bg-surface-2;
+    border-radius: var(--radius-control);
   }
-}
 
-/* Тёмная тема — компонентные переопределения.
-   Инверсия «белым по тёмному» осталась только у нейтральных контролов
-   (segmented-control, badge-solid). Главные акценты (btn-primary,
-   nav-link-active, badge-primary, ад-хок bg-primary.text-white) —
-   нейтральный графит (stone) — замена индиго прототипа CMR, 19.09: фон --color-primary (214 211 209), тёмный текст. */
-.dark .btn-primary {
-  background-color: rgb(214 211 209);
-  color: #14161a;
-}
-.dark .btn-primary:hover {
-  background-color: rgb(167 163 250);
-  color: #14161a;
-}
-.dark .nav-link-active {
-  background-color: rgb(38 36 71) !important;
-  color: rgb(167 163 250) !important;
-}
-.dark .segmented-control > a.active,
-.dark .segmented-control > a[aria-pressed='true'],
-.dark .segmented-control > button.active,
-.dark .segmented-control > button[aria-pressed='true'] {
-  background-color: #fafafa;
-  color: #262626;
-}
-.dark .segmented-control > a.active:hover,
-.dark .segmented-control > button.active:hover {
-  background-color: #e5e5e5;
-  color: #262626;
-}
-.dark .badge-solid {
-  background-color: #ffffff1a;
-  color: #fafafa;
-}
-.dark .badge-primary {
-  background-color: rgb(214 211 209);
-  color: #14161a;
-}
-/* Инверсия фото в тёмной теме ОТКЛЮЧЕНА (2026-09-09, решение пользователя).
-   Приём рассчитан на фото с белым фоном, но после rembg-пайплайна фон
-   прозрачный: инверсия не трогает фон (остаётся белая плитка-подложка),
-   а светлые пиксели самого товара уходят в чёрный. Фото теперь всегда
-   показываются как есть — на светлой плитке-подложке (bg-white у контейнера).
-   Класс .no-dark-invert сохраняется для графики, где инверсия недопустима. */
-/* Ад-хок связки bg-primary text-white в страницах (переключатели вида/цены,
-   пагинация, табы фильтров) — в тёмной теме фон уже индиго из токена,
-   меняется только текст на тёмный (accent-ink прототипа CMR). */
-.dark .bg-primary.text-white {
-  color: #14161a;
+  /* Trade records: the primary presentation primitive for client and manager
+     surfaces. A record is a row in a meaningful sequence, not a floating card. */
+  .record-list {
+    @apply border-y border-border bg-surface;
+  }
+
+  .record {
+    @apply border-b border-border bg-surface px-4 py-3 last:border-b-0;
+  }
+
+  .service-record {
+    @apply border border-service bg-service px-4 py-4 text-ink-on-service;
+  }
+
+  .section-heading {
+    @apply flex flex-wrap items-end justify-between gap-3 border-b border-border pb-3;
+  }
+
+  .section-kicker {
+    @apply mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-ink-muted;
+  }
+
+  .data-row {
+    @apply flex min-w-0 items-center justify-between gap-4 border-b border-border py-3 last:border-b-0;
+  }
+
+  .prose-trade {
+    @apply max-w-3xl;
+  }
+
+  .prose-trade p {
+    @apply leading-7 text-ink-muted;
+  }
+
+  .prose-trade p + p {
+    @apply mt-4;
+  }
 }
 
 @layer utilities {
@@ -431,9 +329,6 @@
     @apply mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8;
   }
 
-  /* Прокрутка без видимого ползунка — для модалок и плавающих панелей,
-     где системный скроллбар перекрывает скруглённый край карточки.
-     Прокрутка (колесо/тач/клавиатура) полностью сохраняется. */
   .scrollbar-none {
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -442,126 +337,45 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  .numeric {
+    font-family: theme('fontFamily.mono');
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-/* ============================================================
-   Landing page — premium visual effects
-   ============================================================ */
-
-/* Animated gradient orbs for hero background */
-@keyframes float-1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -30px) scale(1.1); }
-  66% { transform: translate(-20px, 20px) scale(0.95); }
-}
-@keyframes float-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(-40px, 20px) scale(1.05); }
-  66% { transform: translate(25px, -15px) scale(0.9); }
-}
-@keyframes float-3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(20px, 30px) scale(1.08); }
+/* Legacy effect names intentionally resolve to static, non-decorative output. */
+.hero-orb,
+.accent-glow::after,
+.animated-gradient-text,
+.section-gradient-warm,
+.section-gradient-dark {
+  background: none !important;
+  animation: none !important;
+  filter: none !important;
 }
 
 .hero-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  pointer-events: none;
-  will-change: transform;
-}
-.hero-orb-1 {
-  width: 400px; height: 400px;
-  background: rgb(var(--color-accent) / 0.15);
-  animation: float-1 12s ease-in-out infinite;
-}
-.hero-orb-2 {
-  width: 300px; height: 300px;
-  background: rgb(var(--color-accent-hover) / 0.1);
-  animation: float-2 15s ease-in-out infinite;
-}
-.hero-orb-3 {
-  width: 250px; height: 250px;
-  background: rgb(var(--ambient-1) / 0.12);
-  animation: float-3 10s ease-in-out infinite;
+  display: none;
 }
 
-/* Gradient text animation */
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-.animated-gradient-text {
-  background: linear-gradient(
-    135deg,
-    rgb(var(--color-accent)),
-    rgb(var(--color-accent-hover)),
-    rgb(var(--color-accent)),
-    rgb(var(--color-primary))
-  );
-  background-size: 300% 300%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gradient-shift 6s ease-in-out infinite;
+.ui-fade-in,
+.img-fade {
+  animation: none;
 }
 
-/* Glow effect for accent cards */
-.accent-glow {
-  position: relative;
-}
-.accent-glow::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgb(var(--color-accent) / 0.3), transparent 60%);
-  z-index: -1;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-.accent-glow:hover::after {
-  opacity: 1;
-}
-
-/* Section gradient bands */
-.section-gradient-warm {
-  background: linear-gradient(
-    180deg,
-    rgb(var(--color-accent) / 0.04) 0%,
-    transparent 100%
-  );
-}
-.section-gradient-dark {
-  background: linear-gradient(
-    180deg,
-    rgb(var(--color-ink) / 0.03) 0%,
-    transparent 100%
-  );
-}
-
-/* Animated border gradient */
-@keyframes border-rotate {
-  0% { --angle: 0deg; }
-  100% { --angle: 360deg; }
-}
-
-/* Respect reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  .hero-orb { animation: none !important; }
-  .animated-gradient-text { animation: none !important; }
-}
-
-/* Плавные появления (аудит UX 19.09): переключение вида, ленивые фото */
-@keyframes ui-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.ui-fade-in { animation: ui-fade-in 0.25s ease both; }
-.img-fade { animation: ui-fade-in 0.4s ease both; }
-
-/* Место под cookie-баннер, чтобы он не накрывал футер на коротких страницах */
 body.has-cookie-banner footer,
-body.has-cookie-banner .app-footer { padding-bottom: 96px; }
+body.has-cookie-banner .app-footer {
+  padding-bottom: 96px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

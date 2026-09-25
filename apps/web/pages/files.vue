@@ -33,7 +33,7 @@ const page = ref(1)
 const loading = ref(true)
 const error = ref('')
 
-const typeFilter = ref<'' | FileAssetType>('')
+const typeFilter = ref('')
 const brandFilter = ref('')
 const brands = ref<BrandRef[]>([])
 
@@ -56,7 +56,7 @@ async function load() {
   try {
     const res = await request<FileAssetPage>('/api/v1/files', {
       query: {
-        type: typeFilter.value || undefined,
+        type: (typeFilter.value || undefined) as FileAssetType | undefined,
         brand_id: brandFilter.value || undefined,
         page: page.value,
         per_page: PER_PAGE,
@@ -132,106 +132,128 @@ onMounted(() => {
 
 <template>
   <div>
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">Файлы</h1>
-      <p class="text-sm text-ink-muted mt-1">
-        PDF-каталоги брендов и специальные выгрузки для скачивания.
-      </p>
+    <PageHeading
+      eyebrow="Рабочий кабинет"
+      title="Файлы"
+      description="PDF-каталоги брендов и специальные выгрузки для скачивания."
+    />
+
+    <div class="mb-6 flex flex-col gap-4 sm:flex-row">
+      <UiField for="files-type" label="Тип" class="sm:w-64">
+        <UiSelect v-model="typeFilter" :options="typeOptions" @update:model-value="applyFilters" />
+      </UiField>
+      <UiField v-if="brands.length" for="files-brand" label="Бренд" class="sm:w-64">
+        <UiSelect v-model="brandFilter" :options="brandOptions" @update:model-value="applyFilters" />
+      </UiField>
     </div>
 
-    <!-- Фильтры -->
-    <div class="flex flex-col sm:flex-row gap-4 mb-6">
-      <div class="sm:w-64">
-        <label class="label" for="type">Тип</label>
-        <BaseSelect id="type" v-model="typeFilter" :options="typeOptions" class="min-w-[180px]" @change="applyFilters" />
-      </div>
-      <div v-if="brands.length" class="sm:w-64">
-        <label class="label" for="brand">Бренд</label>
-        <BaseSelect id="brand" v-model="brandFilter" :options="brandOptions" class="min-w-[180px]" @change="applyFilters" />
-      </div>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить файлы"
+      :description="error"
+      data-testid="files-error"
+      @retry="load"
+    />
+    <UiErrorState
+      v-if="downloadError"
+      class="mb-4"
+      title="Не удалось получить ссылку на файл"
+      :description="downloadError"
+      data-testid="files-download-error"
+    />
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load()">Повторить</button>
-    </div>
-    <div v-if="downloadError" class="badge-danger w-full justify-center py-2 mb-4">
-      {{ downloadError }}
-    </div>
+    <UiLoadingState v-if="loading" class="min-h-64" label="Загрузка файлов" />
 
-    <!-- Скелетоны -->
-    <div v-if="loading" class="card p-5">
-      <div v-for="i in 4" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
-    </div>
+    <UiEmptyState
+      v-else-if="!files.length"
+      icon="heroicons:folder-open"
+      title="Файлов пока нет"
+      description="PDF-каталоги брендов и выгрузки появятся здесь после загрузки менеджером."
+    />
 
-    <!-- Пусто -->
-    <div v-else-if="!files.length" class="card p-10 text-center text-ink-muted">
-      <Icon name="heroicons:folder" class="w-10 h-10 mx-auto mb-3 text-ink-faint" />
-      <p>Файлов пока нет</p>
-    </div>
-
-    <!-- Таблица -->
-    <div v-else class="card overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-              <th class="px-4 py-3 font-medium">Имя</th>
-              <th class="px-4 py-3 font-medium">Тип</th>
-              <th class="px-4 py-3 font-medium">Бренд</th>
-              <th class="px-4 py-3 font-medium">Размер</th>
-              <th class="px-4 py-3 font-medium">Дата</th>
-              <th class="px-4 py-3 font-medium text-right">Действие</th>
+    <template v-else>
+      <div class="hidden md:block">
+        <UiTableFrame caption="Файлы" overflow-label="Файлы">
+          <template #header>
+            <tr class="border-b border-border bg-surface-2 text-xs font-semibold text-ink-muted">
+              <th scope="col" class="w-64 px-3 py-2">Имя</th>
+              <th scope="col" class="w-44 px-3 py-2">Тип</th>
+              <th scope="col" class="px-3 py-2">Бренд</th>
+              <th scope="col" class="w-28 px-3 py-2">Размер</th>
+              <th scope="col" class="w-44 px-3 py-2">Дата</th>
+              <th scope="col" class="w-32 px-3 py-2 text-right">Действие</th>
             </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="f in files"
-              :key="f.id"
-              class="border-t border-border hover:bg-canvas/60 transition-colors duration-150"
-            >
-              <td class="px-4 py-3 max-w-[240px] truncate" :title="f.filename">{{ f.filename }}</td>
-              <td class="px-4 py-3">
-                <span class="badge-info">{{ TYPE_META[f.type]?.label || f.type }}</span>
-              </td>
-              <td class="px-4 py-3 text-ink-muted">{{ f.brand_name || '—' }}</td>
-              <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatSize(f.size_bytes) }}</td>
-              <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatDate(f.created_at) }}</td>
-              <td class="px-4 py-3 text-right">
-                <button
-                  class="btn-ghost text-sm py-1.5"
-                  :disabled="downloadingId === f.id"
-                  @click="download(f)"
-                >
-                  <span
-                    v-if="downloadingId === f.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
-                  />
-                  <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
-                  Скачать
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+          </template>
+          <tr
+            v-for="f in files"
+            :key="f.id"
+            class="border-b border-border hover:bg-surface-2"
+            :data-testid="`files-row-${f.id}`"
+          >
+            <td class="max-w-0 truncate px-3 py-2" :title="f.filename">{{ f.filename }}</td>
+            <td class="px-3 py-2">
+              <UiStatusBadge tone="neutral" :label="TYPE_META[f.type]?.label || f.type" />
+            </td>
+            <td class="px-3 py-2 text-ink-muted">{{ f.brand_name || '—' }}</td>
+            <td class="numeric whitespace-nowrap px-3 py-2 text-ink-muted">{{ formatSize(f.size_bytes) }}</td>
+            <td class="whitespace-nowrap px-3 py-2 text-ink-muted">{{ formatDate(f.created_at) }}</td>
+            <td class="px-3 py-2 text-right">
+              <UiButton
+                variant="outline"
+                size="compact"
+                :loading="downloadingId === f.id"
+                :aria-label="`Скачать ${f.filename}`"
+                :data-testid="`files-download-${f.id}`"
+                @click="download(f)"
+              >
+                <Icon name="heroicons:arrow-down-tray" class="size-4" aria-hidden="true" />
+                Скачать
+              </UiButton>
+            </td>
+          </tr>
+        </UiTableFrame>
       </div>
-    </div>
 
-    <!-- Пагинация -->
-    <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
-        <Icon name="heroicons:chevron-left" class="w-5 h-5" />
-      </button>
-      <button
-        v-for="pgn in totalPages"
-        :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
-        :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
-        @click="goPage(pgn)"
-      >{{ pgn }}</button>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
-        <Icon name="heroicons:chevron-right" class="w-5 h-5" />
-      </button>
-    </nav>
+      <div class="md:hidden" data-testid="files-records">
+        <article
+          v-for="f in files"
+          :key="f.id"
+          class="flex items-start gap-3 border-b border-border py-4"
+        >
+          <div class="min-w-0 flex-1">
+            <p class="line-clamp-2 text-sm font-semibold leading-5 text-ink">{{ f.filename }}</p>
+            <p class="mt-1 text-xs text-ink-muted">
+              {{ TYPE_META[f.type]?.label || f.type }}<span v-if="f.brand_name"> · {{ f.brand_name }}</span>
+            </p>
+            <p class="numeric mt-1 text-xs text-ink-muted">
+              {{ formatSize(f.size_bytes) }} · {{ formatDate(f.created_at) }}
+            </p>
+          </div>
+          <UiButton
+            variant="outline"
+            size="touch"
+            class="shrink-0 px-3"
+            :loading="downloadingId === f.id"
+            :aria-label="`Скачать ${f.filename}`"
+            :data-testid="`files-download-m-${f.id}`"
+            @click="download(f)"
+          >
+            <Icon name="heroicons:arrow-down-tray" class="size-4" aria-hidden="true" />
+            Скачать
+          </UiButton>
+        </article>
+      </div>
+
+      <UiPagination
+        v-if="totalPages > 1"
+        class="mt-6"
+        :page="page"
+        :page-count="totalPages"
+        :total="total"
+        label="Страницы файлов"
+        @update:page="goPage"
+      />
+    </template>
   </div>
 </template>

@@ -184,18 +184,15 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Клиенты</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          <template v-if="!loading">{{ total }} клиентов</template>
-          <template v-else>Загрузка…</template>
-        </p>
-      </div>
-      <button class="btn-primary shrink-0" @click="openCreate">
-        <Icon name="heroicons:plus" class="w-4 h-4" /> Создать клиента
-      </button>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Клиенты"
+      :description="loading ? 'Загрузка…' : `${total} клиентов`"
+    >
+      <template #actions>
+        <UiButton size="touch" @click="openCreate"><template #leading><Icon name="heroicons:plus" class="size-4" /></template>Создать клиента</UiButton>
+      </template>
+    </PageHeading>
 
     <!-- Поиск -->
     <form class="flex gap-2 mb-6 max-w-xl" @submit.prevent="applySearch">
@@ -204,12 +201,13 @@ onMounted(load)
         <input
           v-model="q"
           type="search"
+          aria-label="Поиск клиентов"
           placeholder="Поиск по имени, email, компании…"
           class="input pl-10"
           @input="onSearchInput"
         >
       </div>
-      <button type="submit" class="btn-primary shrink-0">Найти</button>
+      <button type="submit" class="btn-primary min-h-11 shrink-0">Найти</button>
     </form>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
@@ -217,34 +215,66 @@ onMounted(load)
       <button class="btn-ghost text-sm" @click="load">Повторить</button>
     </div>
 
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 6" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!sortedUsers.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:users" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!sortedUsers.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:users" class="size-8 mb-3 text-ink-faint" />
       <p>{{ appliedQ ? 'По этому запросу клиентов нет' : 'Клиентов пока нет' }}</p>
     </div>
 
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('full_name')">
+              <th
+                class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink"
+                role="button"
+                tabindex="0"
+                :aria-sort="sortField === 'full_name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('full_name')"
+                @keydown.enter="toggleSort('full_name')"
+                @keydown.space.prevent="toggleSort('full_name')"
+              >
                 <span class="inline-flex items-center gap-1">Клиент <Icon :name="sortIcon('full_name')" class="w-3.5 h-3.5" /></span>
               </th>
               <th class="px-4 py-3 font-medium">Email</th>
               <th class="px-4 py-3 font-medium">Телефон</th>
-              <th class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink" @click="toggleSort('avg_discount_percent')">
+              <th
+                class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink"
+                role="button"
+                tabindex="0"
+                :aria-sort="sortField === 'avg_discount_percent' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('avg_discount_percent')"
+                @keydown.enter="toggleSort('avg_discount_percent')"
+                @keydown.space.prevent="toggleSort('avg_discount_percent')"
+              >
                 <span class="inline-flex items-center justify-end gap-1">Скидка <Icon :name="sortIcon('avg_discount_percent')" class="w-3.5 h-3.5" /></span>
               </th>
               <th class="px-4 py-3 font-medium">Фикс. курс</th>
               <th class="px-4 py-3 font-medium">Статус</th>
-              <th class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink" @click="toggleSort('orders_count')">
+              <th
+                class="px-4 py-3 font-medium text-right cursor-pointer select-none hover:text-ink"
+                role="button"
+                tabindex="0"
+                :aria-sort="sortField === 'orders_count' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('orders_count')"
+                @keydown.enter="toggleSort('orders_count')"
+                @keydown.space.prevent="toggleSort('orders_count')"
+              >
                 <span class="inline-flex items-center justify-end gap-1">Заказов <Icon :name="sortIcon('orders_count')" class="w-3.5 h-3.5" /></span>
               </th>
-              <th class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink" @click="toggleSort('created_at')">
+              <th
+                class="px-4 py-3 font-medium cursor-pointer select-none hover:text-ink"
+                role="button"
+                tabindex="0"
+                :aria-sort="sortField === 'created_at' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                @click="toggleSort('created_at')"
+                @keydown.enter="toggleSort('created_at')"
+                @keydown.space.prevent="toggleSort('created_at')"
+              >
                 <span class="inline-flex items-center gap-1">Создан <Icon :name="sortIcon('created_at')" class="w-3.5 h-3.5" /></span>
               </th>
             </tr>
@@ -254,7 +284,12 @@ onMounted(load)
               v-for="u in sortedUsers"
               :key="u.id"
               class="border-t border-border hover:bg-canvas/60 transition-colors duration-150 cursor-pointer"
+              role="link"
+              tabindex="0"
+              :aria-label="`Открыть клиента ${u.full_name}`"
               @click="navigateTo(`/manager/users/${u.id}`)"
+              @keydown.enter="navigateTo(`/manager/users/${u.id}`)"
+              @keydown.space.prevent="navigateTo(`/manager/users/${u.id}`)"
             >
               <td class="px-4 py-3">
                 <p class="font-medium">{{ u.full_name }}</p>
@@ -280,19 +315,19 @@ onMounted(load)
     </div>
 
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
         <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
         <button
           v-else
-          class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          class="btn-outline size-11 font-medium text-sm"
+          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>
@@ -300,13 +335,13 @@ onMounted(load)
     <!-- Создание клиента -->
     <div
       v-if="showCreate"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeCreate(); overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none" @submit.prevent="submitCreate">
+      <form class="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-border-strong bg-surface p-5" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">
           <h3 class="font-semibold">Новый клиент</h3>
-          <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="closeCreate">
+          <button type="button" class="btn-ghost -mr-2 size-11 shrink-0" @click="closeCreate">
             <Icon name="heroicons:x-mark" class="w-5 h-5" />
           </button>
         </div>
@@ -349,9 +384,9 @@ onMounted(load)
         <div v-if="createError" class="badge-danger w-full justify-center py-2 mt-5">{{ createError }}</div>
 
         <div class="flex justify-end gap-2 mt-6">
-          <button type="button" class="btn-ghost" @click="closeCreate">Отмена</button>
-          <button type="submit" class="btn-primary" :disabled="!createValid || creating">
-            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+          <button type="button" class="btn-ghost min-h-11" @click="closeCreate">Отмена</button>
+          <button type="submit" class="btn-primary min-h-11" :disabled="!createValid || creating">
+            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
             {{ creating ? 'Создание…' : 'Создать' }}
           </button>
         </div>

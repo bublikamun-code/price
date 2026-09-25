@@ -1,55 +1,51 @@
 <script setup lang="ts">
-// Контейнер тостов: телепорт в body, список через TransitionGroup.
-// Источник данных — composables/useToast.ts (toasts, remove).
 const { toasts, remove } = useToast()
 </script>
 
 <template>
   <Teleport to="body">
     <div
-      class="fixed bottom-4 right-4 z-50 flex flex-col gap-3 w-[calc(100vw-2rem)] max-w-sm pointer-events-none"
+      class="pointer-events-none fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2"
+      role="region"
+      aria-label="Уведомления"
       aria-live="polite"
-      aria-atomic="true"
+      aria-relevant="additions text"
     >
-      <TransitionGroup
-        class="contents"
-        enter-active-class="transition-all duration-300 ease-out"
-        enter-from-class="opacity-0 translate-y-3 scale-95"
-        enter-to-class="opacity-100 translate-y-0 scale-100"
-        leave-active-class="transition-all duration-200 ease-in"
-        leave-from-class="opacity-100 translate-x-0"
-        leave-to-class="opacity-0 translate-x-6"
-        move-class="transition-all duration-300"
-      >
+      <TransitionGroup>
         <div
           v-for="toast in toasts"
           :key="toast.id"
-          class="pointer-events-auto glass p-4 flex items-start gap-3"
+          class="pointer-events-auto flex items-start gap-3 border bg-surface p-3"
           :class="{
-            'border-success/40 bg-success-soft/40': toast.type === 'success',
-            'border-danger/40 bg-danger-soft/40': toast.type === 'error',
-            'border-primary/40 bg-primary-soft/30': toast.type === 'info',
+            'border-l-success border-success/50': toast.type === 'success',
+            'border-l-danger border-danger/50': toast.type === 'error',
+            'border-l-info border-info/50': toast.type === 'info',
           }"
+          :role="toast.type === 'error' ? 'alert' : 'status'"
+          aria-atomic="true"
         >
-          <div class="mt-0.5 shrink-0">
-            <Icon v-if="toast.type === 'success'" name="heroicons:check-circle" class="w-5 h-5 text-success" />
-            <Icon v-else-if="toast.type === 'error'" name="heroicons:exclamation-circle" class="w-5 h-5 text-danger" />
-            <Icon v-else name="heroicons:information-circle" class="w-5 h-5 text-primary" />
-          </div>
-          <div class="flex-1 min-w-0">
+          <Icon
+            :name="toast.type === 'success' ? 'heroicons:check-circle' : toast.type === 'error' ? 'heroicons:exclamation-circle' : 'heroicons:information-circle'"
+            class="mt-0.5 size-5 shrink-0"
+            :class="toast.type === 'error' ? 'text-danger' : toast.type === 'success' ? 'text-success' : 'text-info'"
+            aria-hidden="true"
+          />
+          <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-ink">{{ toast.message }}</p>
-            <div v-if="toast.action" class="mt-2">
-              <NuxtLink
-                :to="toast.action.to"
-                class="text-sm font-semibold text-primary hover:text-primary-hover hover:underline"
-                @click="remove(toast.id)"
-              >
-                {{ toast.action.label }}
-              </NuxtLink>
-            </div>
+            <NuxtLink
+              v-if="toast.action"
+              :to="toast.action.to"
+              class="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-action hover:underline"
+              @click="remove(toast.id)"
+            >{{ toast.action.label }}</NuxtLink>
           </div>
-          <button class="shrink-0 text-ink-faint hover:text-ink transition-colors" aria-label="Закрыть" @click="remove(toast.id)">
-            <Icon name="heroicons:x-mark" class="w-4 h-4" />
+          <button
+            type="button"
+            class="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center text-ink-muted hover:bg-surface-2 hover:text-ink"
+            aria-label="Закрыть уведомление"
+            @click="remove(toast.id)"
+          >
+            <Icon name="heroicons:x-mark" class="size-4" aria-hidden="true" />
           </button>
         </div>
       </TransitionGroup>

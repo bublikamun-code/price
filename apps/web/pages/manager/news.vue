@@ -197,36 +197,34 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Новости</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          Лента «Новости и обновления» на главной. Скрытые записи клиентам не показываются.
-        </p>
-      </div>
-      <button type="button" class="btn-primary whitespace-nowrap" @click="openCreate">
-        <Icon name="heroicons:plus" class="w-4 h-4" /> Добавить
-      </button>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Новости"
+      description="Лента «Новости и обновления» на главной. Скрытые записи клиентам не показываются."
+    >
+      <template #actions>
+        <UiButton size="touch" @click="openCreate"><template #leading><Icon name="heroicons:plus" class="size-4" /></template>Добавить</UiButton>
+      </template>
+    </PageHeading>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ error }}</div>
-      <button type="button" class="btn-ghost text-sm" @click="load()">Повторить</button>
+      <button type="button" class="btn-ghost min-h-11 text-sm" @click="load()">Повторить</button>
     </div>
 
     <!-- Скелетоны -->
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 3" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0" />
     </div>
 
     <!-- Пусто -->
-    <div v-else-if="!news.length" class="card p-10 text-center text-ink-muted">
-      <Icon name="heroicons:newspaper" class="w-10 h-10 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!news.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:newspaper" class="size-8 mb-3 text-ink-faint" />
       <p>Новостей пока нет</p>
     </div>
 
     <!-- Таблица -->
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -251,21 +249,21 @@ onMounted(load)
                 </span>
               </td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
-                <button type="button" class="btn-ghost text-sm py-1.5" :disabled="busyId === n.id" @click="openEdit(n)">
+                <button type="button" class="btn-ghost min-h-11 text-sm" :disabled="busyId === n.id" @click="openEdit(n)">
                   <Icon name="heroicons:pencil-square" class="w-4 h-4" /> Изменить
                 </button>
-                <button type="button" class="btn-ghost text-sm py-1.5" :disabled="busyId === n.id" @click="toggleActive(n)">
+                <button type="button" class="btn-ghost min-h-11 text-sm" :disabled="busyId === n.id" @click="toggleActive(n)">
                   {{ (n.is_active ?? true) ? 'Скрыть' : 'Показать' }}
                 </button>
                 <button
                   type="button"
-                  class="btn-ghost text-sm py-1.5 text-danger"
+                  class="btn-ghost min-h-11 text-sm text-danger"
                   :disabled="busyId === n.id"
                   @click="remove(n)"
                 >
                   <span
                     v-if="busyId === n.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
                   />
                   <template v-else>
                     <Icon name="heroicons:trash" class="w-4 h-4" /> Удалить
@@ -280,7 +278,7 @@ onMounted(load)
 
     <!-- Пагинация -->
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button type="button" class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button type="button" class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
@@ -288,19 +286,19 @@ onMounted(load)
         <button
           v-else
           type="button"
-          class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          class="btn-outline size-11 font-medium text-sm"
+          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button type="button" class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button type="button" class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>
 
     <!-- Модалка -->
-    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" @click.self="closeModal">
-      <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-none p-6">
+    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-ink/60  flex items-center justify-center p-4" @click.self="closeModal">
+      <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5">
         <div class="flex items-center justify-between gap-3 mb-5">
           <h2 class="text-lg font-semibold">{{ editingId ? 'Изменить новость' : 'Новая новость' }}</h2>
           <button type="button" class="btn-ghost p-1.5" aria-label="Закрыть" @click="closeModal">
@@ -348,9 +346,9 @@ onMounted(load)
           <div v-if="submitError" class="sm:col-span-2 badge-danger w-full justify-center py-2">{{ submitError }}</div>
 
           <div class="sm:col-span-2 flex justify-end gap-3">
-            <button type="button" class="btn-ghost" @click="closeModal">Отмена</button>
-            <button type="submit" class="btn-primary" :disabled="submitting">
-              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            <button type="button" class="btn-ghost min-h-11" @click="closeModal">Отмена</button>
+            <button type="submit" class="btn-primary min-h-11" :disabled="submitting">
+              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
               {{ submitting ? 'Сохранение…' : 'Сохранить' }}
             </button>
           </div>

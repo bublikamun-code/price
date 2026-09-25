@@ -2,21 +2,15 @@
 // Дашборд менеджера (фича G, Этап 8). GET /api/v1/manager/dashboard —
 // KPI, заявки по дням (30), топы, последние заявки. Кэш на сервере 60 с,
 // поэтому кнопка «Обновить» (данные могут отставать ≤60 с).
-import type { DashboardData, OrderStatus } from '~/types/api'
+import type { DashboardData } from '~/types/api'
+import { ORDER_STATUS_META } from '~/utils/order-status'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Дашборд' })
 
 const { request } = useApi()
 
-// Локальная копия STATUS_META (как в pages/manager/orders/index.vue).
-const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
-  NEW: { label: 'Новая', cls: 'badge-info' },
-  IN_PROGRESS: { label: 'В работе', cls: 'badge-info' },
-  SHIPPED: { label: 'Отгружена', cls: 'badge-warning' },
-  COMPLETED: { label: 'Завершена', cls: 'badge-success' },
-  CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
-}
+const STATUS_META = ORDER_STATUS_META
 
 const loading = ref(true)
 const refreshing = ref(false)
@@ -120,205 +114,46 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Дашборд</h1>
-        <p class="text-sm text-ink-muted mt-1">Данные агрегируются с задержкой до 60 секунд</p>
-      </div>
-      <button class="btn-outline shrink-0" :disabled="loading || refreshing" @click="refresh">
-        <Icon
-          name="heroicons:arrow-path"
-          class="w-4 h-4"
-          :class="{ 'animate-spin': refreshing }"
-        />
-        Обновить
-      </button>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Обзор"
+      description="Данные агрегируются с задержкой до 60 секунд."
+    >
+      <template #actions>
+        <UiButton variant="outline" size="touch" :disabled="loading || refreshing" @click="refresh">
+          <template #leading><Icon name="heroicons:arrow-path" class="size-4" :class="{ 'animate-spin': refreshing }" /></template>
+          Обновить
+        </UiButton>
+      </template>
+    </PageHeading>
 
-    <!-- Ошибка: полноэкранная, если данных нет; иначе над контентом -->
-    <div v-if="error && !data" class="card p-12 text-center">
-      <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-danger" />
-      <p class="text-ink-muted mb-4">{{ error }}</p>
-      <button class="btn-primary" @click="load">Повторить</button>
-    </div>
-
+    <div v-if="error && !data" class="border border-danger/50 bg-danger-soft p-5" role="alert"><p class="text-sm font-semibold">Дашборд недоступен</p><p class="mt-1 text-sm">{{ error }}</p><button type="button" class="btn-outline mt-4 min-h-11" @click="load">Повторить</button></div>
     <template v-else>
-      <div v-if="error" class="badge-danger mb-6">{{ error }}</div>
+      <div v-if="error" class="mb-4 border border-danger/50 bg-danger-soft p-3 text-sm" role="alert">{{ error }}</div>
+      <section class="mb-5 border border-border bg-surface" aria-label="Ключевые показатели">
+        <header class="border-b border-border bg-surface-2 px-4 py-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Ключевые показатели</header>
+        <div class="grid divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
+          <template v-if="loading"><div v-for="i in 5" :key="i" class="p-4"><div class="skeleton h-3 w-2/3" /><div class="skeleton mt-3 h-7 w-1/2" /></div></template>
+          <template v-else-if="data">
+            <NuxtLink v-for="k in kpiTiles" :key="k.label" :to="k.to" class="min-h-24 p-4 hover:bg-surface-2"><span class="text-xs text-ink-muted">{{ k.label }}</span><span class="numeric mt-3 block text-2xl font-bold text-action">{{ k.value }}</span></NuxtLink>
+            <NuxtLink to="/manager/import" class="min-h-24 p-4 hover:bg-surface-2"><span class="text-xs text-ink-muted">Активных импортов</span><span class="numeric mt-3 block text-2xl font-bold text-action">{{ data.kpi.active_imports }}</span></NuxtLink>
+          </template>
+        </div>
+      </section>
 
-      <!-- KPI -->
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
-        <template v-if="loading">
-          <div v-for="i in 5" :key="i" class="card p-5">
-            <div class="skeleton h-4 w-2/3 mb-3" />
-            <div class="skeleton h-8 w-1/2" />
-          </div>
-        </template>
-        <template v-else-if="data">
-          <NuxtLink v-for="k in kpiTiles" :key="k.label" :to="k.to" class="card p-5 block cursor-pointer hover:border-primary transition-colors">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <span class="text-xs text-ink-muted line-clamp-2 pr-1">{{ k.label }}</span>
-              <span :class="`badge-${k.tone} shrink-0`"><Icon :name="k.icon" class="w-3.5 h-3.5" /></span>
-            </div>
-            <p class="text-2xl font-bold whitespace-nowrap text-accent" :title="k.value">{{ k.value }}</p>
-          </NuxtLink>
-          <NuxtLink to="/manager/import" class="card p-5 block hover:border-primary transition-colors">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <span class="text-xs text-ink-muted truncate">Активных импортов</span>
-              <span class="badge-warning shrink-0"><Icon name="heroicons:arrow-up-tray" class="w-3.5 h-3.5" /></span>
-            </div>
-            <p class="text-2xl font-bold text-accent">{{ data.kpi.active_imports }}</p>
-          </NuxtLink>
-        </template>
+      <section class="mb-5 border border-border bg-surface">
+        <header class="flex min-h-12 items-center justify-between border-b border-border bg-surface-2 px-4"><h2 class="text-sm font-bold">Заявки за 30 дней</h2><span v-if="chart" class="numeric text-sm text-ink-muted">Всего: {{ chart.total }}</span></header>
+        <div class="p-4"><div v-if="loading" class="skeleton h-44 w-full" /><svg v-else-if="chart" :viewBox="`0 0 ${chart.W} 184`" class="w-full" role="img" aria-label="Заявки за 30 дней"><text x="0" y="5" class="fill-ink-faint" font-size="9">{{ chart.maxCount }}</text><text x="0" :y="chart.H / 2 + 3" class="fill-ink-faint" font-size="9">{{ Math.round(chart.maxCount / 2) }}</text><text x="0" :y="chart.H + 3" class="fill-ink-faint" font-size="9">0</text><line :x1="chart.padLeft" :y1="chart.H" :x2="chart.W" :y2="chart.H" class="stroke-border" /><g class="fill-primary fill-opacity-80"><rect v-for="(b, i) in chart.bars" :key="i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2"><title>{{ b.label }}</title></rect></g><g class="fill-current text-ink-faint" font-size="10" text-anchor="middle"><text v-for="(tick, i) in chart.ticks" :key="i" :x="tick.x" :y="chart.H + 16">{{ tick.text }}</text></g></svg><p v-else class="py-16 text-center text-sm text-ink-muted">Данных за 30 дней нет.</p></div>
+      </section>
+
+      <div class="mb-5 grid gap-5 xl:grid-cols-2">
+        <section class="border border-border bg-surface"><header class="border-b border-border bg-surface-2 px-4 py-3 text-sm font-bold">Топ-5 товаров за месяц</header><div v-if="loading" class="p-4"><div v-for="i in 5" :key="i" class="skeleton mb-2 h-9" /></div><p v-else-if="!data?.top_products.length" class="p-5 text-sm text-ink-muted">Нет данных за месяц.</p><div v-else class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-background text-left text-xs text-ink-muted"><tr><th class="px-3 py-2">Артикул</th><th class="px-3 py-2">Наименование</th><th class="px-3 py-2 text-right">Кол-во</th><th class="px-3 py-2 text-right">Выручка, BYN</th></tr></thead><tbody><tr v-for="p in data.top_products.slice(0, 5)" :key="p.product_id" class="border-t border-border"><td class="numeric px-3 py-2.5">{{ p.sku }}</td><td class="max-w-56 truncate px-3 py-2.5">{{ p.name }}</td><td class="numeric px-3 py-2.5 text-right">{{ p.qty }}</td><td class="numeric px-3 py-2.5 text-right">{{ fmtMoney(p.revenue) }}</td></tr></tbody></table></div></section>
+        <section class="border border-border bg-surface"><header class="border-b border-border bg-surface-2 px-4 py-3 text-sm font-bold">Топ-5 клиентов за месяц</header><div v-if="loading" class="p-4"><div v-for="i in 5" :key="i" class="skeleton mb-2 h-9" /></div><p v-else-if="!data?.top_clients.length" class="p-5 text-sm text-ink-muted">Нет данных за месяц.</p><div v-else class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-background text-left text-xs text-ink-muted"><tr><th class="px-3 py-2">Клиент</th><th class="px-3 py-2 text-right">Заявок</th><th class="px-3 py-2 text-right">Выручка, BYN</th></tr></thead><tbody><tr v-for="c in data.top_clients.slice(0, 5)" :key="c.client_id" class="border-t border-border"><td class="max-w-72 truncate px-3 py-2.5">{{ c.name }}</td><td class="numeric px-3 py-2.5 text-right">{{ c.orders }}</td><td class="numeric px-3 py-2.5 text-right">{{ fmtMoney(c.revenue) }}</td></tr></tbody></table></div></section>
       </div>
 
-      <!-- График заявок за 30 дней -->
-      <div class="card p-6 mb-8">
-        <h3 class="font-semibold mb-4">Заявки за 30 дней</h3>
-        <div v-if="loading" class="skeleton h-44 w-full" />
-        <div v-else-if="chart">
-          <svg :viewBox="`0 0 ${chart.W} 184`" class="w-full" role="img" aria-label="Заявки за 30 дней">
-            <!-- Подписи оси Y -->
-            <text x="0" y="5" class="fill-ink-faint" font-size="9" text-anchor="start">{{ chart.maxCount }}</text>
-            <text x="0" :y="chart.H / 2 + 3" class="fill-ink-faint" font-size="9" text-anchor="start">{{ Math.round(chart.maxCount / 2) }}</text>
-            <text x="0" :y="chart.H + 3" class="fill-ink-faint" font-size="9" text-anchor="start">0</text>
-            <!-- Базовая линия -->
-            <line :x1="chart.padLeft" :y1="chart.H" :x2="chart.W" :y2="chart.H" class="stroke-border" stroke-width="1" />
-            <g class="fill-primary fill-opacity-80">
-              <rect v-for="(b, i) in chart.bars" :key="i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2">
-                <title>{{ b.label }}</title>
-              </rect>
-            </g>
-            <g class="fill-current text-ink-faint" font-size="10" text-anchor="middle">
-              <text v-for="(t, i) in chart.ticks" :key="i" :x="t.x" :y="chart.H + 16">{{ t.text }}</text>
-            </g>
-          </svg>
-        </div>
-        <div v-else class="h-44 flex items-center justify-center text-ink-faint text-sm">Нет данных</div>
-        <p v-if="chart && chart.total === 0" class="text-xs text-ink-faint mt-2 text-center">За последние 30 дней заявок не было</p>
-      </div>
+      <section class="mb-5 border border-border bg-surface"><header class="border-b border-border bg-surface-2 px-4 py-3 text-sm font-bold">Последние заявки</header><div v-if="loading" class="p-4"><div v-for="i in 5" :key="i" class="skeleton mb-2 h-9" /></div><p v-else-if="!data?.recent_orders.length" class="p-5 text-sm text-ink-muted">Заявок пока нет.</p><div v-else class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-background text-left text-xs text-ink-muted"><tr><th class="px-3 py-2">№</th><th class="px-3 py-2">Дата</th><th class="px-3 py-2">Клиент</th><th class="px-3 py-2">Статус</th><th class="px-3 py-2 text-right">Сумма, BYN</th></tr></thead><tbody><tr v-for="o in data.recent_orders.slice(0, 5)" :key="o.id" class="border-t border-border hover:bg-surface-2"><td class="px-3 py-2.5"><NuxtLink :to="`/manager/orders/${o.id}`" class="numeric font-semibold text-action">{{ formatOrderNumber(o.seq, o.id) }}</NuxtLink></td><td class="px-3 py-2.5 text-ink-muted">{{ fmtDateTime(o.created_at) }}</td><td class="max-w-56 truncate px-3 py-2.5">{{ o.client_name }}</td><td class="px-3 py-2.5"><UiStatusBadge :tone="STATUS_META[o.status].tone" :label="STATUS_META[o.status].label" dot /></td><td class="numeric px-3 py-2.5 text-right">{{ fmtMoney(o.total_amount) }}</td></tr></tbody></table></div></section>
 
-      <!-- Топы -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
-        <div class="card overflow-hidden">
-          <h3 class="font-semibold px-6 py-4">Топ-5 товаров за месяц</h3>
-          <div v-if="loading" class="px-6 pb-6">
-            <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
-          </div>
-          <div v-else-if="!data?.top_products.length" class="px-6 pb-6 text-sm text-ink-muted text-center">
-            Нет данных за месяц
-          </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                  <th class="px-6 py-2.5 font-medium">Артикул</th>
-                  <th class="px-4 py-2.5 font-medium">Наименование</th>
-                  <th class="px-4 py-2.5 font-medium text-right whitespace-nowrap">Кол-во</th>
-                  <th class="px-6 py-2.5 font-medium text-right whitespace-nowrap">Выручка, BYN</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="p in data.top_products.slice(0, 5)" :key="p.product_id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-6 py-2.5 font-mono text-xs whitespace-nowrap">{{ p.sku }}</td>
-                  <td class="px-4 py-2.5 max-w-56 truncate" :title="p.name">{{ p.name }}</td>
-                  <td class="px-4 py-2.5 text-right">{{ p.qty }}</td>
-                  <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ fmtMoney(p.revenue) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card overflow-hidden">
-          <h3 class="font-semibold px-6 py-4">Топ-5 клиентов за месяц</h3>
-          <div v-if="loading" class="px-6 pb-6">
-            <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
-          </div>
-          <div v-else-if="!data?.top_clients.length" class="px-6 pb-6 text-sm text-ink-muted text-center">
-            Нет данных за месяц
-          </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                  <th class="px-6 py-2.5 font-medium">Клиент</th>
-                  <th class="px-4 py-2.5 font-medium text-right">Заявок</th>
-                  <th class="px-6 py-2.5 font-medium text-right whitespace-nowrap">Выручка, BYN</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="c in data.top_clients.slice(0, 5)" :key="c.client_id" class="border-t border-border hover:bg-canvas/60">
-                  <td class="px-6 py-2.5 max-w-72 truncate" :title="c.name">{{ c.name }}</td>
-                  <td class="px-4 py-2.5 text-right">{{ c.orders }}</td>
-                  <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ fmtMoney(c.revenue) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Последние заявки -->
-      <div class="card overflow-hidden">
-        <h3 class="font-semibold px-6 py-4">Последние заявки</h3>
-        <div v-if="loading" class="px-6 pb-6">
-          <div v-for="i in 5" :key="i" class="skeleton h-10 w-full mb-2 last:mb-0" />
-        </div>
-        <div v-else-if="!data?.recent_orders.length" class="px-6 pb-6 text-sm text-ink-muted text-center">
-          Заявок пока нет
-        </div>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                <th class="px-6 py-2.5 font-medium">№</th>
-                <th class="px-4 py-2.5 font-medium">Дата</th>
-                <th class="px-4 py-2.5 font-medium">Клиент</th>
-                <th class="px-4 py-2.5 font-medium">Статус</th>
-                <th class="px-6 py-2.5 font-medium text-right">Сумма, BYN</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="o in data.recent_orders.slice(0, 5)"
-                :key="o.id"
-                class="border-t border-border hover:bg-canvas/60"
-              >
-                <td class="px-6 py-2.5">
-                  <NuxtLink
-                    :to="`/manager/orders/${o.id}`"
-                    class="font-medium text-primary hover:underline whitespace-nowrap"
-                  >{{ formatOrderNumber(o.seq, o.id) }}</NuxtLink>
-                </td>
-                <td class="px-4 py-2.5 text-ink-muted whitespace-nowrap">{{ fmtDateTime(o.created_at) }}</td>
-                <td class="px-4 py-2.5 max-w-56 truncate" :title="o.client_name">{{ o.client_name }}</td>
-                <td class="px-4 py-2.5"><span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span></td>
-                <td class="px-6 py-2.5 text-right whitespace-nowrap">{{ fmtMoney(o.total_amount) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <!-- Акции + новинки: те же данные, что клиентский дашборд (карусели товаров) -->
-      <div
-        v-if="!loading && (data?.promos?.length || data?.new_arrivals?.length)"
-        class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-8"
-      >
-        <ProductCarousel
-          v-if="data?.promos?.length"
-          title="Акции"
-          icon="heroicons:tag"
-          :items="data.promos"
-          :item-link="catalogLink"
-        />
-        <ProductCarousel
-          v-if="data?.new_arrivals?.length"
-          title="Новинки"
-          icon="heroicons:sparkles"
-          :items="data.new_arrivals"
-          :item-link="catalogLink"
-        />
-      </div>
+      <div v-if="!loading && (data?.promos?.length || data?.new_arrivals?.length)" class="grid gap-5 xl:grid-cols-2"><ProductCarousel v-if="data?.promos?.length" title="Акции" icon="heroicons:tag" :items="data.promos" :item-link="catalogLink" /><ProductCarousel v-if="data?.new_arrivals?.length" title="Новинки" icon="heroicons:sparkles" :items="data.new_arrivals" :item-link="catalogLink" /></div>
     </template>
   </div>
 </template>

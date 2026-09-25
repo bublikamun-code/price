@@ -1,164 +1,188 @@
 <script setup lang="ts">
-// Корзина клиента (persist в БД). См. SITEMAP.md §6, ARCHITECTURE_PLAN.md §19.
-import type { CartItemRead } from '~/types/api'
+import type { CartLine } from '~/domain/api/v2/cart.schema'
+import { toAppProblem, AppProblem } from '~/domain/api/v2/problem'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
-useHead({ title: 'Корзина' })
+useHead({ title: 'Заявка' })
 
-const { thumbOf } = useProductPhoto()
-const { data: cart, loading, refresh, update, remove, clear } = useCart()
-const error = ref('')
-const updatingSku = ref<string | null>(null)
-const removingSku = ref<string | null>(null)
+const { store, ensureLoaded, replaceItem, removeItem: removeCartItem, clear } = useCartV2()
+const cart = computed(() => store.cart)
+const loadError = ref<AppProblem | null>(null)
+const actionError = ref<AppProblem | null>(null)
+const updatingProductId = ref<string | null>(null)
+const removingProductId = ref<string | null>(null)
+const clearing = ref(false)
 
-async function changeQty(item: CartItemRead, delta: number) {
-  const qty = item.quantity + delta
-  if (qty < 1) return
-  updatingSku.value = item.sku
-  error.value = ''
+function problem(cause: unknown, fallback: string): AppProblem {
+  return cause instanceof AppProblem ? cause : toAppProblem(cause, fallback)
+}
+
+function problemMessage(cause: AppProblem): string {
+  if (!cause.fieldErrors.length) return cause.message
+  const details = cause.fieldErrors
+    .map((field) => `${field.field}: ${field.message}`)
+    .join('; ')
+  return `${cause.message}: ${details}`
+}
+
+async function loadCart() {
+  loadError.value = null
   try {
-    await update(item.sku, { quantity: qty })
-  } catch (e) {
-    // 422 по остаткам: показываем детали бэка, а не общий текст.
-    error.value = getErrorStatus(e) === 422
-      ? getDetailedErrorMessage(e, 'Не удалось изменить количество')
-      : getErrorMessage(e, 'Не удалось изменить количество')
-  } finally {
-    updatingSku.value = null
+    const snapshot = await ensureLoaded()
+    if (!snapshot) {
+      throw new AppProblem({
+        code: 'CART_SESSION_UNAVAILABLE',
+        message: 'Не удалось определить коммерческий контекст заявки',
+        isProblemDetails: false,
+        retryable: false,
+      })
+    }
+  } catch (cause) {
+    loadError.value = problem(cause, 'Не удалось загрузить состав заявки')
   }
 }
 
-async function removeItem(item: CartItemRead) {
-  removingSku.value = item.sku
-  error.value = ''
+async function changeQty(item: CartLine, delta: number) {
+  const quantity = item.quantity + delta
+  if (quantity < 1 || updatingProductId.value || store.saving) return
+  updatingProductId.value = item.productId
+  actionError.value = null
   try {
-    await remove(item.sku)
-  } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось удалить позицию')
+    await replaceItem(item.productId, { quantity: String(quantity), note: item.note })
+  } catch (cause) {
+    actionError.value = problem(cause, 'Не удалось изменить количество')
   } finally {
-    removingSku.value = null
+    updatingProductId.value = null
+  }
+}
+
+async function removeItem(item: CartLine) {
+  if (removingProductId.value || store.saving) return
+  removingProductId.value = item.productId
+  actionError.value = null
+  try {
+    await removeCartItem(item.productId)
+  } catch (cause) {
+    actionError.value = problem(cause, 'Не удалось удалить позицию')
+  } finally {
+    removingProductId.value = null
   }
 }
 
 async function clearAll() {
-  if (!confirm('Очистить корзину?')) return
-  error.value = ''
+  if (clearing.value || !cart.value?.totalItems) return
+  if (!window.confirm('Очистить заявку?')) return
+  clearing.value = true
+  actionError.value = null
   try {
     await clear()
-  } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось очистить корзину')
+  } catch (cause) {
+    actionError.value = problem(cause, 'Не удалось очистить заявку')
+  } finally {
+    clearing.value = false
   }
 }
 
-onMounted(refresh)
+function retryLoad() {
+  void loadCart()
+}
+
+onMounted(() => {
+  void loadCart()
+})
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Корзина</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          <template v-if="cart">{{ cart.total_items }} {{ pluralize(cart.total_items, 'позиция', 'позиции', 'позиций') }}</template>
-          <template v-else>Загрузка…</template>
-        </p>
-      </div>
-      <button v-if="cart && cart.total_items" class="btn-ghost text-danger" @click="clearAll">
-        <Icon name="heroicons:trash" class="w-4 h-4" /> Очистить
-      </button>
+  <div class="min-w-0" data-testid="cart-page">
+    <PageHeading
+      eyebrow="Текущая заявка"
+      title="Заявка"
+      description="Проверьте состав и количество перед оформлением."
+    >
+      <template #actions>
+        <UiButton v-if="cart?.totalItems" variant="danger" size="touch" :loading="clearing" :disabled="store.saving" @click="clearAll">
+          <template #leading><Icon name="heroicons:trash" class="size-4" aria-hidden="true" /></template>
+          Очистить
+        </UiButton>
+      </template>
+    </PageHeading>
+
+    <UiErrorState v-if="loadError && !cart" class="mb-6" title="Заявка недоступна" :description="problemMessage(loadError)" :code="loadError.code" data-testid="cart-error" @retry="retryLoad" />
+
+    <div v-else-if="store.loading && !cart" class="space-y-3 border-y border-border py-3" aria-label="Загрузка состава заявки" aria-busy="true">
+      <UiSkeleton v-for="index in 3" :key="index" class="h-16 w-full" />
     </div>
 
-    <div v-if="error" class="badge-danger w-full justify-center py-3 mb-6">{{ error }}</div>
+    <UiEmptyState v-else-if="!cart || !cart.totalItems" title="Заявка пока пуста" description="Добавьте товары из каталога, чтобы оформить заявку." icon="heroicons:clipboard-document-list" data-testid="cart-empty">
+      <template #action>
+        <NuxtLink to="/catalog" class="inline-flex min-h-11 items-center justify-center border border-action bg-action px-4 text-sm font-semibold text-action-on hover:bg-action-hover">Перейти в каталог</NuxtLink>
+      </template>
+    </UiEmptyState>
 
-    <!-- Skeleton -->
-    <div v-if="loading && !cart" class="space-y-3">
-      <div v-for="i in 3" :key="i" class="card p-4">
-        <div class="skeleton h-20 w-full"/>
-      </div>
-    </div>
+    <div v-else class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <UiPanel class="min-w-0 p-4 sm:p-5">
+        <ol class="grid grid-cols-3 border-y border-border bg-surface" aria-label="Этапы оформления">
+          <li class="flex min-h-12 items-center justify-center gap-2 border-r border-border px-2 text-xs font-semibold text-action sm:text-sm">
+            <span class="flex size-6 shrink-0 items-center justify-center bg-action text-action-on">1</span><span>Товары</span>
+          </li>
+          <li class="flex min-h-12 items-center justify-center gap-2 border-r border-border px-2 text-xs font-semibold text-ink-muted sm:text-sm">
+            <span class="flex size-6 shrink-0 items-center justify-center border border-border">2</span><span>Данные</span>
+          </li>
+          <li class="flex min-h-12 items-center justify-center gap-2 px-2 text-xs font-semibold text-ink-muted sm:text-sm">
+            <span class="flex size-6 shrink-0 items-center justify-center border border-border">3</span><span>Подтверждение</span>
+          </li>
+        </ol>
 
-    <!-- Empty -->
-    <div v-else-if="!cart || !cart.total_items" class="card p-12 text-center">
-      <Icon name="heroicons:shopping-cart" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
-      <p class="text-ink-muted mb-4">Корзина пуста</p>
-      <NuxtLink to="/catalog" class="btn-primary">Перейти в каталог</NuxtLink>
-    </div>
-
-    <!-- min-w-0 на детях грида: без него длинные названия/артикулы
-         распирают авто-трек и карточка вылезает за экран на мобильных -->
-    <div v-else class="grid lg:grid-cols-3 gap-6 items-start">
-      <!-- Позиции -->
-      <div class="lg:col-span-2 space-y-3 min-w-0">
-        <article
-          v-for="item in cart.items"
-          :key="item.product_id"
-          class="card p-4 flex gap-4"
-        >
-          <!-- Фото -->
-          <div class="w-20 h-20 shrink-0 rounded-card bg-canvas overflow-hidden flex items-center justify-center">
-            <img v-if="thumbOf(item.photo_key)" :src="thumbOf(item.photo_key)!" :alt="item.name" class="w-full h-full object-contain" >
-            <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
-          </div>
-
-          <!-- Инфо -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <NuxtLink :to="`/catalog/${item.sku}`" class="font-medium hover:text-primary transition-colors duration-150 line-clamp-1">
-                  {{ item.name }}
-                </NuxtLink>
-                <p class="text-xs text-ink-faint mt-0.5 truncate">Артикул: {{ item.sku }}<span v-if="item.brand_name"> · {{ item.brand_name }}</span></p>
-              </div>
-              <button
-                class="btn-ghost p-1.5 text-ink-faint hover:text-danger shrink-0"
-                :disabled="removingSku === item.sku"
-                title="Удалить"
-                @click="removeItem(item)"
-              >
-                <span v-if="removingSku === item.sku" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
-                <Icon v-else name="heroicons:trash" class="w-4 h-4" />
-              </button>
-            </div>
-
-            <!-- Цена + stepper: shrink-0 у обоих — сумма не наезжает на
-                 кнопки на узких экранах (320–360px) -->
-            <div class="flex items-center justify-between gap-2 mt-3">
-              <div class="flex items-center gap-1 shrink-0">
-                <button class="btn-outline px-2 sm:px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, -1)">
-                  <Icon name="heroicons:minus" class="w-3.5 h-3.5" />
-                </button>
-                <span class="w-9 sm:w-10 text-center font-medium">{{ item.quantity }}</span>
-                <button class="btn-outline px-2 sm:px-2.5 py-1" :disabled="updatingSku === item.sku" @click="changeQty(item, 1)">
-                  <Icon name="heroicons:plus" class="w-3.5 h-3.5" />
-                </button>
-                <span class="text-xs text-ink-muted whitespace-nowrap ml-1">{{ formatMoney(item.unit_price, item.currency) }}/шт</span>
-              </div>
-              <div class="flex items-baseline justify-end shrink-0">
-                <span class="font-bold whitespace-nowrap">{{ formatMoney(item.line_total) }}<span class="hidden sm:inline"> {{ item.currency }}</span></span>
-              </div>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <!-- Сводка -->
-      <aside class="lg:sticky lg:top-[88px] min-w-0">
-        <div class="card p-6">
-          <h3 class="font-semibold mb-4">Итого</h3>
-          <div class="flex justify-between text-sm py-1">
-            <span class="text-ink-muted">Позиций</span>
-            <span class="font-medium">{{ cart.total_items }}</span>
-          </div>
-          <div class="flex justify-between text-lg font-bold py-2 border-t border-border mt-2">
-            <span>Сумма</span>
-            <span>{{ formatMoney(cart.total_amount, cart.items[0]?.currency) }}</span>
-          </div>
-          <NuxtLink to="/checkout" class="btn-primary w-full justify-center py-3 mt-4">
-            <Icon name="heroicons:document-check" class="w-4 h-4" /> Оформить заявку
-          </NuxtLink>
-          <NuxtLink to="/catalog" class="btn-ghost w-full justify-center mt-2">Продолжить покупки</NuxtLink>
+        <div class="mt-5 flex items-center justify-between gap-4 border-b border-border pb-3">
+          <h2 class="text-sm font-semibold text-ink">Состав заявки</h2>
+          <span class="numeric text-xs text-ink-muted">{{ cart.totalItems }} {{ pluralize(cart.totalItems, 'позиция', 'позиции', 'позиций') }}</span>
         </div>
+
+        <UiErrorState v-if="actionError" class="my-4" title="Изменение не сохранено" :description="problemMessage(actionError)" :code="actionError.code" @retry="retryLoad" />
+
+        <div class="border-b border-border" data-testid="cart-line-records">
+          <OrderLineRecord
+            v-for="item in cart.items"
+            :key="item.productId"
+            :line="item"
+            :busy="updatingProductId === item.productId || removingProductId === item.productId"
+            @change="changeQty(item, $event)"
+            @remove="removeItem(item)"
+          />
+        </div>
+
+        <p v-if="store.conflict" class="mt-2 text-xs font-medium text-warning-text" role="status">Состав заявки изменился в другой вкладке. Показаны актуальные позиции.</p>
+        <div class="mt-5 flex items-center justify-between gap-4 border-y border-border py-3 text-xs">
+          <span class="text-ink-muted">Изменения сохраняются на сервере автоматически</span>
+          <span class="inline-flex items-center gap-1.5 font-semibold text-success-text"><Icon name="heroicons:cloud-check" class="size-4" aria-hidden="true" />Синхронизировано</span>
+        </div>
+      </UiPanel>
+
+      <aside class="rounded-surface border border-service bg-service p-5 text-service-ink lg:sticky lg:top-24" aria-labelledby="cart-summary-title" data-testid="cart-summary">
+        <div class="flex items-start justify-between gap-4 border-b border-service-border pb-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-service-muted">Итого</p>
+            <h2 id="cart-summary-title" class="mt-1 text-lg font-bold">Состав заявки</h2>
+          </div>
+          <Icon name="heroicons:document-text" class="size-5 text-service-muted" aria-hidden="true" />
+        </div>
+        <dl class="space-y-3 border-b border-service-border py-4 text-sm">
+          <div class="flex justify-between gap-4"><dt class="text-service-muted">Позиций</dt><dd class="numeric font-semibold">{{ cart.totalItems }}</dd></div>
+          <div class="flex items-baseline justify-between gap-4 pt-2">
+            <dt class="font-semibold">Сумма</dt>
+            <dd class="numeric text-xl font-bold" data-testid="cart-grand-total">{{ formatMoney(cart.total.amount, cart.total.currency) }}</dd>
+          </div>
+        </dl>
+        <p class="mt-4 text-xs leading-5 text-service-muted">Итоговая цена и доступность подтверждаются при оформлении.</p>
+        <NuxtLink to="/checkout" class="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 border border-action bg-action px-4 text-sm font-semibold text-action-on hover:bg-action-hover" data-testid="cart-checkout">
+          Оформить заявку
+          <Icon name="heroicons:arrow-right" class="size-4" aria-hidden="true" />
+        </NuxtLink>
+        <NuxtLink to="/catalog" class="mt-2 inline-flex min-h-11 w-full items-center justify-center border border-service-border px-4 text-sm font-semibold text-service-ink hover:bg-service-2">Продолжить выбор</NuxtLink>
+        <p class="mt-4 text-xs leading-5 text-service-muted">Оформление доступно только для действующего коммерческого клиента.</p>
       </aside>
     </div>
+
+    <StickyActionBar v-if="cart?.totalItems" class="lg:hidden" :total="formatMoney(cart.total.amount, cart.total.currency)" label="Оформить заявку" to="/checkout" />
   </div>
 </template>

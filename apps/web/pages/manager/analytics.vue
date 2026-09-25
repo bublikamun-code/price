@@ -1,18 +1,19 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
-useHead({ title: 'Аналитика' })
+useHead({ title: 'Аналитика недоступна' })
 </script>
 
 <template>
   <div>
-    <h1 class="text-2xl font-bold mb-6">Аналитика</h1>
-    <div class="card p-8 text-center">
-      <Icon name="heroicons:chart-bar" class="w-16 h-16 mx-auto mb-4 text-ink-faint" />
-      <h2 class="text-xl font-semibold mb-2">Раздел в разработке</h2>
-      <p class="text-ink-muted mb-6">
-        Аналитический дашборд с графиками продаж, динамикой цен и отчётами скоро будет доступен.
-      </p>
-      <NuxtLink to="/manager" class="btn-primary">← Назад на дашборд</NuxtLink>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Аналитика"
+      description="Сводные отчёты появятся после подтверждения API-контракта."
+    />
+    <UiPanel>
+      <p class="text-sm font-semibold text-ink">Раздел недоступен</p>
+      <p class="mt-1 max-w-2xl text-sm leading-5 text-ink-muted">В API v1 нет подтверждённого контракта аналитических отчётов. Этот маршрут не обещает данные и не запускает фиктивные запросы.</p>
+      <NuxtLink to="/manager" class="btn-primary mt-4 inline-flex min-h-11 items-center">Вернуться к обзору</NuxtLink>
+    </UiPanel>
   </div>
 </template>

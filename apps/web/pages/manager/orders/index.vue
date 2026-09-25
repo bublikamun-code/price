@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Лента заявок менеджера. См. SITEMAP.md §7, §9 (FSM), §11 (RBAC).
 import type { OrderListPage, OrderRead, OrderStatus } from '~/types/api'
+import { ORDER_STATUS_META, ORDER_STATUS_TABS } from '~/utils/order-status'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Заявки — Менеджер' })
@@ -8,22 +9,8 @@ useHead({ title: 'Заявки — Менеджер' })
 const { request } = useApi()
 const PER_PAGE = 15
 
-const STATUS_TABS: { value: '' | OrderStatus; label: string }[] = [
-  { value: '', label: 'Все' },
-  { value: 'NEW', label: 'Новые' },
-  { value: 'IN_PROGRESS', label: 'В работе' },
-  { value: 'SHIPPED', label: 'Отгружены' },
-  { value: 'COMPLETED', label: 'Завершены' },
-  { value: 'CANCELLED', label: 'Отменены' },
-]
-
-const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
-  NEW: { label: 'Новая', cls: 'badge-info' },
-  IN_PROGRESS: { label: 'В работе', cls: 'badge-info' },
-  SHIPPED: { label: 'Отгружена', cls: 'badge-warning' },
-  COMPLETED: { label: 'Завершена', cls: 'badge-success' },
-  CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
-}
+const STATUS_TABS = ORDER_STATUS_TABS
+const STATUS_META = ORDER_STATUS_META
 
 // Быстрые кнопки переходов статусов прямо из списка (§9 FSM)
 const QUICK_ACTIONS: Partial<Record<OrderStatus, { label: string; next: OrderStatus; cls: string }>> = {
@@ -124,19 +111,28 @@ function paginationWindow(totalPg: number, current: number, window = 2): (number
 
 const paginationPages = computed(() => paginationWindow(totalPages.value, page.value))
 
+let loadSeq = 0
+let isUnmounted = false
+
 async function load() {
+  const seq = ++loadSeq
+  // Параметры фиксируются на старте, чтобы быстрые клики не смешивали ответы.
+  const requestedStatus = statusFilter.value
+  const requestedPage = page.value
   loading.value = true
   error.value = ''
   try {
     const res = await request<OrderListPage>('/api/v1/manager/orders', {
-      query: { status: statusFilter.value || undefined, page: page.value, per_page: PER_PAGE },
+      query: { status: requestedStatus || undefined, page: requestedPage, per_page: PER_PAGE },
     })
+    if (seq !== loadSeq || isUnmounted) return
     orders.value = res.data
     total.value = res.meta.total
   } catch (e) {
+    if (seq !== loadSeq || isUnmounted) return
     error.value = getErrorMessage(e, 'Не удалось загрузить заявки')
   } finally {
-    loading.value = false
+    if (seq === loadSeq && !isUnmounted) loading.value = false
   }
 }
 
@@ -180,20 +176,22 @@ function formatDate(s: string): string {
   return new Date(s).toLocaleDateString('ru-RU')
 }
 
-onUnmounted(() => { if (searchTimer) clearTimeout(searchTimer) })
+onUnmounted(() => {
+  isUnmounted = true
+  loadSeq++
+  if (searchTimer) clearTimeout(searchTimer)
+})
 
 onMounted(load)
 </script>
 
 <template>
   <div>
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">Заявки</h1>
-      <p class="text-sm text-ink-muted mt-1">
-        <template v-if="!loading">{{ total }} заявок</template>
-        <template v-else>Загрузка…</template>
-      </p>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Заявки"
+      :description="loading ? 'Загрузка…' : `${total} заявок`"
+    />
 
     <!-- Поиск -->
     <div class="mb-4 max-w-sm">
@@ -214,8 +212,8 @@ onMounted(load)
       <button
         v-for="tab in STATUS_TABS"
         :key="tab.value || 'all'"
-        class="px-3.5 py-1.5 rounded-pill text-sm font-medium transition-colors inline-flex items-center gap-1.5"
-        :class="statusFilter === tab.value ? 'bg-primary text-white' : 'bg-surface border border-border text-ink-muted hover:border-primary/60'"
+        class="btn-outline min-h-11 px-3 text-sm"
+        :class="statusFilter === tab.value ? 'border-action bg-action text-white' : 'bg-surface text-ink-muted hover:border-action'"
         @click="applyStatus(tab.value)"
       >
         {{ tab.label }}
@@ -230,16 +228,16 @@ onMounted(load)
       <button class="btn-ghost text-sm" @click="load">Повторить</button>
     </div>
 
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 5" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!displayedRows.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:clipboard-document-list" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!displayedRows.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:clipboard-document-list" class="size-8 mb-3 text-ink-faint" />
       <p>{{ debouncedSearch ? 'По этому запросу ничего не найдено' : 'Заявок по этому фильтру нет' }}</p>
     </div>
 
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -268,21 +266,21 @@ onMounted(load)
               </td>
               <td class="px-4 py-3 text-right font-semibold whitespace-nowrap">{{ formatMoney(o.total_amount, o.currency_code) }}</td>
               <td class="px-4 py-3">
-                <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
+                <UiStatusBadge :tone="STATUS_META[o.status].tone" :label="STATUS_META[o.status].label" dot />
               </td>
               <td class="px-4 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
                   <!-- Быстрая кнопка перехода статуса (В сборку / Отгрузить / Завершить) -->
                   <button
                     v-if="QUICK_ACTIONS[o.status]"
-                    class="btn-primary text-xs py-1.5 px-3"
+                    class="btn-primary min-h-11 px-3 text-xs"
                     :disabled="changingId === o.id"
                     @click.prevent="quickChangeStatus(o, QUICK_ACTIONS[o.status]!.next)"
                   >
-                    <span v-if="changingId === o.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                    <span v-if="changingId === o.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
                     <template v-else>{{ QUICK_ACTIONS[o.status]!.label }}</template>
                   </button>
-                  <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost text-sm py-1.5">
+                  <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost min-h-11 text-sm">
                     <Icon name="heroicons:eye" class="w-4 h-4" /> Открыть
                   </NuxtLink>
                 </div>
@@ -294,19 +292,19 @@ onMounted(load)
     </div>
 
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationPages" :key="idx">
         <span v-if="pgn === '...'" class="w-10 h-10 flex items-center justify-center text-ink-faint text-sm">…</span>
         <button
           v-else
-          class="w-10 h-10 rounded-pill font-medium text-sm"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          class="btn-outline size-11 font-medium text-sm"
+          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>

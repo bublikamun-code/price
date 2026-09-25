@@ -122,13 +122,11 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">Журнал аудита</h1>
-      <p class="text-sm text-ink-muted mt-1">
-        <template v-if="!loading">{{ total }} записей</template>
-        <template v-else>Загрузка…</template>
-      </p>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Журнал аудита"
+      :description="loading ? 'Загрузка…' : `${total} записей`"
+    />
 
     <!-- Фильтры -->
     <form class="flex flex-col sm:flex-row flex-wrap gap-4 sm:items-end mb-6" @submit.prevent="applyFilters">
@@ -160,7 +158,7 @@ onMounted(load)
           <option v-for="t in TARGET_TYPE_SUGGESTIONS" :key="t" :value="t"/>
         </datalist>
       </div>
-      <button type="submit" class="btn-primary shrink-0">Применить</button>
+      <button type="submit" class="btn-primary min-h-11 shrink-0">Применить</button>
     </form>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
@@ -168,16 +166,16 @@ onMounted(load)
       <button class="btn-ghost text-sm" @click="load">Повторить</button>
     </div>
 
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 8" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!items.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:shield-check" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!items.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:shield-check" class="size-8 mb-3 text-ink-faint" />
       <p>Записей нет</p>
     </div>
 
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -215,19 +213,19 @@ onMounted(load)
     </div>
 
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
         <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
         <button
           v-else
-          class="w-10 h-10 rounded-pill font-medium text-sm"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          class="btn-outline size-11 font-medium text-sm"
+          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>

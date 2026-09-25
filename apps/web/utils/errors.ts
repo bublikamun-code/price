@@ -1,20 +1,89 @@
 // Безопасный доступ к полям ошибки из catch (e) в strict-режиме (e: unknown).
-// FastAPI (HTTPException) кладёт текст в data.detail; ofetch (FetchError) —
-// в data / response._data и statusCode / response.status.
+// v1 FastAPI ошибки и v2 RFC 9457 Problem Details нормализуются в одном mapper.
 
-/** Минимальная форма ошибки API (ofetch FetchError / FastAPI HTTPException). */
+import type { MappedApiError, ProblemFieldError } from '../types/api'
+
+type ErrorRecord = Record<string, unknown>
+
 interface ApiErrorLike {
   message?: unknown
-  data?: { detail?: unknown; error?: { message?: unknown; details?: unknown } }
-  response?: { status?: unknown; _data?: { detail?: unknown } }
+  data?: unknown
+  response?: { status?: unknown; _data?: unknown }
   statusCode?: unknown
 }
 
-/** Рекурсивно собирает человекочитаемые строки из значения ошибки (строки / массивы / объекты). */
+function asRecord(value: unknown): ErrorRecord | undefined {
+  return value !== null && typeof value === 'object' ? (value as ErrorRecord) : undefined
+}
+
+function toText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function toStatus(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) ? value : undefined
+}
+
+function responsePayload(e: unknown): ErrorRecord | undefined {
+  if (!e || typeof e !== 'object') return undefined
+  const err = e as ApiErrorLike
+  return asRecord(err.data) ?? asRecord(err.response?._data)
+}
+
+function errorResponse(e: unknown): ErrorRecord | undefined {
+  if (!e || typeof e !== 'object') return undefined
+  const err = e as ApiErrorLike
+  return asRecord(err.response)
+}
+
+function problemErrors(payload: ErrorRecord | undefined): ProblemFieldError[] {
+  if (!payload || !Array.isArray(payload.errors)) return []
+  return payload.errors.flatMap((item) => {
+    const value = asRecord(item)
+    const field = toText(value?.field)
+    const code = toText(value?.code)
+    const message = toText(value?.message)
+    return field && code && message ? [{ field, code, message }] : []
+  })
+}
+
+/** Maps a v2 Problem Details payload or a legacy API error to one stable shape. */
+export function mapProblemDetails(e: unknown, fallback: string): MappedApiError {
+  const payload = responsePayload(e)
+  const response = errorResponse(e)
+  const nested = asRecord(payload?.error)
+  const status =
+    toStatus(payload?.status) ??
+    toStatus(response?.status) ??
+    (e && typeof e === 'object' ? toStatus((e as ApiErrorLike).statusCode) : undefined)
+  const errors = problemErrors(payload)
+  const detail = toText(payload?.detail)
+  const title = toText(payload?.title)
+  const code = toText(payload?.code)
+  const isProblemDetails = Boolean(
+    code && (detail || title) && toStatus(payload?.status) !== undefined,
+  )
+
+  return {
+    status,
+    type: toText(payload?.type),
+    title,
+    detail,
+    instance: toText(payload?.instance),
+    code,
+    requestId: toText(payload?.requestId),
+    errors,
+    message: detail ?? toText(nested?.message) ?? toText(nested?.details) ?? title ?? fallback,
+    isProblemDetails,
+  }
+}
+
+/** Recursively collects human-readable strings from legacy validation details. */
 function collectLines(v: unknown, out: string[], depth = 0): void {
   if (v == null || depth > 3) return
   if (typeof v === 'string') {
-    if (v.trim()) out.push(v.trim())
+    const text = toText(v)
+    if (text) out.push(text)
     return
   }
   if (Array.isArray(v)) {
@@ -22,8 +91,7 @@ function collectLines(v: unknown, out: string[], depth = 0): void {
     return
   }
   if (typeof v === 'object') {
-    const obj = v as Record<string, unknown>
-    // FastAPI 422: [{loc, msg, ...}]; наши детали: {items|details|message|msg}
+    const obj = v as ErrorRecord
     const preferred = obj.msg ?? obj.message ?? obj.detail ?? obj.items ?? obj.details
     if (preferred !== undefined) return collectLines(preferred, out, depth + 1)
     for (const key of ['sku', 'error', 'reason']) {
@@ -33,37 +101,32 @@ function collectLines(v: unknown, out: string[], depth = 0): void {
 }
 
 /**
- * Человекочитаемые строки из деталей ошибки (422 по остаткам при заказе):
- * FastAPI кладёт список позиций в detail (массив); каждый элемент — строка или {msg/message}.
- * Возвращает соединённый текст либо fallback.
+ * Человекочитаемые строки из деталей ошибки (422 по остаткам при заказе).
+ * Для v2 field errors сохраняет поле, чтобы UI мог показать точный адрес ошибки.
  */
 export function getDetailedErrorMessage(e: unknown, fallback: string): string {
-  if (!e || typeof e !== 'object') return fallback
-  const err = e as ApiErrorLike
+  const mapped = mapProblemDetails(e, fallback)
+  if (mapped.errors.length) {
+    return [...new Set(mapped.errors.map((item) => `${item.field}: ${item.message}`))].join('; ')
+  }
+
   const lines: string[] = []
-  collectLines(err.data?.detail, lines)
-  if (!lines.length) collectLines(err.response?._data?.detail, lines)
-  if (!lines.length) collectLines(err.data?.error?.message ?? err.data?.error?.details, lines)
+  const payload = responsePayload(e)
+  collectLines(payload?.detail, lines)
+  if (!lines.length) collectLines(asRecord(payload?.error)?.message, lines)
+  if (!lines.length) collectLines(asRecord(payload?.error)?.details, lines)
   const joined = [...new Set(lines)].join('; ')
-  return joined || fallback
+  return joined || mapped.message || fallback
 }
 
-/** Непустая строка → сама, иначе undefined. */
-function toText(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined
-}
-
-/** HTTP-статус ошибки (response.status / statusCode), если он есть. */
+/** HTTP-статус ошибки, включая RFC 9457 status. */
 export function getErrorStatus(e: unknown): number | undefined {
-  if (!e || typeof e !== 'object') return undefined
-  const err = e as ApiErrorLike
-  const status = err.response?.status ?? err.statusCode
-  return typeof status === 'number' ? status : undefined
+  return mapProblemDetails(e, '').status
 }
 
 /**
- * Текст ошибки из unknown. Приоритет: data.detail → response._data.detail → fallback;
- * opts.nested добавляет data.error.message, opts.withMessage — e.message (для Error).
+ * Текст ошибки из unknown. Приоритет: v2 detail/title → legacy detail/error →
+ * Error.message (при opts.withMessage) → fallback.
  */
 export function getErrorMessage(
   e: unknown,
@@ -72,10 +135,15 @@ export function getErrorMessage(
 ): string {
   if (typeof e === 'string') return toText(e) ?? fallback
   if (!e || typeof e !== 'object') return fallback
-  const err = e as ApiErrorLike
-  let msg = toText(err.data?.detail)
-  if (msg === undefined && opts.nested) msg = toText(err.data?.error?.message)
-  if (msg === undefined) msg = toText(err.response?._data?.detail)
-  if (msg === undefined && opts.withMessage && e instanceof Error) msg = toText(err.message)
-  return msg ?? fallback
+
+  const mapped = mapProblemDetails(e, fallback)
+  if (mapped.message !== fallback) return mapped.message
+  if (opts.nested) {
+    const payload = responsePayload(e)
+    const nested = asRecord(payload?.error)
+    const message = toText(nested?.message) ?? toText(nested?.details)
+    if (message) return message
+  }
+  if (opts.withMessage && e instanceof Error) return toText(e.message) ?? fallback
+  return fallback
 }

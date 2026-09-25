@@ -6,6 +6,13 @@ const STORAGE_KEY = 'cookie_consent'
 
 const visible = ref(false)
 
+// В кабинете баннер встаёт над нижней навигацией, на публичных страницах —
+// в самый низ. Высота навигации приходит из общего владельца нижних слоёв.
+const { navLayerHeight, stickyLayerHeight } = useBottomLayers()
+const laneStyle = computed(() => ({
+  bottom: `calc(${navLayerHeight.value}px + ${stickyLayerHeight.value}px)`,
+}))
+
 // Пока баннер виден — освобождаем место над ним (иначе накрывает футер
 // на коротких страницах; аудит UX 19.09)
 watch(visible, (v) => {
@@ -40,31 +47,28 @@ function accept() {
     <Transition name="banner-slide">
       <div
         v-if="visible"
-        class="fixed inset-x-0 bottom-0 z-40 pointer-events-none"
+        class="pointer-events-none fixed inset-x-0 z-40"
+        :style="laneStyle"
         role="region"
         aria-label="Уведомление об использовании cookie"
       >
         <div class="container-app pb-4">
           <div
-            class="pointer-events-auto card max-w-3xl mx-auto px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4"
+            class="pointer-events-auto service-record max-w-3xl mx-auto flex flex-col sm:flex-row sm:items-center gap-4"
           >
-            <Icon name="heroicons:lock-closed" class="w-6 h-6 shrink-0 text-primary hidden sm:block" />
-            <p class="text-sm text-ink-muted leading-relaxed min-w-0">
+            <Icon name="heroicons:lock-closed" class="w-6 h-6 shrink-0 text-action-on hidden sm:block" />
+            <p class="text-sm text-ink-on-service leading-relaxed min-w-0">
               Мы используем необходимые cookie для работы портала: сессия входа,
               защита форм (CSRF) и ваши настройки. Аналитических и рекламных
               cookie нет.
               <NuxtLink
                 to="/privacy"
-                class="text-primary hover:underline transition-colors duration-150 whitespace-nowrap"
+                class="text-action-on hover:underline transition-colors duration-150 whitespace-nowrap"
               >Подробнее</NuxtLink>
             </p>
-            <button
-              type="button"
-              class="btn-primary px-5 py-2 text-sm shrink-0"
-              @click="accept"
-            >
+            <UiButton type="button" size="touch" class="shrink-0 px-5" @click="accept">
               Принять
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>

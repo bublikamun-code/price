@@ -13,6 +13,7 @@ const PRIVATE_PREFIXES = [
   '/notifications',
   '/files',
   '/dashboard',
+  '/analytics',
   '/bulk-add',
   '/force-change-password',
   '/reset-password',

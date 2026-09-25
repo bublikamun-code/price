@@ -31,14 +31,14 @@ const ordered = computed(() => [...props.items].reverse())
       class="relative pl-6 pb-5 last:pb-0 border-l-2 border-border"
     >
       <span
-        class="absolute -left-[7px] top-1 w-3 h-3 rounded-full ring-2 ring-surface"
+        class="absolute -left-[7px] top-1 size-3 ring-2 ring-surface"
         :class="i === ordered.length - 1 ? 'bg-primary' : 'bg-border'"
       />
       <p class="text-sm font-semibold leading-snug">{{ statusLabel(item.status) }}</p>
       <p class="text-xs text-ink-faint mt-0.5">{{ formatDateTime(item.created_at) }}</p>
       <div
         v-if="item.comment"
-        class="mt-2 text-sm text-ink-muted bg-canvas border border-border/60 rounded-card px-3 py-2"
+        class="mt-2 text-sm text-ink-muted bg-surface-2 border-l-2 border-border px-3 py-2"
       >
         {{ item.comment }}
       </div>

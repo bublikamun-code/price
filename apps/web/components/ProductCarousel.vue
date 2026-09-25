@@ -1,9 +1,6 @@
 <script setup lang="ts">
-// Горизонтальная карусель карточек товара (dashboard: «Акции», «Новинки»).
-// Нативный скролл с snap (на мобильном — свайп) + стрелки scrollBy по ширине видимой зоны.
-// Данные: элементы шейпа { id, sku, name, photo_key, client_price, currency, has_discount }
-// из GET /api/v1/dashboard (new_arrivals / promos). Клик по карточке → /catalog/[sku]
-// (переопределяется пропом itemLink — менеджерский дашборд шлёт на /manager/catalog).
+// Плотный список товаров для служебной панели менеджера.
+// Данные приходят из GET /api/v1/dashboard (new_arrivals / promos).
 interface ProductCarouselItem {
   id: string
   sku: string
@@ -22,71 +19,50 @@ const props = defineProps<{
 }>()
 
 const { thumbOf } = useProductPhoto()
-const track = ref<HTMLElement | null>(null)
-
-// Прокрутка на ~80% ширины видимой зоны — карточки не «срезаются» на краю.
-function scrollByDir(dir: 1 | -1) {
-  const el = track.value
-  if (!el) return
-  el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' })
-}
+const sectionId = computed(() => `product-record-${props.title.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, '-').replace(/^-|-$/g, '')}`)
 </script>
 
 <template>
-  <div class="card overflow-hidden">
-    <div class="flex items-center justify-between gap-2 px-6 py-4">
-      <h3 class="font-semibold flex items-center gap-2 min-w-0">
-        <Icon :name="icon" class="w-5 h-5 shrink-0 text-primary" />
+  <section class="border border-border bg-surface" :aria-labelledby="sectionId">
+    <header class="flex min-h-12 items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2">
+      <h3 :id="sectionId" class="flex min-w-0 items-center gap-2 text-sm font-bold text-ink">
+        <Icon :name="icon" class="size-5 shrink-0 text-action" aria-hidden="true" />
         <span class="truncate">{{ title }}</span>
+        <span class="numeric shrink-0 text-xs font-medium text-ink-muted">{{ items.length }}</span>
       </h3>
-      <div class="flex items-center gap-1 shrink-0">
-        <button
-          type="button"
-          class="w-8 h-8 rounded-card border border-border flex items-center justify-center text-ink-muted hover:text-primary hover:border-primary transition-colors"
-          :aria-label="`Прокрутить ${title} назад`"
-          @click="scrollByDir(-1)"
-        >
-          <Icon name="heroicons:chevron-left" class="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          class="w-8 h-8 rounded-card border border-border flex items-center justify-center text-ink-muted hover:text-primary hover:border-primary transition-colors"
-          :aria-label="`Прокрутить ${title} вперёд`"
-          @click="scrollByDir(1)"
-        >
-          <Icon name="heroicons:chevron-right" class="w-4 h-4" />
-        </button>
-      </div>
+    </header>
+
+    <div v-if="!items.length" class="px-4 py-6 text-sm text-ink-muted">
+      По этому разделу товаров нет.
     </div>
 
-    <div
-      ref="track"
-      class="flex gap-3 px-6 pb-6 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
+    <div v-else class="divide-y divide-border">
       <NuxtLink
         v-for="p in props.items"
         :key="p.id"
         :to="props.itemLink ? props.itemLink(p) : `/catalog/${p.sku}`"
-        class="w-40 sm:w-48 shrink-0 snap-start group"
+        class="group grid min-h-16 grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-action sm:grid-cols-[56px_minmax(0,1fr)_minmax(8rem,auto)]"
       >
-        <div class="aspect-[3/4] bg-surface rounded-card overflow-hidden mb-2 border border-border">
+        <div class="flex size-12 items-center justify-center overflow-hidden border border-border bg-background sm:size-14">
           <img
             v-if="thumbOf(p.photo_key)"
             :src="thumbOf(p.photo_key)!"
             :alt="p.name"
-            class="img-fade w-full h-full object-contain"
+            class="size-full object-contain"
             loading="lazy"
           >
-          <div v-else class="w-full h-full flex items-center justify-center">
-            <Icon name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
-          </div>
+          <Icon v-else name="heroicons:photo" class="size-5 text-ink-faint" aria-hidden="true" />
         </div>
-        <p class="text-sm font-medium line-clamp-2 leading-snug mb-1 group-hover:text-primary">{{ p.name }}</p>
-        <div class="flex items-baseline gap-1.5 flex-wrap">
-          <span class="text-base font-bold">{{ formatMoney(p.client_price, p.currency) }}</span>
-          <span v-if="p.has_discount" class="badge-primary text-[10px]">Скидка</span>
+        <div class="min-w-0">
+          <p class="truncate text-sm font-semibold text-ink group-hover:text-action">{{ p.name }}</p>
+          <p class="numeric mt-1 truncate text-xs text-ink-muted">SKU {{ p.sku }}</p>
+        </div>
+        <div class="flex flex-col items-end gap-1 text-right sm:min-w-32">
+          <span class="numeric whitespace-nowrap text-sm font-bold text-ink">{{ formatMoney(p.client_price, p.currency) }}</span>
+          <span v-if="p.has_discount" class="text-xs font-semibold uppercase tracking-wide text-success">Клиентская цена</span>
+          <span v-else class="text-xs text-ink-muted">Цена клиента</span>
         </div>
       </NuxtLink>
     </div>
-  </div>
+  </section>
 </template>

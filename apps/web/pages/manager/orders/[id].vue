@@ -1,19 +1,14 @@
 <script setup lang="ts">
 // Детали заявки для менеджера. См. SITEMAP.md §7, §9 (FSM), §11 (audit).
 import type { OrderRead, OrderStatus } from '~/types/api'
+import { ORDER_STATUS_META } from '~/utils/order-status'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 
 const route = useRoute()
 const { request } = useApi()
 
-const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
-  NEW: { label: 'Новая', cls: 'badge-info' },
-  IN_PROGRESS: { label: 'В работе', cls: 'badge-info' },
-  SHIPPED: { label: 'Отгружена', cls: 'badge-warning' },
-  COMPLETED: { label: 'Завершена', cls: 'badge-success' },
-  CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
-}
+const STATUS_META = ORDER_STATUS_META
 
 const STATUS_OPTIONS: OrderStatus[] = ['NEW', 'IN_PROGRESS', 'SHIPPED', 'COMPLETED', 'CANCELLED']
 
@@ -97,54 +92,49 @@ onMounted(load)
       <div class="skeleton h-64 w-full"/>
     </div>
 
-    <div v-else-if="notFound" class="card p-12 text-center">
-      <Icon name="heroicons:archive-box-x-mark" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="notFound" class="border border-border bg-surface p-6 text-center">
+      <Icon name="heroicons:archive-box-x-mark" class="size-8 mb-3 text-ink-faint" />
       <p class="text-ink-muted mb-4">Заявка не найдена</p>
       <NuxtLink to="/manager/orders" class="btn-primary">К списку заявок</NuxtLink>
     </div>
 
-    <div v-else-if="error && !order" class="card p-8 text-center">
+    <div v-else-if="error && !order" class="border border-danger/50 bg-danger-soft p-5">
       <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-primary" @click="load">Повторить</button></div>
+      <div><button class="btn-outline min-h-11" @click="load">Повторить</button></div>
     </div>
 
     <div v-else-if="order">
       <!-- Шапка -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-2xl font-bold">Заявка №{{ shortId(order.id) }}</h1>
-            <span :class="STATUS_META[order.status].cls">{{ STATUS_META[order.status].label }}</span>
-          </div>
-          <p class="text-sm text-ink-muted">
-            от {{ formatDate(order.created_at) }} · клиент №{{ shortId(order.client_id) }}
-          </p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn-secondary" :disabled="xlsxBusy" @click="exportOrderXlsx(order.id, xlsxFileName())">
-            <span v-if="xlsxBusy" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
-            <Icon v-else name="heroicons:table-cells" class="w-4 h-4" />
+      <PageHeading
+        eyebrow="Заявки"
+        :title="`Заявка №${shortId(order.id)}`"
+        :description="`от ${formatDate(order.created_at)} · клиент №${shortId(order.client_id)}`"
+      >
+        <template #actions>
+          <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot />
+          <UiButton variant="outline" size="touch" :loading="xlsxBusy" :disabled="xlsxBusy" @click="exportOrderXlsx(order.id, xlsxFileName())">
+            <template #leading><Icon name="heroicons:table-cells" class="size-4" /></template>
             {{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}
-          </button>
-        </div>
-      </div>
+          </UiButton>
+        </template>
+      </PageHeading>
 
       <div v-if="error || xlsxError" class="badge-danger w-full justify-center py-2 mb-4">{{ error || xlsxError }}</div>
 
       <!-- Управление статусом -->
-      <div class="card p-5 mb-6">
+      <div class="mb-5 border border-border bg-surface p-4">
         <h3 class="font-semibold mb-3">Управление</h3>
         <div class="flex flex-wrap items-center gap-3">
           <label class="text-sm text-ink-muted" for="status">Статус:</label>
-          <select id="status" v-model="selectedStatus" class="input py-2 w-auto">
+          <select id="status" v-model="selectedStatus" class="input min-h-11 w-auto">
             <option v-for="s in STATUS_OPTIONS" :key="s" :value="s">{{ STATUS_META[s].label }}</option>
           </select>
           <button
-            class="btn-primary"
+            class="btn-primary min-h-11"
             :disabled="saving || selectedStatus === order.status"
             @click="saveStatus"
           >
-            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
             <Icon v-else name="heroicons:check" class="w-4 h-4" />
             Применить
           </button>
@@ -155,7 +145,7 @@ onMounted(load)
       </div>
 
       <!-- Позиции -->
-      <div class="card overflow-hidden mb-6">
+      <div class="mb-5 border border-border bg-surface">
         <div class="px-5 py-4 border-b border-border">
           <h3 class="font-semibold">Позиции ({{ order.items?.length || 0 }})</h3>
         </div>
@@ -174,7 +164,7 @@ onMounted(load)
                 <td class="px-5 py-3">
                   <p class="font-medium">{{ snapName(item) }}</p>
                   <p class="text-xs text-ink-faint">Артикул: {{ item.product_snapshot?.sku || '—' }}</p>
-                  <p v-if="item.note" class="text-xs text-ink-muted mt-1">📝 {{ item.note }}</p>
+                  <p v-if="item.note" class="text-xs text-ink-muted mt-1">{{ item.note }}</p>
                 </td>
                 <td class="px-5 py-3 text-center">{{ item.quantity }}</td>
                 <td class="px-5 py-3 text-right">{{ formatMoney(item.unit_price, item.currency_code) }}</td>
@@ -187,7 +177,7 @@ onMounted(load)
 
       <!-- Сводка -->
       <div class="grid sm:grid-cols-2 gap-6">
-        <div class="card p-5">
+        <div class="border border-border bg-surface p-4">
           <h3 class="font-semibold mb-3">Курс и валюта</h3>
           <div class="flex justify-between text-sm py-1">
             <span class="text-ink-muted">Валюта</span>
@@ -202,7 +192,7 @@ onMounted(load)
             <span class="font-medium">{{ order.rate_source || '—' }}</span>
           </div>
         </div>
-        <div class="card p-5">
+        <div class="border border-border bg-surface p-4">
           <h3 class="font-semibold mb-3">Итого</h3>
           <div v-if="order.notes" class="text-sm py-1 mb-2">
             <span class="text-ink-muted">Комментарий: </span>

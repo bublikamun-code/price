@@ -61,45 +61,41 @@ function submit() {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-[70vh] justify-center">
-    <div class="text-center mb-6">
-      <span class="inline-flex items-center justify-center w-14 h-14 rounded-pill bg-surface-2 text-primary mb-4">
-        <Icon name="heroicons:paper-airplane" class="w-7 h-7" />
-      </span>
-      <h1 class="text-xl font-bold">Клиентский портал</h1>
-      <p class="text-sm text-ink-muted mt-1">Mini App для Telegram</p>
-    </div>
+  <div class="flex min-h-[70vh] flex-col justify-center">
+    <PageHeading
+      eyebrow="Telegram · клиентский портал"
+      title="Вход в Mini App"
+      description="Доступ подтверждается Telegram или кодом из профиля веб-кабинета."
+    />
 
-    <div v-if="checking" class="card p-6 flex flex-col items-center gap-3 text-ink-muted">
-      <span class="w-6 h-6 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
-      <p class="text-sm">Входим через Telegram…</p>
+    <div v-if="checking" class="flex min-h-28 items-center gap-3 border border-border bg-surface p-4 text-sm text-ink-muted" role="status">
+      <span class="size-5 shrink-0 animate-spin border-2 border-ink-faint border-t-action" aria-hidden="true" />
+      Проверяем данные Telegram…
     </div>
 
     <template v-else>
-      <div v-if="!hasInitData" class="badge-warning w-full justify-center py-2.5 mb-4">
-        <Icon name="heroicons:exclamation-triangle" class="w-4 h-4" /> Откройте Mini App из Telegram
+      <div v-if="!hasInitData" class="mb-4 border border-warning/50 bg-warning-soft p-3 text-sm text-ink" role="status">
+        Откройте Mini App из Telegram. Для другого клиента используйте код связки.
       </div>
-      <div v-if="notice" class="badge-info w-full justify-center py-2.5 mb-4">{{ notice }}</div>
-      <div v-if="errorMsg" class="badge-danger w-full justify-center py-2.5 mb-4">{{ errorMsg }}</div>
+      <div v-if="notice" class="mb-4 border border-info/50 bg-info-soft p-3 text-sm text-ink" role="status">{{ notice }}</div>
+      <div v-if="errorMsg" class="mb-4 border border-danger/50 bg-danger-soft p-3 text-sm text-ink" role="alert">{{ errorMsg }}</div>
 
-      <form class="card p-5 flex flex-col gap-4" @submit.prevent="submit">
-        <div>
-          <label class="label" for="link_code">Код связки</label>
-          <input
-            id="link_code"
-            v-model="linkCode"
-            class="input text-center text-lg tracking-[0.4em] font-semibold"
-            type="text"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="6"
-            placeholder="000000"
-          >
-          <p class="text-xs text-ink-faint mt-1.5"> Профиль → Telegram в веб-кабинете. </p>
-        </div>
-        <button type="submit" class="btn-primary w-full justify-center py-3" :disabled="submitting">
-          <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-          {{ submitting ? 'Вход…' : 'Войти' }}
+      <form class="border border-border bg-surface p-4 sm:p-5" @submit.prevent="submit">
+        <label class="flex flex-col gap-1.5 text-sm font-semibold text-ink" for="link_code">Код связки</label>
+        <input
+          id="link_code"
+          v-model="linkCode"
+          class="input numeric mt-1 min-h-11 text-center text-lg tracking-[0.4em]"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          placeholder="000000"
+        >
+        <p class="mt-1.5 text-xs leading-5 text-ink-muted">Профиль → Telegram в веб-кабинете.</p>
+        <button type="submit" class="btn-primary mt-4 min-h-11 w-full justify-center" :disabled="submitting">
+          <span v-if="submitting" class="size-4 animate-spin border-2 border-white/40 border-t-white" aria-hidden="true" />
+          {{ submitting ? 'Вход…' : 'Войти по коду' }}
         </button>
       </form>
     </template>

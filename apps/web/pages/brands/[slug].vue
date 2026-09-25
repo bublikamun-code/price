@@ -68,9 +68,9 @@ function plural(n: number, forms: [string, string, string]): string {
     <!-- Хлебные крошки -->
     <nav aria-label="Хлебные крошки" class="mb-6">
       <ol class="flex items-center flex-wrap gap-1.5 text-sm text-ink-muted">
-        <li><NuxtLink to="/" class="hover:text-primary transition-colors duration-150">Главная</NuxtLink></li>
+        <li><NuxtLink to="/" class="inline-flex min-h-11 items-center hover:text-action transition-colors duration-150">Главная</NuxtLink></li>
         <li aria-hidden="true"><Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" /></li>
-        <li><NuxtLink to="/brands" class="hover:text-primary transition-colors duration-150">Бренды</NuxtLink></li>
+        <li><NuxtLink to="/brands" class="inline-flex min-h-11 items-center hover:text-action transition-colors duration-150">Бренды</NuxtLink></li>
         <li aria-hidden="true"><Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" /></li>
         <li>
           <span v-if="brand" class="text-ink font-medium">{{ brand.name }}</span>
@@ -83,9 +83,9 @@ function plural(n: number, forms: [string, string, string]): string {
     <div v-if="status === 'pending'">
       <div class="skeleton h-9 w-64 mb-8" />
       <div v-for="i in 2" :key="i" class="mb-8">
-        <div class="skeleton h-16 w-full rounded-card mb-3" />
-        <div class="card divide-y divide-border">
-          <div v-for="j in 4" :key="j" class="px-5 py-3">
+        <div class="skeleton h-16 w-full mb-3" />
+        <div class="record-list">
+          <div v-for="j in 4" :key="j" class="record">
             <div class="skeleton h-4 w-2/3" />
           </div>
         </div>
@@ -93,25 +93,31 @@ function plural(n: number, forms: [string, string, string]): string {
     </div>
 
     <!-- Ошибка -->
-    <div v-else-if="error" class="card p-12 text-center max-w-lg mx-auto">
-      <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-danger" />
-      <p class="font-medium mb-1">Не удалось загрузить бренд</p>
-      <p class="text-sm text-ink-muted mb-5">{{ getErrorMessage(error, 'Попробуйте позже', { nested: true }) }}</p>
-      <button class="btn-primary" @click="() => refresh()">Повторить</button>
-    </div>
+    <UiErrorState
+      v-else-if="error"
+      class="mx-auto mt-8 max-w-lg"
+      title="Не удалось загрузить бренд"
+      :description="getErrorMessage(error, 'Попробуйте позже', { nested: true })"
+      @retry="refresh"
+    />
 
     <!-- Нет серий -->
-    <div v-else-if="!brand || !brand.series.length" class="card p-12 text-center max-w-lg mx-auto">
-      <p class="text-6xl font-bold text-primary mb-3">404</p>
-      <h1 class="text-xl font-semibold mb-2">Бренд не найден</h1>
-      <p class="text-sm text-ink-muted mb-6">Возможно, каталог этого бренда ещё не опубликован.</p>
-      <NuxtLink to="/brands" class="btn-primary">Все бренды</NuxtLink>
-    </div>
+    <UiPanel v-else-if="!brand || !brand.series.length" class="mx-auto mt-8 max-w-lg">
+      <UiEmptyState
+        icon="heroicons:tag"
+        title="Бренд не найден"
+        description="Возможно, каталог этого бренда ещё не опубликован."
+      >
+        <template #action>
+          <NuxtLink to="/brands" class="btn-primary min-h-11">Все бренды</NuxtLink>
+        </template>
+      </UiEmptyState>
+    </UiPanel>
 
     <!-- Серии с номенклатурой -->
     <template v-else>
       <header class="flex items-center gap-4 mb-10">
-        <span class="shrink-0 w-14 h-14 rounded-pill bg-surface-2 text-secondary flex items-center justify-center text-xl font-bold">{{ brand.name.charAt(0).toUpperCase() }}</span>
+        <span class="flex size-14 shrink-0 items-center justify-center border border-border bg-surface-2 text-xl font-bold text-ink">{{ brand.name.charAt(0).toUpperCase() }}</span>
         <div>
           <h1 class="text-3xl sm:text-4xl font-bold leading-tight">{{ brand.name }}</h1>
           <p class="text-sm text-ink-muted mt-1">{{ plural(brand.series.length, ['серия', 'серии', 'серий']) }} с номенклатурой</p>
@@ -120,7 +126,7 @@ function plural(n: number, forms: [string, string, string]): string {
 
       <section v-for="s in brand.series" :id="`series-${s.slug}`" :key="s.slug" class="mb-10 scroll-mt-24">
         <div class="flex items-center gap-4 mb-4">
-          <span class="shrink-0 w-16 h-16 rounded-card bg-canvas border border-border/60 overflow-hidden flex items-center justify-center">
+          <span class="shrink-0 w-16 h-16 bg-surface-2 border border-border/60 overflow-hidden flex items-center justify-center">
             <img
               v-if="s.photo_thumb"
               :src="thumbUrl(s.photo_thumb)"
@@ -138,12 +144,12 @@ function plural(n: number, forms: [string, string, string]): string {
           </div>
         </div>
 
-        <ul class="card divide-y divide-border overflow-hidden">
-          <li v-for="p in s.products" :key="p.sku" class="px-5 py-3 flex items-baseline gap-3">
-            <span class="badge bg-canvas text-ink-muted font-mono shrink-0">{{ p.sku }}</span>
+        <ul class="record-list">
+          <li v-for="p in s.products" :key="p.sku" class="record flex items-baseline gap-3">
+            <span class="badge bg-surface-2 text-ink-muted font-mono shrink-0">{{ p.sku }}</span>
             <span class="text-sm min-w-0">{{ p.name }}</span>
           </li>
-          <li v-if="!s.products.length" class="px-5 py-4 text-sm text-ink-muted">
+          <li v-if="!s.products.length" class="record text-sm text-ink-muted">
             Товары этой серии скоро появятся в каталоге.
           </li>
         </ul>
@@ -151,12 +157,12 @@ function plural(n: number, forms: [string, string, string]): string {
 
       <!-- CTA -->
       <section>
-        <div class="card border-primary/20 bg-surface-2 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="service-record p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div class="text-center sm:text-left">
             <h2 class="text-lg font-semibold mb-1">Цены доступны после входа</h2>
-            <p class="text-sm text-ink-muted">Персональный прайс по вашему договору, остатки и заказ — в кабинете.</p>
+            <p class="text-sm text-ink-on-service/80">Персональный прайс по вашему договору, остатки и заказ — в кабинете.</p>
           </div>
-          <NuxtLink to="/login" class="btn-primary px-6 py-3 shrink-0">Войти в кабинет</NuxtLink>
+          <NuxtLink to="/login" class="btn-primary min-h-11 px-6 py-3 shrink-0">Войти в кабинет</NuxtLink>
         </div>
       </section>
     </template>

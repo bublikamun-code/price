@@ -1,86 +1,17 @@
-<template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]"
-      @click.self="close"
-    >
-      <div class="absolute inset-0 bg-black/50" />
-      <div
-        class="relative w-full max-w-xl glass rounded-card shadow-card-hover overflow-hidden"
-        role="dialog"
-        aria-label="Глобальный поиск"
-      >
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-border">
-          <Icon name="heroicons:magnifying-glass" class="w-5 h-5 text-ink-faint shrink-0" />
-          <input
-            ref="searchInput"
-            v-model="query"
-            type="text"
-            class="flex-1 bg-transparent text-ink text-base outline-none placeholder:text-ink-faint"
-            placeholder="Поиск по порталу…"
-            @keydown.escape="close"
-            @keydown.enter="selectCurrent"
-            @keydown.arrow-down.prevent="moveCursor(1)"
-            @keydown.arrow-up.prevent="moveCursor(-1)"
-          >
-          <kbd class="hidden sm:inline-flex items-center gap-0.5 text-xs text-ink-faint bg-canvas rounded px-1.5 py-0.5 border border-border">
-            Esc
-          </kbd>
-        </div>
-
-        <div v-if="results.length" class="max-h-80 overflow-y-auto p-2">
-          <div v-for="(group, gKey) in groupedResults" :key="gKey" class="mb-2 last:mb-0">
-            <p class="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-ink-faint">
-              {{ group.label }}
-            </p>
-            <button
-              v-for="(item, i) in group.items"
-              :key="`${gKey}-${i}`"
-              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-[14px] text-left transition-colors"
-              :class="flatIndex(gKey, i) === cursor ? 'bg-accent-soft' : 'hover:bg-canvas'"
-              @click="navigate(item)"
-              @mouseenter="cursor = flatIndex(gKey, i)"
-            >
-              <Icon :name="item.icon" class="w-5 h-5 text-ink-faint shrink-0" />
-              <div class="min-w-0 flex-1">
-                <p class="text-sm font-medium truncate">{{ item.title }}</p>
-                <p v-if="item.subtitle" class="text-xs text-ink-muted truncate">{{ item.subtitle }}</p>
-              </div>
-              <Icon name="heroicons:arrow-right" class="w-4 h-4 text-ink-faint shrink-0" />
-            </button>
-          </div>
-        </div>
-
-        <div v-else-if="query.length >= 2" class="p-6 text-center text-sm text-ink-muted">
-          <Icon name="heroicons:magnifying-glass" class="w-8 h-8 mx-auto mb-2 text-ink-faint" />
-          Ничего не найдено
-        </div>
-
-        <div v-else class="p-4 text-center text-xs text-ink-faint">
-          Начните вводить для поиска по навигации, товарам и заказам
-        </div>
-
-        <div class="flex items-center justify-between px-5 py-2.5 border-t border-border text-xs text-ink-faint">
-          <div class="flex items-center gap-3">
-            <span class="flex items-center gap-1"><kbd class="bg-canvas rounded px-1 py-0.5 border border-border">↑↓</kbd> навигация</span>
-            <span class="flex items-center gap-1"><kbd class="bg-canvas rounded px-1 py-0.5 border border-border">↵</kbd> выбрать</span>
-          </div>
-          <span>Ctrl+K</span>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-</template>
-
 <script setup lang="ts">
 const auth = useAuth()
 const router = useRouter()
-
+const route = useRoute()
 const open = ref(false)
-const query = ref('')
 const cursor = ref(0)
-const searchInput = ref<HTMLInputElement | null>(null)
+const searchInput = shallowRef<HTMLInputElement | null>(null)
+const dialogPanel = shallowRef<HTMLElement | null>(null)
+const uid = useId()
+const typeahead = useSearchTypeahead({ debounceMs: 250, perPage: 6 })
+
+useFocusTrap(dialogPanel, () => open.value, {
+  initialFocus: () => searchInput.value,
+})
 
 interface SearchResult {
   title: string
@@ -91,136 +22,226 @@ interface SearchResult {
 }
 
 const navItems = computed<SearchResult[]>(() => {
-  const base: SearchResult[] = [
-    { title: 'Каталог', icon: 'heroicons:squares-2x2', to: '/catalog', group: 'Навигация' },
-    { title: 'Избранное', icon: 'heroicons:heart', to: '/favorites', group: 'Навигация' },
-    { title: 'Мои заявки', icon: 'heroicons:clipboard-document-list', to: '/orders', group: 'Навигация' },
-    { title: 'Корзина', icon: 'heroicons:shopping-cart', to: '/cart', group: 'Навигация' },
-    { title: 'Массовое добавление', icon: 'heroicons:plus-circle', to: '/bulk-add', group: 'Навигация' },
-    { title: 'Аналитика', icon: 'heroicons:chart-bar', to: '/dashboard', group: 'Навигация' },
-    { title: 'Файлы', icon: 'heroicons:document-text', to: '/files', group: 'Навигация' },
-    { title: 'Профиль', icon: 'heroicons:user-circle', to: '/profile', group: 'Навигация' },
-    { title: 'Уведомления', icon: 'heroicons:bell', to: '/notifications', group: 'Навигация' },
-  ]
   if (auth.isManager || auth.isAdmin) {
-    base.push(
+    return [
       { title: 'Дашборд менеджера', icon: 'heroicons:presentation-chart-bar', to: '/manager', group: 'Управление' },
       { title: 'Управление каталогом', icon: 'heroicons:cog-6-tooth', to: '/manager/catalog', group: 'Управление' },
       { title: 'Импорт прайсов', icon: 'heroicons:arrow-up-tray', to: '/manager/import', group: 'Управление' },
       { title: 'Клиенты', icon: 'heroicons:users', to: '/manager/users', group: 'Управление' },
-      { title: 'Заявки (менеджер)', icon: 'heroicons:inbox-stack', to: '/manager/orders', group: 'Управление' },
-      { title: 'Бренды и серии', icon: 'heroicons:tag', to: '/manager/brands', group: 'Управление' },
-      { title: 'Баннеры', icon: 'heroicons:photo', to: '/manager/banners', group: 'Управление' },
-      { title: 'Новости', icon: 'heroicons:newspaper', to: '/manager/news', group: 'Управление' },
-      { title: 'Курсы валют', icon: 'heroicons:currency-dollar', to: '/manager/currency', group: 'Управление' },
+      { title: 'Заявки', icon: 'heroicons:inbox-stack', to: '/manager/orders', group: 'Управление' },
       { title: 'Аудит', icon: 'heroicons:shield-check', to: '/manager/audit', group: 'Управление' },
-    )
+    ]
   }
-  return base
+  if (auth.isClient) {
+    return [
+      { title: 'Главная', icon: 'heroicons:home', to: '/dashboard', group: 'Навигация' },
+      { title: 'Каталог', icon: 'heroicons:squares-2x2', to: '/catalog', group: 'Навигация' },
+      { title: 'Избранное', icon: 'heroicons:heart', to: '/favorites', group: 'Навигация' },
+      { title: 'Мои заявки', icon: 'heroicons:clipboard-document-list', to: '/orders', group: 'Навигация' },
+      { title: 'Корзина', icon: 'heroicons:shopping-cart', to: '/cart', group: 'Навигация' },
+      { title: 'Массовое добавление', icon: 'heroicons:plus-circle', to: '/bulk-add', group: 'Навигация' },
+      { title: 'Аналитика', icon: 'heroicons:chart-bar', to: '/analytics', group: 'Навигация' },
+      { title: 'Файлы', icon: 'heroicons:document-text', to: '/files', group: 'Навигация' },
+      { title: 'Профиль', icon: 'heroicons:user-circle', to: '/profile', group: 'Навигация' },
+      { title: 'Уведомления', icon: 'heroicons:bell', to: '/notifications', group: 'Навигация' },
+    ]
+  }
+  return [
+    { title: 'Бренды', icon: 'heroicons:tag', to: '/brands', group: 'Каталог' },
+    { title: 'Новости', icon: 'heroicons:newspaper', to: '/news', group: 'Разделы' },
+  ]
 })
 
-const productResults = ref<SearchResult[]>([])
-
-let searchTimer: ReturnType<typeof setTimeout>
-watch(query, (val) => {
-  clearTimeout(searchTimer)
-  cursor.value = 0
-  if (val.length < 2) {
-    productResults.value = []
-    return
-  }
-  searchTimer = setTimeout(async () => {
-    try {
-      if (!auth.isAuthenticated) {
-        productResults.value = []
-        return
-      }
-      const { request } = useApi()
-      const res = await request<{ data: { sku: string; name: string; brand?: { name: string } }[] }>(
-        '/api/v1/catalog/products',
-        { query: { q: val, page: 1, per_page: 5 } },
-      ).catch(() => null)
-      productResults.value = (res?.data ?? []).map(p => ({
-        title: p.name,
-        subtitle: `Арт. ${p.sku}${p.brand?.name ? ` · ${p.brand.name}` : ''}`,
-        icon: 'heroicons:cube',
-        to: `/catalog/${p.sku}`,
-        group: 'Товары',
-      }))
-    } catch {
-      productResults.value = []
-    }
-  }, 250)
+const query = computed({
+  get: () => typeahead.query,
+  set: (value: string) => { typeahead.query = value },
 })
+const productResults = computed<SearchResult[]>(() => typeahead.results.map((product) => ({
+  title: product.name,
+  subtitle: `Арт. ${product.sku}${product.brand ? ` · ${product.brand.name}` : ''}`,
+  icon: 'heroicons:cube',
+  to: `/catalog/${encodeURIComponent(product.sku)}`,
+  group: 'Товары',
+})))
 
 const results = computed(() => {
-  const q = query.value.toLowerCase().trim()
-  const nav = q.length >= 1
-    ? navItems.value.filter((n) =>
-        n.title.toLowerCase().includes(q) || n.to.toLowerCase().includes(q),
-      )
+  const normalized = query.value.toLowerCase().trim()
+  const navigation = normalized.length >= 1
+    ? navItems.value.filter((item) => item.title.toLowerCase().includes(normalized) || item.to.toLowerCase().includes(normalized))
     : navItems.value.slice(0, 8)
-  return [...nav, ...productResults.value]
+  return [...navigation, ...productResults.value]
 })
 
 const groupedResults = computed(() => {
   const groups: Record<string, { label: string; items: SearchResult[] }> = {}
-  for (const r of results.value) {
-    if (!groups[r.group]) {
-      groups[r.group] = { label: r.group, items: [] }
-    }
-    groups[r.group].items.push(r)
+  for (const result of results.value) {
+    groups[result.group] ??= { label: result.group, items: [] }
+    groups[result.group]!.items.push(result)
   }
   return groups
 })
 
-function flatIndex(gKey: string, i: number): number {
-  let idx = 0
+const emptyMessage = computed(() => {
+  if (typeahead.loading) return 'Загрузка результатов…'
+  if (!query.value.trim()) return 'Начните вводить название или артикул'
+  if (query.value.trim().length < 2) return 'Введите ещё один символ'
+  if (!auth.isAuthenticated && !results.value.length) return 'Войдите, чтобы искать товары в каталоге'
+  return 'Ничего не найдено'
+})
+
+function flatIndex(groupKey: string, index: number): number {
+  let offset = 0
   for (const [key, group] of Object.entries(groupedResults.value)) {
-    if (key === gKey) return idx + i
-    idx += group.items.length
+    if (key === groupKey) return offset + index
+    offset += group.items.length
   }
   return 0
 }
 
-function moveCursor(dir: number) {
+function moveCursor(direction: number) {
   const total = results.value.length
-  if (!total) return
-  cursor.value = (cursor.value + dir + total) % total
-}
-
-function selectCurrent() {
-  const item = results.value[cursor.value]
-  if (item) navigate(item)
+  if (total) cursor.value = (cursor.value + direction + total) % total
 }
 
 function navigate(item: SearchResult) {
   close()
-  router.push(item.to)
+  void router.push(item.to)
+}
+
+function submitSearch() {
+  const selected = results.value[cursor.value]
+  if (selected) {
+    navigate(selected)
+    return
+  }
+  const normalized = query.value.trim()
+  if (normalized.length < 2) return
+  close()
+  void router.push({ path: '/catalog', query: { q: normalized } })
 }
 
 function close() {
   open.value = false
-  query.value = ''
+  typeahead.clear()
   cursor.value = 0
-  productResults.value = []
 }
 
-function toggle() {
-  open.value = !open.value
-  if (open.value) {
-    nextTick(() => searchInput.value?.focus())
+function openSearch() {
+  open.value = true
+  nextTick(() => searchInput.value?.focus())
+}
+
+function onGlobalKeydown(event: KeyboardEvent) {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    if (open.value) close()
+    else openSearch()
+    return
+  }
+  if (open.value && event.key === 'Escape') {
+    event.preventDefault()
+    close()
   }
 }
+
+function onOpenRequest() {
+  openSearch()
+}
+
+watch(query, () => {
+  cursor.value = 0
+  if (!auth.isAuthenticated) {
+    typeahead.clear()
+    return
+  }
+  typeahead.onInput()
+})
+
+watch(() => auth.isAuthenticated, () => {
+  if (open.value && query.value.trim().length >= 2) typeahead.onInput()
+})
+
+watch(() => route.fullPath, () => {
+  if (open.value) close()
+})
 
 onMounted(() => {
-  const handler = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      e.preventDefault()
-      toggle()
-    }
-  }
-  window.addEventListener('keydown', handler)
-  onBeforeUnmount(() => window.removeEventListener('keydown', handler))
+  window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('price:open-search', onOpenRequest)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('price:open-search', onOpenRequest)
 })
 </script>
+
+<template>
+  <Teleport to="body">
+    <div v-if="open" class="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]" @click.self="close">
+      <button type="button" class="absolute inset-0 bg-ink/60" aria-label="Закрыть поиск" @click="close" />
+      <section
+        id="global-search-dialog"
+        ref="dialogPanel"
+        class="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col border border-border-strong bg-surface shadow-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="global-search-title"
+      >
+        <h2 id="global-search-title" class="sr-only">Глобальный поиск</h2>
+        <div class="flex min-h-14 items-center gap-3 border-b border-border px-4">
+          <Icon name="heroicons:magnifying-glass" class="size-5 shrink-0 text-ink-muted" aria-hidden="true" />
+          <input
+            id="global-search-input"
+            ref="searchInput"
+            v-model="query"
+            type="search"
+            role="combobox"
+            aria-label="Поиск по порталу"
+            :aria-expanded="open"
+            aria-haspopup="listbox"
+            aria-controls="global-search-results"
+            :aria-activedescendant="results[cursor] ? `${uid}-result-${cursor}` : undefined"
+            class="min-h-11 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-muted"
+            placeholder="Поиск по порталу…"
+            @keydown.escape.prevent="close"
+            @keydown.enter.prevent="submitSearch"
+            @keydown.arrow-down.prevent="moveCursor(1)"
+            @keydown.arrow-up.prevent="moveCursor(-1)"
+          >
+          <kbd class="hidden border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-ink-muted sm:inline">ESC</kbd>
+        </div>
+
+        <div id="global-search-results" class="min-h-0 overflow-y-auto p-2" role="listbox" aria-label="Результаты поиска">
+          <div v-for="(group, groupKey) in groupedResults" :key="groupKey" class="mb-2 last:mb-0">
+            <p class="px-3 py-2 text-xs font-bold uppercase text-ink-muted">{{ group.label }}</p>
+            <button
+              v-for="(item, index) in group.items"
+              :id="`${uid}-result-${flatIndex(groupKey, index)}`"
+              :key="`${groupKey}-${index}-${item.to}`"
+              type="button"
+              class="flex min-h-12 w-full items-center gap-3 border-l-2 px-3 py-2 text-left transition-colors"
+              :class="flatIndex(groupKey, index) === cursor ? 'border-action bg-surface-2' : 'border-transparent hover:bg-surface-2'"
+              role="option"
+              :aria-selected="flatIndex(groupKey, index) === cursor"
+              @click="navigate(item)"
+              @mouseenter="cursor = flatIndex(groupKey, index)"
+            >
+              <Icon :name="item.icon" class="size-5 shrink-0 text-ink-muted" aria-hidden="true" />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-semibold text-ink">{{ item.title }}</span>
+                <span v-if="item.subtitle" class="block truncate font-mono text-xs text-ink-muted">{{ item.subtitle }}</span>
+              </span>
+              <Icon name="heroicons:arrow-right" class="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
+            </button>
+          </div>
+          <p v-if="!results.length || (typeahead.loading && query.trim().length >= 2)" class="px-4 py-8 text-center text-sm text-ink-muted" :aria-busy="typeahead.loading">
+            {{ emptyMessage }}
+          </p>
+        </div>
+        <div class="flex items-center justify-between border-t border-border px-4 py-2 font-mono text-xs text-ink-muted">
+          <span>↑↓ выбор · ↵ открыть</span><span>CTRL K</span>
+        </div>
+      </section>
+    </div>
+  </Teleport>
+</template>

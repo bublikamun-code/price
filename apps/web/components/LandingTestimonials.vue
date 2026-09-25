@@ -1,48 +1,38 @@
+<script setup lang="ts">
+export interface LandingTestimonial {
+  quote: string
+  name: string
+  role?: string
+  company?: string
+}
+
+const props = withDefaults(
+  defineProps<{
+    testimonials?: LandingTestimonial[]
+    title?: string
+  }>(),
+  {
+    testimonials: () => [],
+    title: 'Отзывы клиентов',
+  },
+)
+</script>
+
 <template>
-  <section class="container-app py-16 lg:py-20">
-    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-ink-faint mb-2">Отзывы</p>
-    <h2 class="text-3xl font-bold mb-8">Что говорят наши клиенты</h2>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-      <div v-for="t in testimonials" :key="t.name" class="card card-hover p-6 flex flex-col">
-        <div class="flex items-center gap-1 mb-4">
-          <Icon v-for="i in 5" :key="i" name="heroicons:star" class="w-4 h-4 text-accent" />
-        </div>
-        <blockquote class="text-sm text-ink-muted leading-relaxed mb-5 flex-1">
-          «{{ t.quote }}»
-        </blockquote>
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-pill bg-accent-soft flex items-center justify-center text-accent font-bold text-sm shrink-0">
-            {{ t.initials }}
-          </div>
-          <div>
-            <div class="text-sm font-semibold">{{ t.name }}</div>
-            <div class="text-xs text-ink-muted">{{ t.role }}</div>
-          </div>
-        </div>
+  <section v-if="props.testimonials.length" class="border-y border-border bg-surface py-14 lg:py-20" :aria-labelledby="'landing-testimonials-title'">
+    <div class="container-app">
+      <h2 id="landing-testimonials-title" class="text-3xl font-bold text-ink">{{ title }}</h2>
+      <div class="mt-8 divide-y divide-border border-y border-border">
+        <figure v-for="testimonial in props.testimonials" :key="`${testimonial.name}-${testimonial.quote}`" class="grid gap-4 py-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-10">
+          <blockquote class="text-lg font-medium leading-8 text-ink">«{{ testimonial.quote }}»</blockquote>
+          <figcaption class="text-sm text-ink-muted lg:text-right">
+            <span class="block font-semibold text-ink">{{ testimonial.name }}</span>
+            <span v-if="testimonial.role || testimonial.company" class="mt-1 block">
+              {{ [testimonial.role, testimonial.company].filter(Boolean).join(', ') }}
+            </span>
+          </figcaption>
+        </figure>
       </div>
     </div>
   </section>
 </template>
-
-<script setup lang="ts">
-const testimonials = [
-  {
-    quote: 'Раньше согласование цены занимало два дня. Теперь захожу в кабинет — вижу свои цены, собираю корзину и оформляю заявку за 15 минут.',
-    name: 'Алексей Петров',
-    role: 'Снабженец, ООО «ЭлектроМонтаж»',
-    initials: 'АП',
-  },
-  {
-    quote: 'Удобно, что все заявки и история заказов в одном месте. Не нужно искать в почте — что заказывал месяц назад, какой статус.',
-    name: 'Марина Козлова',
-    role: 'Закупщик, ИП Козлова',
-    initials: 'МК',
-  },
-  {
-    quote: 'Менеджер оперативно создаёт аккаунт и настраивает цены. Перешли на портал — и больше не возвращаемся к заказам по телефону.',
-    name: 'Дмитрий Волков',
-    role: 'Директор, ТК «ВолтТрейд»',
-    initials: 'ДВ',
-  },
-]
-</script>

@@ -129,19 +129,18 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Курсы валют</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          История курсов USD / EUR / RUB за последние 7 дней — НБ РБ и ручные значения.
-        </p>
-      </div>
-      <button class="btn-primary shrink-0" :disabled="refreshing" @click="refreshRates">
-        <span v-if="refreshing" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-        <Icon v-else name="heroicons:arrow-path" class="w-4 h-4" />
-        {{ refreshing ? 'Запрос…' : 'Обновить курсы НБ РБ' }}
-      </button>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Курсы валют"
+      description="История курсов USD / EUR / RUB за последние 7 дней — НБ РБ и ручные значения."
+    >
+      <template #actions>
+        <UiButton size="touch" :loading="refreshing" :disabled="refreshing" @click="refreshRates">
+          <template #leading><Icon name="heroicons:arrow-path" class="size-4" /></template>
+          {{ refreshing ? 'Запрос…' : 'Обновить курсы НБ РБ' }}
+        </UiButton>
+      </template>
+    </PageHeading>
 
     <div v-if="refreshError" class="badge-danger w-full justify-center py-2 mb-4">{{ refreshError }}</div>
     <div v-if="refreshMsg" class="badge-success w-full justify-center py-2 mb-4">
@@ -150,19 +149,19 @@ onUnmounted(() => {
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
+      <button class="btn-ghost min-h-11 text-sm" @click="load">Повторить</button>
     </div>
 
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 6" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!sortedRates.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:banknotes" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!sortedRates.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:banknotes" class="size-8 mb-3 text-ink-faint" />
       <p>Курсов пока нет — обновите курсы НБ РБ или добавьте вручную</p>
     </div>
 
-    <div v-else class="card overflow-hidden mb-8">
+    <div v-else class="mb-5 border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -192,7 +191,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Ручной курс -->
-    <div class="card p-6">
+    <div class="border border-border bg-surface p-5">
       <h2 class="font-semibold mb-4">Добавить курс вручную</h2>
       <p class="text-sm text-ink-muted mb-5">
         Ручной курс перекрывает курс НБ РБ на указанную дату для всех клиентов без фиксации.
@@ -214,7 +213,7 @@ onUnmounted(() => {
           <input id="mc-date" v-model="manualForm.fetched_at" type="date" class="input py-2.5" required>
         </div>
         <button type="submit" class="btn-primary sm:ml-auto shrink-0" :disabled="!manualValid || manualSaving">
-          <span v-if="manualSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+          <span v-if="manualSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
           {{ manualSaving ? 'Добавление…' : 'Добавить' }}
         </button>
       </form>

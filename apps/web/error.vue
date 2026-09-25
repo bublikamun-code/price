@@ -25,11 +25,11 @@ function handleHome() {
 
 <template>
   <div class="min-h-screen flex items-center justify-center bg-canvas px-4">
-    <div class="card p-10 text-center max-w-md w-full">
-      <p class="text-6xl font-bold text-primary mb-3">{{ error.statusCode }}</p>
-      <h1 class="text-xl font-semibold mb-2">{{ title }}</h1>
-      <p class="text-sm text-ink-muted mb-6">{{ hint }}</p>
-      <button class="btn-primary px-6 py-3" @click="handleHome">На главную</button>
-    </div>
+    <section class="w-full max-w-md border border-border bg-surface p-8 text-center sm:p-10" aria-labelledby="error-title">
+      <p class="numeric mb-3 text-5xl font-bold text-action">{{ error.statusCode }}</p>
+      <h1 id="error-title" class="mb-2 text-xl font-semibold">{{ title }}</h1>
+      <p class="mb-6 text-sm text-ink-muted">{{ hint }}</p>
+      <button type="button" class="btn-primary min-h-11 px-6 py-3" @click="handleHome">На главную</button>
+    </section>
   </div>
 </template>

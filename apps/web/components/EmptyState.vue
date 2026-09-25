@@ -9,7 +9,7 @@ defineProps<{
 
 <template>
   <div class="panel p-8 text-center">
-    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-canvas flex items-center justify-center">
+    <div class="mx-auto mb-4 flex size-16 items-center justify-center border border-border bg-surface-2">
       <Icon :name="icon" class="w-8 h-8 text-ink-muted" />
     </div>
     <h3 class="text-base font-semibold mb-1">{{ title }}</h3>

@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
+    "test": "vitest run",
     "typecheck": "nuxt typecheck"
   },
   "dependencies": {
@@ -36,6 +37,7 @@
     "prettier-plugin-tailwindcss": "^0.6.8",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3",
+    "vitest": "^3.2.7",
     "vue-tsc": "^2.1.6"
   },
   "engines": {

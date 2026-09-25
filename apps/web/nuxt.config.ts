@@ -16,19 +16,28 @@ export default defineNuxtConfig({
   ],
 
   // Tailwind подключается через модуль; конфиг в tailwind.config.ts
-  css: ['~/assets/css/main.css'],
+  css: [
+    '~/assets/css/main.css',
+    '~/assets/css/landing.css',
+  ],
 
   // pathPrefix: false — UI-примитивы из components/ui/select/ доступны как
   // <Select>/<SelectTrigger>, а не <UiSelectSelect*> (модель shadcn-vue)
-  components: [{ path: '~/components', pathPrefix: false }],
+  components: [
+    // Keep the existing unprefixed shadcn-style names (Button, Dialog, ...).
+    { path: '~/components', pathPrefix: false },
+    // Also register UI primitives with their explicit Ui* aliases. Using an
+    // explicit prefix avoids the scanner deduplicating this directory when
+    // the parent components path is registered without prefixes.
+    { path: '~/components/ui', prefix: 'Ui' },
+  ],
 
   colorMode: {
-    preference: 'dark',   // новый дизайн — тёмный по умолчанию
-    fallback: 'dark',
-    classSuffix: '',      // класс `dark` на <html> (селекторы в main.css)
-    // Новый ключ: в браузерах пользователей остался старый 'nuxt-color-mode'='light'
-    // от прошлого светлого дизайна, он перекрывал дефолт 'dark'. Начинаем чисто.
-    storageKey: 'nuxt-color-mode-v2',
+    preference: 'light',
+    fallback: 'light',
+    classSuffix: '',
+    // Trade starts from light and must not inherit a legacy dark preference.
+    storageKey: 'trade-theme',
   },
 
   runtimeConfig: {
@@ -48,7 +57,7 @@ export default defineNuxtConfig({
       titleTemplate: '%s — Клиентский портал',
       meta: [
         { charset: 'utf-8' },
-        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'description', content: 'B2B-портал «Свет в доме»: каталог светотехники и электромонтажа, персональные цены по договору, заявки онлайн для юридических лиц и ИП.' },
       ],
       link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],

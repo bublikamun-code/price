@@ -1,97 +1,76 @@
 <script setup lang="ts">
-// Страница входа. См. SITEMAP.md §5. При включённой у менеджера 2FA (§16 п.22)
-// логин двухшаговый: email+пароль → ticket → код приложения/recovery → токены.
 definePageMeta({ layout: 'auth' })
 useHead({ title: 'Вход' })
 
+type FormStep = 'credentials' | 'two-factor' | 'forgot-password'
+
+const auth = useAuth()
+const route = useRoute()
+const { request } = useApi()
+
+const formStep = ref<FormStep>('credentials')
 const showContactModal = ref(false)
 const email = ref('')
 const password = ref('')
 const remember = ref(true)
 const loading = ref(false)
 const errorMsg = ref('')
-
-// Второй шаг 2FA (фича H): ticket из login + код из приложения или recovery-код.
-const step = ref<1 | 2>(1)
 const ticket = ref('')
 const code = ref('')
+const codeInputId = 'twofa-code'
 
-const auth = useAuth()
-const route = useRoute()
-const codeInput = ref<HTMLInputElement | null>(null)
-
-// «Забыли пароль?»: инлайн-форма → POST /auth/forgot-password (ответ всегда 202).
-const showForgot = ref(false)
 const forgotEmail = ref('')
 const forgotLoading = ref(false)
 const forgotSent = ref(false)
 const forgotError = ref('')
 
-async function onForgotPassword() {
-  if (forgotLoading.value) return
-  forgotLoading.value = true
-  forgotError.value = ''
-  const { request } = useApi()
-  try {
-    await request('/api/v1/auth/forgot-password', {
-      method: 'POST',
-      body: { email: forgotEmail.value.trim() },
-    })
-    // Бэкенд всегда отвечает 202 (не раскрываем наличие email в базе).
-    forgotSent.value = true
-  } catch (e) {
-    forgotError.value = getErrorMessage(e, 'Не удалось отправить запрос. Попробуйте позже.')
-  } finally {
-    forgotLoading.value = false
-  }
+function getPostLoginPath(): string {
+  const fallback = auth.isManager ? '/manager' : '/dashboard'
+  return getSafeRedirectPath(route.query.redirect, fallback)
 }
 
-function openForgot() {
-  showForgot.value = true
+watch(formStep, (step) => {
+  errorMsg.value = ''
+  if (step === 'two-factor') nextTick(() => document.getElementById(codeInputId)?.focus())
+})
+
+function openForgotPassword() {
   forgotSent.value = false
   forgotEmail.value = ''
   forgotError.value = ''
+  formStep.value = 'forgot-password'
 }
 
-// На втором шаге сразу фокусируемся на поле кода.
-watch(step, (s) => {
-  if (s === 2) nextTick(() => codeInput.value?.focus())
-})
-
-/** Общий пост-логин путь (после login или verify2fa): consent → redirect. */
-async function finishLogin() {
-  // Непринятое согласие (клиент) → сначала /consent, redirect-запрос игнорируем:
-  // после принятия consent.global.ts всё равно не пропустит дальше без согласия.
-  if (auth.isClient && auth.user?.consent_accepted === false) {
-    await navigateTo('/consent')
-    return
-  }
-  const redirect = (route.query.redirect as string) || (auth.isManager ? '/manager' : '/catalog')
-  await navigateTo(redirect)
+function backToCredentials() {
+  ticket.value = ''
+  code.value = ''
+  formStep.value = 'credentials'
 }
 
 async function onSubmit() {
+  if (loading.value) return
   errorMsg.value = ''
   loading.value = true
   try {
-    const res = await auth.login(email.value, password.value)
-    if (res.twoFARequired) {
-      // 200 без токенов: нужен второй шаг (код из приложения / recovery-код).
-      ticket.value = res.ticket ?? ''
+    const response = await auth.login(email.value, password.value)
+    if (response.twoFARequired) {
+      ticket.value = response.ticket ?? ''
       code.value = ''
-      step.value = 2
+      formStep.value = 'two-factor'
+      return
+    }
+    if (response.forcePasswordChange) {
+      await navigateTo({ path: '/force-change-password', query: { redirect: getPostLoginPath() } })
       return
     }
     await finishLogin()
-  } catch (e) {
-    // Маппинг по HTTP-статусу вместо сырого текста ошибки API.
-    const status = getErrorStatus(e)
+  } catch (error) {
+    const status = getErrorStatus(error)
     if (status === 429) {
       errorMsg.value = 'Слишком много попыток входа. Попробуйте через 15 минут.'
     } else if (status === 401 || status === 403) {
       errorMsg.value = 'Неверный email или пароль.'
     } else if (!status || status === 0) {
-      // Нет HTTP-статуса — сетевая ошибка / API недоступен.
       errorMsg.value = 'Сервис недоступен. Попробуйте позже.'
     } else {
       errorMsg.value = 'Не удалось войти. Попробуйте позже.'
@@ -101,148 +80,177 @@ async function onSubmit() {
   }
 }
 
+async function finishLogin() {
+  const redirect = getPostLoginPath()
+  if (auth.isClient && auth.user?.consent_accepted === false) {
+    await navigateTo({ path: '/consent', query: { redirect } })
+    return
+  }
+  await navigateTo(redirect)
+}
+
 async function onVerify() {
+  if (loading.value) return
   errorMsg.value = ''
   loading.value = true
   try {
     await auth.verify2fa(ticket.value, code.value.trim())
+    if (auth.user?.forcePasswordChange) {
+      await navigateTo({ path: '/force-change-password', query: { redirect: getPostLoginPath() } })
+      return
+    }
     await finishLogin()
-  } catch (e) {
-    // 401 — неверный/просроченный код или ticket; показываем инлайн, шаг остаётся.
-    errorMsg.value = getErrorStatus(e) === 401
+  } catch (error) {
+    errorMsg.value = getErrorStatus(error) === 401
       ? 'Неверный код. Проверьте код в приложении или используйте recovery-код.'
-      : getErrorMessage(e, 'Ошибка подтверждения', { nested: true, withMessage: true })
+      : getErrorMessage(error, 'Ошибка подтверждения', { nested: true, withMessage: true })
   } finally {
     loading.value = false
   }
 }
 
-/** Назад к шагу 1: сбросить код/ticket (пароль вводим заново из соображений безопасности). */
-function backToStep1() {
-  step.value = 1
-  ticket.value = ''
-  code.value = ''
-  errorMsg.value = ''
+async function onForgotPassword() {
+  if (forgotLoading.value) return
+  forgotLoading.value = true
+  forgotError.value = ''
+  try {
+    await request('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: { email: forgotEmail.value.trim() },
+    })
+    forgotSent.value = true
+  } catch (error) {
+    forgotError.value = getErrorMessage(error, 'Не удалось отправить запрос. Попробуйте позже.')
+  } finally {
+    forgotLoading.value = false
+  }
 }
 </script>
 
 <template>
-  <div class="card p-5 sm:p-8">
-    <h1 class="text-2xl font-bold text-center mb-2">С возвращением</h1>
-    <p class="text-sm text-ink-muted text-center mb-8">
-      {{ step === 1 ? 'Войдите по данным, выданным менеджером' : 'Подтвердите вход кодом' }}
-    </p>
+  <div>
+    <template v-if="formStep === 'credentials'">
+      <PageHeading
+        eyebrow="Шаг 1 из 2"
+        title="Вход в кабинет"
+        description="Используйте email и пароль, выданные менеджером."
+      />
 
-    <!-- Шаг 1: email + пароль -->
-    <form v-if="step === 1" class="flex flex-col gap-4" @submit.prevent="onSubmit">
-      <div>
-        <label class="label" for="email">Email</label>
-        <input id="email" v-model="email" type="email" required autocomplete="username" class="input" placeholder="you@company.by" >
-      </div>
-      <div>
-        <label class="label" for="password">Пароль</label>
-        <input id="password" v-model="password" type="password" required autocomplete="current-password" class="input" placeholder="••••••••" >
-      </div>
-      <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
-        <label class="flex items-center gap-2 text-sm text-ink-muted cursor-pointer">
-          <input v-model="remember" type="checkbox" class="rounded border-border" >
-          Запомнить меня
-        </label>
-        <button
-          type="button"
-          class="text-sm text-primary hover:underline transition-colors duration-150"
-          @click="showContactModal = true"
-        >Связаться с менеджером</button>
-      </div>
+      <form class="space-y-5" @submit.prevent="onSubmit">
+        <p
+          v-if="errorMsg"
+          class="border border-danger/40 bg-danger-soft px-3 py-2.5 text-sm text-danger-text"
+          role="alert"
+          data-testid="login-error"
+        >
+          {{ errorMsg }}
+        </p>
+        <UiField for="email" label="Email" required>
+          <UiInput
+            id="email"
+            v-model="email"
+            type="email"
+            required
+            autocomplete="username"
+            :disabled="loading"
+          />
+        </UiField>
+        <UiField for="password" label="Пароль" required>
+          <UiInput
+            id="password"
+            v-model="password"
+            type="password"
+            required
+            autocomplete="current-password"
+            :disabled="loading"
+          />
+        </UiField>
 
-      <div v-if="errorMsg" class="badge-danger w-full justify-center py-2">
-        {{ errorMsg }}
-      </div>
-
-      <button type="submit" class="btn-primary w-full py-3" :disabled="loading">
-        <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-        {{ loading ? 'Вход...' : 'Войти' }}
-      </button>
-
-      <!-- Забыли пароль: ссылка → инлайн-форма сброса (POST /auth/forgot-password) -->
-      <div class="text-center">
-        <button
-          v-if="!showForgot"
-          type="button"
-          class="text-sm text-primary hover:underline"
-          @click="openForgot"
-        >Забыли пароль?</button>
-        <div v-else-if="forgotSent" class="badge-success w-full justify-center py-2 text-sm">
-          Если email зарегистрирован, мы отправили ссылку для сброса.
+        <div class="flex flex-col gap-3 border-y border-border py-4 sm:flex-row sm:items-center sm:justify-between">
+          <UiCheckbox v-model="remember" label="Запомнить меня" :disabled="loading" />
+          <button type="button" class="min-h-11 text-left text-sm font-semibold text-action underline underline-offset-4" @click="openForgotPassword">
+            Забыли пароль?
+          </button>
         </div>
-        <form v-else class="flex flex-col gap-3 mt-1" @submit.prevent="onForgotPassword">
-          <p class="text-xs text-ink-faint">
-            Укажите email — пришлём ссылку для восстановления пароля.
-          </p>
-          <input
+
+        <UiButton type="submit" size="touch" class="w-full" :loading="loading" :disabled="loading">
+          {{ loading ? 'Проверяем данные' : 'Продолжить' }}
+        </UiButton>
+      </form>
+
+      <div class="mt-7 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-ink-muted">Нет доступа? Запросите учётную запись у менеджера.</p>
+        <UiButton variant="outline" size="touch" @click="showContactModal = true">Связаться</UiButton>
+      </div>
+    </template>
+
+    <template v-else-if="formStep === 'two-factor'">
+      <PageHeading
+        eyebrow="Шаг 2 из 2"
+        title="Подтвердите вход"
+        :description="`Введите код из приложения или recovery-код для ${email}.`"
+      />
+
+      <form class="space-y-5" @submit.prevent="onVerify">
+        <UiField
+          for="twofa-code"
+          label="Код подтверждения"
+          required
+          :description="code.length === 0 ? 'Код приложения состоит из шести цифр.' : undefined"
+          :error="errorMsg || undefined"
+        >
+          <UiInput
+            id="twofa-code"
+            v-model="code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            required
+            minlength="6"
+            maxlength="10"
+            monospace
+            class="text-center text-lg tracking-[0.24em]"
+            placeholder="000000"
+            :disabled="loading"
+          />
+        </UiField>
+        <div class="flex flex-col gap-3 sm:flex-row">
+          <UiButton type="submit" size="touch" class="flex-1" :loading="loading" :disabled="loading || code.trim().length < 6">
+            {{ loading ? 'Проверяем' : 'Подтвердить вход' }}
+          </UiButton>
+          <UiButton variant="outline" size="touch" :disabled="loading" @click="backToCredentials">Назад</UiButton>
+        </div>
+      </form>
+    </template>
+
+    <template v-else>
+      <PageHeading
+        eyebrow="Восстановление доступа"
+        title="Запросить ссылку"
+        description="Укажите email: если он зарегистрирован, система отправит ссылку для смены пароля."
+      />
+
+      <div v-if="forgotSent" class="border border-success/40 bg-success-soft p-4" role="status">
+        <h3 class="font-bold text-success-text">Запрос принят</h3>
+        <p class="mt-2 text-sm text-success-text">Если email зарегистрирован, ссылка для сброса отправлена на него.</p>
+      </div>
+      <form v-else class="space-y-5" @submit.prevent="onForgotPassword">
+        <UiField for="forgot-email" label="Email" required :error="forgotError || undefined">
+          <UiInput
+            id="forgot-email"
             v-model="forgotEmail"
             type="email"
             required
             autocomplete="username"
-            class="input"
-            placeholder="you@company.by"
-          >
-          <div v-if="forgotError" class="badge-danger w-full justify-center py-2">{{ forgotError }}</div>
-          <button type="submit" class="btn-outline w-full justify-center" :disabled="forgotLoading">
-            <span v-if="forgotLoading" class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"/>
-            {{ forgotLoading ? 'Отправка…' : 'Отправить ссылку' }}
-          </button>
-          <button type="button" class="text-xs text-ink-muted hover:text-ink" @click="showForgot = false">
-            Отмена
-          </button>
-        </form>
-      </div>
-    </form>
-
-    <!-- Шаг 2: код из приложения (или recovery-код) -->
-    <form v-else class="flex flex-col gap-4" @submit.prevent="onVerify">
-      <p class="text-sm text-ink-muted">
-        Включена двухфакторная аутентификация. Введите код из приложения-аутентификатора
-        <span class="text-ink font-medium">({{ email }})</span>.
-      </p>
-      <div>
-        <label class="label" for="twofa-code">Код из приложения (или recovery-код)</label>
-        <input
-          id="twofa-code"
-          ref="codeInput"
-          v-model="code"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          required
-          minlength="6"
-          maxlength="10"
-          class="input font-mono tracking-widest text-center text-lg"
-          placeholder="000000"
-        >
-        <p class="text-xs text-ink-faint mt-1.5">
-          Не работает код? Введите один из recovery-кодов, полученных при включении 2FA.
-        </p>
-      </div>
-
-      <div v-if="errorMsg" class="badge-danger w-full justify-center py-2">
-        {{ errorMsg }}
-      </div>
-
-      <div class="flex flex-col gap-2">
-        <button type="submit" class="btn-primary w-full py-3" :disabled="loading || code.trim().length < 6">
-          <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-          {{ loading ? 'Проверка...' : 'Подтвердить' }}
-        </button>
-        <button type="button" class="btn-ghost w-full justify-center" :disabled="loading" @click="backToStep1">
-          Назад
-        </button>
-      </div>
-    </form>
-
-    <p class="text-xs text-ink-faint text-center mt-6">
-      Нет доступа? Обратитесь к вашему менеджеру для создания учётной записи.
-    </p>
+            :disabled="forgotLoading"
+          />
+        </UiField>
+        <UiButton type="submit" size="touch" class="w-full" :loading="forgotLoading" :disabled="forgotLoading">
+          {{ forgotLoading ? 'Отправляем' : 'Отправить ссылку' }}
+        </UiButton>
+      </form>
+      <UiButton variant="ghost" class="mt-5" @click="backToCredentials">Вернуться ко входу</UiButton>
+    </template>
 
     <ManagerContactModal :show="showContactModal" @close="showContactModal = false" />
   </div>

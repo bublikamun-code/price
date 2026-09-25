@@ -4,12 +4,15 @@ useHead({ title: 'Политика конфиденциальности' })
 </script>
 
 <template>
-  <div class="container-app py-12 lg:py-16">
-    <div class="card p-6 sm:p-10 max-w-4xl mx-auto">
-      <h1 class="text-2xl sm:text-3xl font-bold mb-2">Политика конфиденциальности</h1>
-      <p class="text-sm text-ink-muted mb-8">Дата редакции: 20.08.2026</p>
+  <div class="container-app py-8 lg:py-12">
+    <article class="mx-auto max-w-4xl border-y border-border bg-surface px-6 py-8 sm:px-10">
+      <PageHeading
+        eyebrow="Правовая информация"
+        title="Политика конфиденциальности"
+        description="Дата редакции: 20.08.2026"
+      />
 
-      <div class="flex flex-col gap-8 text-sm text-ink leading-relaxed">
+      <div class="prose-trade flex flex-col gap-8 text-sm">
         <section>
           <h2 class="text-lg font-semibold mb-2">1. Общие положения</h2>
           <p>
@@ -76,8 +79,8 @@ useHead({ title: 'Политика конфиденциальности' })
           <h2 class="text-lg font-semibold mb-2">7. Контакты Оператора</h2>
           <p>
             По всем вопросам обработки персональных данных, отзыва согласия и направления
-            обращений необходимо связаться с персональным менеджером либо направить запрос на
-            адрес электронной почты Оператора, указанный в реквизитах ниже.
+            обращений необходимо связаться с персональным менеджером или оставить заявку через
+            форму запроса доступа на главной странице портала.
           </p>
         </section>
 
@@ -93,16 +96,15 @@ useHead({ title: 'Политика конфиденциальности' })
         </section>
 
         <section class="border-t border-border pt-6">
-          <h2 class="text-lg font-semibold mb-2">Реквизиты компании (Оператора)</h2>
+          <h2 class="text-lg font-semibold mb-2">Сведения об Операторе</h2>
           <ul class="flex flex-col gap-1">
-            <li>ООО «Название компании»</li>
-            <li>УНП ______</li>
-            <li>Юридический адрес: ______________</li>
-            <li>E-mail: ______________</li>
+            <li>ООО «Свет в доме»</li>
+            <li>Контактные обращения принимаются через персонального менеджера и форму на портале.</li>
+            <li>Юридические реквизиты сторон указываются в договоре и документах заказа.</li>
           </ul>
-          <p class="text-sm text-ink-muted mt-4">Дата редакции: 20.08.2026</p>
+          <p class="text-sm text-ink-muted mt-4">Дата редакции: 24.09.2026</p>
         </section>
       </div>
-    </div>
+    </article>
   </div>
 </template>

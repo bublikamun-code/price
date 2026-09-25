@@ -5,12 +5,12 @@ import type {
   DiscountOut,
   OrderListPage,
   OrderRead,
-  OrderStatus,
   RateOut,
   TempPasswordOut,
   UserManagerDetail,
   UserManagerRead,
 } from '~/types/api'
+import { ORDER_STATUS_META } from '~/utils/order-status'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 
@@ -18,13 +18,7 @@ const route = useRoute()
 const { request } = useApi()
 const userId = computed(() => String(route.params.id))
 
-const STATUS_META: Record<OrderStatus, { label: string; cls: string }> = {
-  NEW: { label: 'Новая', cls: 'badge-info' },
-  IN_PROGRESS: { label: 'В работе', cls: 'badge-info' },
-  SHIPPED: { label: 'Отгружена', cls: 'badge-warning' },
-  COMPLETED: { label: 'Завершена', cls: 'badge-success' },
-  CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
-}
+const STATUS_META = ORDER_STATUS_META
 
 const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB'] as const
 const FIX_CURRENCIES = ['USD', 'EUR', 'RUB'] as const
@@ -334,34 +328,31 @@ onMounted(() => {
       <div class="skeleton h-64 w-full"/>
     </div>
 
-    <div v-else-if="notFound" class="card p-12 text-center">
-      <Icon name="heroicons:user" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="notFound" class="border border-border bg-surface p-6 text-center">
+      <Icon name="heroicons:user" class="size-8 mb-3 text-ink-faint" />
       <p class="text-ink-muted mb-4">Клиент не найден</p>
       <NuxtLink to="/manager/users" class="btn-primary">К списку клиентов</NuxtLink>
     </div>
 
-    <div v-else-if="error && !detail" class="card p-8 text-center">
+    <div v-else-if="error && !detail" class="border border-danger/50 bg-danger-soft p-5">
       <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-primary" @click="load">Повторить</button></div>
+      <div><button class="btn-outline min-h-11" @click="load">Повторить</button></div>
     </div>
 
     <template v-else-if="detail">
       <!-- Шапка -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div class="min-w-0">
-          <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-2xl font-bold truncate">{{ detail.user.full_name }}</h1>
-            <span v-if="detail.user.is_active" class="badge-success shrink-0">Активен</span>
-            <span v-else class="badge-danger shrink-0">Заблокирован</span>
-          </div>
-          <p class="text-sm text-ink-muted truncate">
-            {{ detail.user.email }} · создан {{ formatDate(detail.user.created_at) }}
-          </p>
-        </div>
-      </div>
+      <PageHeading
+        eyebrow="Клиенты"
+        :title="detail.user.full_name"
+        :description="`${detail.user.email} · создан ${formatDate(detail.user.created_at)}`"
+      >
+        <template #actions>
+          <UiStatusBadge :tone="detail.user.is_active ? 'success' : 'danger'" :label="detail.user.is_active ? 'Активен' : 'Заблокирован'" dot />
+        </template>
+      </PageHeading>
 
       <!-- Профиль -->
-      <div class="card p-6 mb-6">
+      <div class="mb-5 border border-border bg-surface p-5">
         <h2 class="font-semibold mb-4">Профиль</h2>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -399,23 +390,23 @@ onMounted(() => {
 
         <div class="flex flex-wrap justify-end gap-2 mt-6">
           <button
-            class="btn-outline"
+            class="btn-outline min-h-11"
             :disabled="resettingPassword"
             @click="resetPassword"
           >
-            <span v-if="resettingPassword" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+            <span v-if="resettingPassword" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"/>
             <Icon v-else name="heroicons:key" class="w-4 h-4" />
             Сбросить пароль
           </button>
-          <button class="btn-primary" :disabled="profileSaving" @click="saveProfile">
-            <span v-if="profileSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+          <button class="btn-primary min-h-11" :disabled="profileSaving" @click="saveProfile">
+            <span v-if="profileSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
             {{ profileSaving ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>
       </div>
 
       <!-- Матрица скидок -->
-      <div class="card p-6 mb-6">
+      <div class="mb-5 border border-border bg-surface p-5">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <h2 class="font-semibold">Матрица скидок</h2>
           <div class="flex items-center gap-2">
@@ -430,13 +421,13 @@ onMounted(() => {
               class="input w-24 py-2 text-center"
               @keyup.enter="applyToAll"
             >
-            <button type="button" class="btn-outline py-2" @click="applyToAll">Применить</button>
+            <button type="button" class="btn-outline min-h-11" @click="applyToAll">Применить</button>
           </div>
         </div>
 
         <div v-if="applyAllError" class="badge-danger mb-3">{{ applyAllError }}</div>
 
-        <div v-if="discountRows.length" class="max-h-96 overflow-y-auto scrollbar-none border border-border/60 rounded-card">
+        <div v-if="discountRows.length" class="max-h-96 overflow-y-auto scrollbar-none border border-border/60 border border-border">
           <table class="w-full text-sm">
             <thead class="sticky top-0">
               <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
@@ -469,18 +460,18 @@ onMounted(() => {
         </div>
 
         <div v-if="discountRows.length" class="flex justify-end mt-5">
-          <button class="btn-primary" :disabled="discountsSaving" @click="saveDiscounts">
-            <span v-if="discountsSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+          <button class="btn-primary min-h-11" :disabled="discountsSaving" @click="saveDiscounts">
+            <span v-if="discountsSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
             {{ discountsSaving ? 'Сохранение…' : 'Сохранить скидки' }}
           </button>
         </div>
       </div>
 
       <!-- Зафиксированный курс -->
-      <div class="card p-6 mb-6">
+      <div class="mb-5 border border-border bg-surface p-5">
         <h2 class="font-semibold mb-4">Зафиксированный курс</h2>
 
-        <div v-if="detail.user.fixed_rate" class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5 p-4 rounded-card bg-canvas border border-border/60">
+        <div v-if="detail.user.fixed_rate" class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5 p-4 border border-border bg-canvas border border-border/60">
           <span class="font-semibold">{{ detail.user.fixed_rate.currency_code }}</span>
           <span class="font-mono">{{ detail.user.fixed_rate.rate }}</span>
           <span :class="detail.user.fixed_rate.is_manual ? 'badge-warning' : 'badge-info'">
@@ -502,14 +493,14 @@ onMounted(() => {
             <div class="flex flex-wrap gap-2">
               <button
                 type="button"
-                class="px-3.5 py-2 rounded-pill text-sm font-medium transition-colors"
-                :class="fixMode === 'manual' ? 'bg-primary text-white' : 'bg-surface border border-border text-ink-muted hover:border-primary/60'"
+                class="btn-outline min-h-11 px-3 text-sm"
+                :class="fixMode === 'manual' ? 'border-action bg-action text-white' : 'bg-surface text-ink-muted hover:border-action'"
                 @click="fixMode = 'manual'"
               >Вручную</button>
               <button
                 type="button"
-                class="px-3.5 py-2 rounded-pill text-sm font-medium transition-colors"
-                :class="fixMode === 'nbrb' ? 'bg-primary text-white' : 'bg-surface border border-border text-ink-muted hover:border-primary/60'"
+                class="btn-outline min-h-11 px-3 text-sm"
+                :class="fixMode === 'nbrb' ? 'border-action bg-action text-white' : 'bg-surface text-ink-muted hover:border-action'"
                 @click="fixMode = 'nbrb'"
               >По текущему курсу НБ РБ</button>
             </div>
@@ -528,23 +519,23 @@ onMounted(() => {
         <div class="flex flex-wrap justify-end gap-2 mt-6">
           <button
             v-if="detail.user.fixed_rate"
-            class="btn-ghost text-danger"
+            class="btn-ghost min-h-11 text-danger"
             :disabled="unfixing"
             @click="resetFixedRate"
           >
-            <span v-if="unfixing" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+            <span v-if="unfixing" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"/>
             <Icon v-else name="heroicons:arrow-uturn-left" class="w-4 h-4" />
             Снять фиксацию
           </button>
-          <button class="btn-primary" :disabled="fixing" @click="applyFixedRate">
-            <span v-if="fixing" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+          <button class="btn-primary min-h-11" :disabled="fixing" @click="applyFixedRate">
+            <span v-if="fixing" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
             {{ fixing ? 'Фиксация…' : 'Зафиксировать' }}
           </button>
         </div>
       </div>
 
       <!-- Последние заказы -->
-      <div class="card p-6">
+      <div class="border border-border bg-surface p-5">
         <h2 class="font-semibold mb-4">Последние заказы</h2>
 
         <div v-if="ordersError" class="flex items-center gap-3 mb-4">
@@ -574,13 +565,13 @@ onMounted(() => {
                 <td class="px-4 py-3 font-mono text-xs" :title="o.id">№{{ shortId(o.id) }}</td>
                 <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatDateTime(o.created_at) }}</td>
                 <td class="px-4 py-3">
-                  <span :class="STATUS_META[o.status].cls">{{ STATUS_META[o.status].label }}</span>
+                  <UiStatusBadge :tone="STATUS_META[o.status].tone" :label="STATUS_META[o.status].label" dot />
                 </td>
                 <td class="px-4 py-3 text-right font-semibold whitespace-nowrap">
                   {{ o.total_amount }} {{ o.currency_code }}
                 </td>
                 <td class="px-4 py-3 text-right">
-                  <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost text-sm py-1.5">
+                  <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost min-h-11 text-sm">
                     <Icon name="heroicons:eye" class="w-4 h-4" /> Открыть
                   </NuxtLink>
                 </td>

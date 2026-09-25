@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Принудительная смена временного пароля (после создания/сброса менеджером).
-// Флаг force_password_change приходит в login/verify2fa и /auth/me (§16 п.19).
 definePageMeta({ layout: 'auth', middleware: 'auth' })
 useHead({ title: 'Смена пароля' })
 
@@ -12,6 +10,7 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
+const mismatch = computed(() => Boolean(confirmPassword.value) && newPassword.value !== confirmPassword.value)
 
 async function onSubmit() {
   if (loading.value) return
@@ -22,15 +21,19 @@ async function onSubmit() {
   }
   loading.value = true
   try {
-    // Через стор: baseURL API + Authorization (Bearer из auth_token) + X-CSRF-Token
-    // (бэкенд требует CSRF для мутаций с cookie-аутентификацией, аудит 2026-09-06).
     await auth.changePassword(currentPassword.value, newPassword.value)
-    // Обновляем профиль (сбрасываем force_password_change) → дальше в кабинет.
     await auth.fetchMe()
-    const redirect = (route.query.redirect as string) || (auth.isManager ? '/manager' : '/catalog')
+    const redirect = getSafeRedirectPath(
+      route.query.redirect,
+      auth.isManager ? '/manager' : '/dashboard',
+    )
+    if (auth.isClient && auth.user?.consent_accepted === false) {
+      await navigateTo({ path: '/consent', query: { redirect } })
+      return
+    }
     await navigateTo(redirect)
-  } catch (e) {
-    errorMsg.value = getErrorMessage(e, 'Не удалось сменить пароль. Попробуйте позже.')
+  } catch (error) {
+    errorMsg.value = getErrorMessage(error, 'Не удалось сменить пароль. Попробуйте позже.')
   } finally {
     loading.value = false
   }
@@ -38,31 +41,63 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="card p-8">
-    <h1 class="text-2xl font-bold text-center mb-2">Смените пароль</h1>
-    <p class="text-sm text-ink-muted text-center mb-8">
-      Для продолжения работы установите новый пароль.
-    </p>
+  <div>
+    <header class="border-b border-border-strong pb-6">
+      <p class="text-sm font-semibold text-ink-muted">Обязательный шаг</p>
+      <h2 class="mt-2 text-3xl font-bold tracking-tight">Установите новый пароль</h2>
+      <p class="mt-3 text-base text-ink-muted">После сохранения временный пароль больше не будет использоваться для входа.</p>
+    </header>
 
-    <form class="flex flex-col gap-4" @submit.prevent="onSubmit">
+    <form class="mt-7 space-y-5" @submit.prevent="onSubmit">
       <div>
-        <label class="label" for="current-password">Текущий пароль</label>
-        <input id="current-password" v-model="currentPassword" type="password" required autocomplete="current-password" class="input" placeholder="••••••••" >
+        <label for="current-password" class="label">Текущий пароль</label>
+        <input
+          id="current-password"
+          v-model="currentPassword"
+          type="password"
+          required
+          autocomplete="current-password"
+          class="input"
+          :aria-invalid="Boolean(errorMsg)"
+          :aria-describedby="errorMsg ? 'force-password-error' : undefined"
+        >
       </div>
       <div>
-        <label class="label" for="new-password">Новый пароль</label>
-        <input id="new-password" v-model="newPassword" type="password" required autocomplete="new-password" class="input" placeholder="••••••••" >
+        <label for="new-password" class="label">Новый пароль</label>
+        <input
+          id="new-password"
+          v-model="newPassword"
+          type="password"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          class="input"
+          :aria-invalid="Boolean(errorMsg) || mismatch"
+          :aria-describedby="errorMsg ? 'force-password-error' : 'new-password-hint'"
+        >
+        <p id="new-password-hint" class="mt-2 text-sm text-ink-muted">Минимум 8 символов.</p>
       </div>
       <div>
-        <label class="label" for="confirm-password">Повторите новый пароль</label>
-        <input id="confirm-password" v-model="confirmPassword" type="password" required autocomplete="new-password" class="input" placeholder="••••••••" >
+        <label for="confirm-password" class="label">Повторите новый пароль</label>
+        <input
+          id="confirm-password"
+          v-model="confirmPassword"
+          type="password"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          class="input"
+          :aria-invalid="mismatch || Boolean(errorMsg)"
+          :aria-describedby="mismatch ? 'password-mismatch' : (errorMsg ? 'force-password-error' : undefined)"
+        >
+        <p v-if="mismatch" id="password-mismatch" class="mt-2 text-sm text-danger-text" role="alert">Пароли не совпадают.</p>
       </div>
 
-      <div v-if="errorMsg" class="badge-danger w-full justify-center py-2">{{ errorMsg }}</div>
+      <p v-if="errorMsg" id="force-password-error" class="border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger-text" role="alert">{{ errorMsg }}</p>
 
-      <button type="submit" class="btn-primary w-full py-3" :disabled="loading">
-        <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-        {{ loading ? 'Сохранение...' : 'Сохранить пароль' }}
+      <button type="submit" class="btn-primary min-h-11 w-full" :disabled="loading || mismatch">
+        <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+        {{ loading ? 'Сохраняем' : 'Сохранить пароль' }}
       </button>
     </form>
   </div>

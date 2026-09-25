@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Профиль: личные данные, мои условия, валюта, безопасность, Telegram,
-// уведомления, согласие на ПДн. См. SITEMAP.md §6 /profile, канон §8
-// (display_currency — выбор клиента, PATCH /auth/me).
 import type { TelegramLinkCode } from '~/types/api'
 import { getErrorMessage } from '~/utils/errors'
 
@@ -11,49 +8,6 @@ useHead({ title: 'Профиль' })
 const auth = useAuth()
 const { request } = useApi()
 
-// --- Редактирование телефона и email (self-service) ---
-// TODO: бэкенд PATCH /auth/me пока не принимает phone/email.
-// Когда эндпоинт будет расширен — заменить saveProfile на реальный вызов updateMe.
-const editPhone = ref('')
-const editEmail = ref('')
-const profileSaving = ref(false)
-const profileSuccess = ref(false)
-const profileError = ref('')
-
-const phoneChanged = computed(() => editPhone.value.trim() !== (auth.user?.phone || ''))
-const emailChanged = computed(() => editEmail.value.trim() !== (auth.user?.email || ''))
-
-// Инициализация значений из auth.user.
-onMounted(() => {
-  editPhone.value = auth.user?.phone || ''
-  editEmail.value = auth.user?.email || ''
-})
-
-async function saveProfile() {
-  if (profileSaving.value) return
-  profileSaving.value = true
-  profileSuccess.value = false
-  profileError.value = ''
-  try {
-    // TODO: когда PATCH /auth/me начнёт принимать phone/email, заменить на:
-    //   await auth.updateMe({ phone: editPhone.value.trim(), email: editEmail.value.trim() })
-    // Пока бэкенд не поддерживает — показываем информативное сообщение.
-    await new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(
-        'Сохранение телефона и email через портал пока не поддерживается. Обратитесь к менеджеру для изменения контактных данных.',
-      )), 300),
-    )
-  } catch (e) {
-    profileError.value = getErrorMessage(e, 'Не удалось сохранить данные', { withMessage: true })
-  } finally {
-    profileSaving.value = false
-  }
-}
-
-// --- Оформление: тёмная/светлая тема (useTheme — обёртка над @nuxtjs/color-mode) ---
-const { mode: themeMode, toggle: toggleTheme } = useTheme()
-
-// --- Валюта отображения (§8 — выбор клиента) ---
 const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB'] as const
 const currencySaving = ref(false)
 const currencySaved = ref(false)
@@ -67,15 +21,21 @@ async function setDisplayCurrency(code: string) {
   try {
     await auth.updateMe({ display_currency: code })
     currencySaved.value = true
-    setTimeout(() => { currencySaved.value = false }, 2000)
-  } catch (e) {
-    currencyError.value = getErrorMessage(e, 'Не удалось изменить валюту')
+    window.setTimeout(() => {
+      currencySaved.value = false
+    }, 2500)
+  } catch (error) {
+    currencyError.value = getErrorMessage(error, 'Не удалось изменить валюту')
   } finally {
     currencySaving.value = false
   }
 }
 
-// --- Мои условия (SITEMAP §6): скидки по брендам + фикс. курс договора ---
+function onCurrencyChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  void setDisplayCurrency(value)
+}
+
 interface MyTerms {
   discounts: { brand_id: string; brand_name: string; discount_percent: number }[]
   fixed_rate: { currency: string; rate: number; source: string | null; fetched_at: string | null } | null
@@ -86,7 +46,6 @@ const { data: myTerms, error: termsError } = await useAsyncData(
   { server: false },
 )
 
-// --- Telegram Mini App: код связки (§16 п.27, SITEMAP §8). Только CLIENT. ---
 const tgCode = ref('')
 const tgGenerating = ref(false)
 const tgError = ref('')
@@ -96,253 +55,194 @@ async function generateLinkCode() {
   tgGenerating.value = true
   tgError.value = ''
   try {
-    const res = await request<TelegramLinkCode>('/api/v1/auth/telegram/link-code', { method: 'POST' })
-    tgCode.value = res.code
-  } catch (e) {
+    const response = await request<TelegramLinkCode>('/api/v1/auth/telegram/link-code', {
+      method: 'POST',
+    })
+    tgCode.value = response.code
+  } catch (error) {
     tgCode.value = ''
-    tgError.value = getErrorMessage(e, 'Не удалось сгенерировать код связки')
+    tgError.value = getErrorMessage(error, 'Не удалось сгенерировать код связки')
   } finally {
     tgGenerating.value = false
   }
 }
+
+const roleLabel = computed(() => {
+  if (auth.isManager) return 'Менеджер'
+  if (auth.isClient) return 'Клиент'
+  return auth.user?.role || '—'
+})
 </script>
 
 <template>
-  <div>
-    <!-- Заголовок -->
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">Профиль</h1>
-    </div>
+  <div class="mx-auto max-w-5xl">
+    <PageHeading
+      eyebrow="Учётная запись"
+      title="Профиль"
+      description="Личные данные, коммерческие условия и параметры рабочего кабинета в одной записи."
+    />
 
-    <div class="grid gap-6 lg:grid-cols-2 items-stretch">
-      <!-- Личные данные (readonly) -->
-      <div class="card p-5 h-full">
-        <h3 class="font-semibold mb-3">Личные данные</h3>
-        <div class="flex justify-between text-sm py-1.5">
-          <span class="text-ink-muted">ФИО</span>
-          <span class="font-medium">{{ auth.user?.name || '—' }}</span>
+    <section class="grid border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="identity-heading">
+      <h2 id="identity-heading" class="text-sm font-bold text-ink">Личные данные</h2>
+      <dl class="divide-y divide-border">
+        <div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+          <dt class="text-sm text-ink-muted">ФИО</dt>
+          <dd class="font-semibold text-ink">{{ auth.user?.name || '—' }}</dd>
         </div>
-        <div class="flex justify-between text-sm py-1.5">
-          <span class="text-ink-muted">Компания</span>
-          <span class="font-medium">{{ auth.user?.company || '—' }}</span>
+        <div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+          <dt class="text-sm text-ink-muted">Email</dt>
+          <dd class="break-all font-mono text-sm text-ink">{{ auth.user?.email || '—' }}</dd>
         </div>
-        <div class="mt-4 space-y-3">
-          <div>
-            <label class="label" for="profile-phone">Телефон</label>
-            <input
-              id="profile-phone"
-              v-model="editPhone"
-              type="tel"
-              class="input"
-              :placeholder="auth.user?.phone || '+375 29 000-00-00'"
-            >
+        <div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+          <dt class="text-sm text-ink-muted">Телефон</dt>
+          <dd class="font-mono text-sm text-ink">{{ auth.user?.phone || 'Не указан' }}</dd>
+        </div>
+        <div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+          <dt class="text-sm text-ink-muted">Роль</dt>
+          <dd class="font-semibold text-ink">{{ roleLabel }}</dd>
+        </div>
+      </dl>
+      <p class="mt-4 text-sm text-ink-muted md:col-start-2">
+        Контактные данные и ФИО изменяет менеджер: в клиентском кабинете соответствующего запроса пока нет.
+      </p>
+    </section>
+
+    <section class="grid border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="commercial-heading">
+      <h2 id="commercial-heading" class="text-sm font-bold text-ink">Коммерческие условия</h2>
+      <div>
+        <div v-if="termsError" class="border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger-text" role="alert">
+          Не удалось загрузить коммерческие условия.
+        </div>
+        <dl v-else class="divide-y divide-border">
+          <div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+            <dt class="text-sm text-ink-muted">Скидки по брендам</dt>
+            <dd class="space-y-2 text-sm">
+              <div v-for="discount in myTerms?.discounts ?? []" :key="discount.brand_id" class="grid gap-1 sm:grid-cols-[minmax(0,1fr)_6rem] sm:gap-4">
+                <span class="font-semibold text-ink">{{ discount.brand_name }}</span>
+                <span class="font-mono text-ink sm:text-right">
+                  {{ discount.discount_percent > 0 ? `−${discount.discount_percent}%` : 'базовая цена' }}
+                </span>
+              </div>
+              <p v-if="!myTerms?.discounts?.length" class="text-ink-muted">
+                Персональные скидки не заведены — действует базовый прайс.
+              </p>
+            </dd>
           </div>
-          <div>
-            <label class="label" for="profile-email">Email</label>
-            <input
-              id="profile-email"
-              v-model="editEmail"
-              type="email"
-              class="input"
-              :placeholder="auth.user?.email || 'you@company.by'"
-            >
+          <div class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+            <dt class="text-sm text-ink-muted">Курс договора</dt>
+            <dd v-if="myTerms?.fixed_rate" class="space-y-1">
+              <p class="font-mono text-sm font-semibold text-ink">
+                1 {{ myTerms.fixed_rate.currency }} = {{ myTerms.fixed_rate.rate }} BYN
+              </p>
+              <p v-if="myTerms.fixed_rate.source" class="text-xs text-ink-muted">Источник: {{ myTerms.fixed_rate.source }}</p>
+            </dd>
+            <dd v-else class="text-sm text-ink-muted">Фиксированный курс не задан.</dd>
           </div>
-          <button
-            type="button"
-            class="btn-accent px-5 py-2 text-sm"
-            :disabled="profileSaving || (!phoneChanged && !emailChanged)"
-            @click="saveProfile"
-          >
-            {{ profileSaving ? 'Сохранение…' : 'Сохранить изменения' }}
-          </button>
-          <div v-if="profileSuccess" class="badge-success">Данные обновлены</div>
-          <div v-if="profileError" class="badge-danger">{{ profileError }}</div>
-        </div>
-        <div class="flex justify-between items-center text-sm py-1.5">
-          <span class="text-ink-muted">Валюта отображения</span>
-          <span class="flex items-center gap-1.5">
-            <button
-              v-for="c in CURRENCIES"
-              :key="c"
-              type="button"
-              class="px-2.5 py-1 rounded-pill text-xs font-semibold border transition-colors duration-150"
-              :class="auth.user?.displayCurrency === c
-                ? 'bg-primary text-white border-primary'
-                : 'border-border text-ink-muted hover:border-primary/50 hover:text-primary'"
-              :disabled="currencySaving"
-              :aria-pressed="auth.user?.displayCurrency === c"
-              @click="setDisplayCurrency(c)"
-            >
-              {{ c }}
-            </button>
-          </span>
-        </div>
-        <p v-if="currencySaved" class="text-xs text-success mt-2">Валюта сохранена</p>
-        <p v-else-if="currencyError" class="text-xs text-danger mt-2">{{ currencyError }}</p>
-        <p class="text-xs text-ink-faint mt-3">
-          Телефон и email можно изменить самостоятельно. Для изменения ФИО и компании обратитесь к менеджеру. Курсы конвертации — по НБ РБ или фикс. курсу договора.
-        </p>
+          <div v-if="auth.isClient" class="grid gap-1 py-3 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-6">
+            <dt class="text-sm text-ink-muted">Организация</dt>
+            <dd>
+              <NuxtLink to="/profile/organization" class="font-semibold text-action underline underline-offset-4 hover:text-action-hover">
+                Проверить организацию и доступы
+              </NuxtLink>
+            </dd>
+          </div>
+        </dl>
       </div>
+    </section>
 
-      <!-- Мои условия (SITEMAP §6): персональные скидки по брендам + фикс. курс -->
-      <div class="card p-5 h-full">
-        <h3 class="font-semibold mb-3">Мои условия</h3>
-        <div v-if="termsError" class="text-sm text-ink-muted">Не удалось загрузить условия</div>
-        <template v-else>
-          <div v-for="d in myTerms?.discounts ?? []" :key="d.brand_id" class="flex justify-between text-sm py-1.5">
-            <span class="text-ink-muted">{{ d.brand_name }}</span>
-            <span class="font-medium">{{ d.discount_percent > 0 ? `−${d.discount_percent}%` : 'базовая цена' }}</span>
-          </div>
-          <div v-if="!myTerms?.discounts?.length" class="text-sm text-ink-muted py-1.5">
-            Персональные скидки не заведены — цены по базовому прайсу.
-          </div>
-          <div v-if="myTerms?.fixed_rate" class="mt-3 pt-3 border-t border-border">
-            <div class="flex justify-between text-sm py-1">
-              <span class="text-ink-muted">Фикс. курс договора</span>
-              <span class="font-medium">1 {{ myTerms.fixed_rate.currency }} = {{ myTerms.fixed_rate.rate }} BYN</span>
-            </div>
-            <p v-if="myTerms.fixed_rate.source" class="text-xs text-ink-faint mt-1">Источник: {{ myTerms.fixed_rate.source }}</p>
-          </div>
-        </template>
-      </div>
-
-      <!-- Безопасность (2FA — менеджер; сессии — все роли). Фичи H/I, §16 п.22 -->
-      <div class="card p-5 h-full">
-        <h3 class="font-semibold mb-3">Безопасность</h3>
-        <div class="flex flex-col gap-1">
-          <NuxtLink
-            v-if="auth.isManager"
-            to="/profile/security"
-            class="flex items-center gap-3 px-3 py-2.5 -mx-3 rounded-card hover:bg-canvas/60 transition-colors"
-          >
-            <Icon name="heroicons:shield-check" class="w-5 h-5 shrink-0 text-primary" />
-            <span class="flex-1 text-sm font-medium">Безопасность (2FA)</span>
-            <span :class="auth.user?.totpEnabled ? 'text-xs text-success font-medium' : 'text-xs text-ink-faint'">
-              {{ auth.user?.totpEnabled ? 'включена' : 'выключена' }}
-            </span>
-            <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" />
-          </NuxtLink>
-          <NuxtLink
-            to="/profile/sessions"
-            class="flex items-center gap-3 px-3 py-2.5 -mx-3 rounded-card hover:bg-canvas/60 transition-colors"
-          >
-            <Icon name="heroicons:device-phone-mobile" class="w-5 h-5 shrink-0 text-primary" />
-            <span class="flex-1 text-sm font-medium">Активные сессии</span>
-            <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint" />
-          </NuxtLink>
-        </div>
-        <p class="text-xs text-ink-faint mt-3">
-          Завершайте сессии на чужих устройствах{{ auth.isManager ? ' и управляйте двухфакторной аутентификацией' : '' }}.
-        </p>
-      </div>
-
-      <!-- Telegram: код связки для бота @svetvdome_bot (только CLIENT, §16 п.27). -->
-      <div v-if="auth.isClient" class="card p-5 h-full">
-        <h3 class="font-semibold mb-3">Telegram</h3>
-        <p class="text-sm text-ink-muted mb-4">
-          Свяжите аккаунт с ботом
-          <a
-            href="https://t.me/svetvdome_bot"
-            target="_blank"
-            rel="noopener"
-            class="text-primary hover:underline"
-          >@svetvdome_bot</a>,
-          чтобы получать уведомления об изменении цен и статусах заявок прямо в Telegram.
-        </p>
-
-        <button
-          class="btn-primary"
-          :disabled="tgGenerating"
-          @click="generateLinkCode"
+    <section id="profile-currency" class="grid scroll-mt-24 border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="currency-heading">
+      <h2 id="currency-heading" class="text-sm font-bold text-ink">Валюта</h2>
+      <div class="max-w-sm">
+        <label for="profile-currency" class="label">Валюта отображения прайсов</label>
+        <select
+          id="profile-currency"
+          class="input"
+          :value="auth.user?.displayCurrency"
+          :disabled="currencySaving"
+          @change="onCurrencyChange"
         >
-          <span v-if="tgGenerating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-          <Icon v-else name="heroicons:paper-airplane" class="w-4 h-4" />
-          {{ tgGenerating ? 'Генерация…' : 'Сгенерировать код связки' }}
-        </button>
-
-        <div v-if="tgCode" class="mt-4 text-center bg-primary-soft/40 border border-primary/20 rounded-card p-4">
-          <div class="text-3xl font-display font-bold tracking-[0.3em] text-primary">{{ tgCode }}</div>
-          <p class="text-xs text-ink-faint mt-2">
-            Действует 10 минут. Откройте бота @svetvdome_bot в Telegram и отправьте
-            ему команду /start с этим кодом.
-          </p>
-        </div>
-
-        <div v-if="tgError" class="badge-danger w-full justify-center py-2 mt-3">{{ tgError }}</div>
+          <option v-for="currency in CURRENCIES" :key="currency" :value="currency">{{ currency }}</option>
+        </select>
+        <p class="mt-2 text-sm text-ink-muted">Изменение сохраняется через PATCH /auth/me.</p>
+        <p v-if="currencySaved" class="mt-2 text-sm font-semibold text-success-text" role="status">Валюта сохранена.</p>
+        <p v-if="currencyError" class="mt-2 text-sm text-danger-text" role="alert">{{ currencyError }}</p>
       </div>
+    </section>
 
-      <!-- Уведомления -->
-      <NuxtLink to="/profile/notifications" class="card p-5 h-full group hover:border-primary/50 transition-colors">
-        <div class="flex items-start gap-3">
-          <Icon name="heroicons:bell-alert" class="w-5 h-5 shrink-0 text-primary mt-0.5" />
-          <div class="flex-1">
-            <h3 class="font-semibold mb-1 flex items-center gap-2">
-              Уведомления
-              <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint group-hover:text-primary transition-colors" />
-            </h3>
-            <p class="text-sm text-ink-muted">
-              Настройте, о каких событиях сообщать: изменения цен в корзине и избранном, статусы заявок.
-            </p>
+    <section class="grid border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="communications-heading">
+      <h2 id="communications-heading" class="text-sm font-bold text-ink">Уведомления</h2>
+      <div class="space-y-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="font-semibold text-ink">Дайджест изменения цен</p>
+            <p class="mt-1 text-sm text-ink-muted">Источники отслеживания: заявка, избранное и заказы.</p>
           </div>
+          <NuxtLink to="/profile/notifications" class="btn-outline shrink-0">Настроить</NuxtLink>
         </div>
-      </NuxtLink>
 
-      <!-- Оформление: тёмная/светлая тема -->
-      <div class="card p-5 h-full">
-        <h3 class="font-semibold mb-3">Оформление</h3>
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <Icon name="heroicons:moon" class="w-5 h-5 text-ink-muted" />
-            <span class="text-sm font-medium">Тёмная тема</span>
-          </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-            :class="themeMode === 'dark' ? 'bg-primary' : 'bg-border'"
-            @click="toggleTheme"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-              :class="themeMode === 'dark' ? 'translate-x-6' : 'translate-x-1'"
-            />
+        <div v-if="auth.isClient" class="border-t border-border pt-5">
+          <p class="font-semibold text-ink">Telegram</p>
+          <p class="mt-1 max-w-2xl text-sm text-ink-muted">
+            Свяжите кабинет с
+            <a href="https://t.me/svetvdome_bot" target="_blank" rel="noopener" class="font-semibold text-action underline underline-offset-4">@svetvdome_bot</a>,
+            чтобы получать сообщения об изменении цен и статусах заявок.
+          </p>
+          <button type="button" class="btn-outline mt-4" :disabled="tgGenerating" @click="generateLinkCode">
+            <span v-if="tgGenerating" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+            {{ tgGenerating ? 'Создаём код' : 'Создать код связки' }}
           </button>
-        </div>
-        <p class="text-xs text-ink-faint mt-3">Переключатель сохраняется в этом браузере.</p>
-      </div>
-
-      <!-- Согласие и данные (на всю ширину) -->
-      <div class="card p-5 h-full lg:col-span-2">
-        <h3 class="font-semibold mb-3">Согласие и данные</h3>
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <span class="text-sm text-ink-muted">Согласие на обработку персональных данных:</span>
-            <span v-if="auth.user?.consent_accepted" class="badge-success">Принято</span>
-            <template v-else>
-              <span class="badge-warning">Не оформлено</span>
-            </template>
+          <div v-if="tgCode" class="mt-4 border border-border bg-surface-2 p-4" role="status">
+            <p class="font-mono text-2xl font-semibold tracking-[0.24em] text-ink">{{ tgCode }}</p>
+            <p class="mt-2 text-sm text-ink-muted">Код действует 10 минут. Отправьте боту команду /start с этим кодом.</p>
           </div>
-          <p v-if="!auth.user?.consent_accepted" class="text-xs text-ink-faint">
-            Отозвать согласие можно через менеджера.
-          </p>
+          <p v-if="tgError" class="mt-3 text-sm text-danger-text" role="alert">{{ tgError }}</p>
         </div>
       </div>
+    </section>
 
-      <!-- Файлы и документы (на всю ширину) -->
-      <NuxtLink to="/files" class="card p-5 h-full lg:col-span-2 group hover:border-primary/50 transition-colors">
-        <div class="flex items-start gap-3">
-          <Icon name="heroicons:folder-open" class="w-5 h-5 shrink-0 text-primary mt-0.5" />
-          <div class="flex-1">
-            <h3 class="font-semibold mb-1 flex items-center gap-2">
-              Файлы и документы
-              <Icon name="heroicons:chevron-right" class="w-4 h-4 text-ink-faint group-hover:text-primary transition-colors" />
-            </h3>
-            <p class="text-sm text-ink-muted">
-              Прайс-листы, сертификаты и другие документы от вашего менеджера — в одном месте.
+    <section class="grid border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="security-heading">
+      <h2 id="security-heading" class="text-sm font-bold text-ink">Безопасность</h2>
+      <div class="divide-y divide-border">
+        <div class="flex items-center gap-4 py-3 first:pt-0">
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold text-ink">Активные сессии</p>
+            <p class="mt-1 text-sm text-ink-muted">Проверьте устройства, с которых выполнен вход.</p>
+          </div>
+          <NuxtLink to="/profile/sessions" class="btn-outline shrink-0">Проверить</NuxtLink>
+        </div>
+        <div v-if="auth.isManager" class="flex items-center gap-4 py-3 last:pb-0">
+          <div class="min-w-0 flex-1">
+            <p class="font-semibold text-ink">Двухфакторная аутентификация</p>
+            <p class="mt-1 text-sm text-ink-muted">
+              {{ auth.user?.totpEnabled ? 'Включена для этой учётной записи.' : 'Не включена для этой учётной записи.' }}
             </p>
           </div>
+          <NuxtLink to="/profile/security" class="btn-outline shrink-0">Настроить</NuxtLink>
         </div>
-      </NuxtLink>
+      </div>
+    </section>
 
-    </div>
+    <section class="grid border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="privacy-heading">
+      <h2 id="privacy-heading" class="text-sm font-bold text-ink">Данные и доступ</h2>
+      <div class="space-y-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="font-semibold text-ink">Согласие на обработку персональных данных</p>
+            <p class="mt-1 text-sm text-ink-muted">
+              {{ auth.user?.consent_accepted ? 'Согласие зафиксировано.' : 'Согласие ещё не оформлено.' }}
+            </p>
+          </div>
+          <span v-if="auth.user?.consent_accepted" class="badge-success">Принято</span>
+          <NuxtLink v-else to="/consent" class="btn-outline shrink-0">Оформить</NuxtLink>
+        </div>
+        <div class="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="font-semibold text-ink">Завершение сессии</p>
+            <p class="mt-1 text-sm text-ink-muted">Выйдите из кабинета на этом устройстве.</p>
+          </div>
+          <button type="button" class="btn-outline text-danger-text shrink-0" @click="auth.logout()">Выйти</button>
+        </div>
+      </div>
+    </section>
   </div>
 </template>

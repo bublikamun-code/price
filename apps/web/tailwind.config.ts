@@ -1,9 +1,7 @@
 import type { Config } from 'tailwindcss'
 
-// Дизайн-система — см. ARCHITECTURE_PLAN.md §3
-// Токены — CSS-переменные (assets/css/main.css, :root и .dark).
-// Тёмная тема: класс `dark` на <html> (@nuxtjs/color-mode, preference по умолчанию — dark).
-// Источник палитры — прод-билд нового дизайна (бэкап чанков § «восстановление дизайна»).
+const token = (name: string) => `rgb(var(--color-${name}) / <alpha-value>)`
+
 export default <Partial<Config>>{
   content: [
     './components/**/*.{vue,js,ts}',
@@ -13,87 +11,117 @@ export default <Partial<Config>>{
     './app.vue',
     './error.vue',
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Поверхности — токены
-        canvas: 'rgb(var(--color-canvas) / <alpha-value>)',
-        surface: 'rgb(var(--color-surface) / <alpha-value>)',
-        'surface-2': 'rgb(var(--color-surface-2) / <alpha-value>)',
-        'surface-3': 'rgb(var(--color-surface-3) / <alpha-value>)',
-        border: 'rgb(var(--color-border) / <alpha-value>)',
-        'border-strong': 'rgb(var(--color-border-strong) / <alpha-value>)',
-        // Акценты
+        background: token('background'),
+        canvas: token('background'),
+        surface: token('surface'),
+        'surface-2': token('surface-2'),
+        'surface-raised': token('surface-raised'),
+        service: {
+          DEFAULT: token('service'),
+          2: token('service-2'),
+          ink: token('service-ink'),
+          muted: token('service-muted'),
+          border: token('service-border'),
+        },
+        text: token('ink'),
+        ink: {
+          DEFAULT: token('ink'),
+          muted: token('ink-muted'),
+          faint: token('ink-muted'),
+          'on-service': token('ink-on-service'),
+        },
+        'text-inverse': token('ink-on-service'),
+        border: token('border'),
+        'border-strong': token('border-strong'),
+        action: {
+          DEFAULT: token('action'),
+          hover: token('action-hover'),
+          soft: token('action-soft'),
+          on: token('action-on'),
+        },
         primary: {
-          DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
-          hover: 'rgb(var(--color-primary-hover) / <alpha-value>)',
-          soft: 'rgb(var(--color-primary-soft) / <alpha-value>)',
+          DEFAULT: token('action'),
+          hover: token('action-hover'),
+          soft: token('info-soft'),
+        },
+        accent: {
+          DEFAULT: token('action'),
+          hover: token('action-hover'),
+          soft: token('danger-soft'),
         },
         secondary: {
-          DEFAULT: 'rgb(var(--color-secondary) / <alpha-value>)',
-          soft: 'rgb(var(--color-secondary-soft) / <alpha-value>)',
-        },
-        // Семантика
-        destructive: {
-          DEFAULT: 'rgb(var(--color-destructive) / <alpha-value>)',
-          soft: 'rgb(var(--color-destructive-soft) / <alpha-value>)',
+          DEFAULT: token('ink'),
+          soft: token('surface-2'),
         },
         success: {
-          DEFAULT: 'rgb(var(--color-success) / <alpha-value>)',
-          soft: 'rgb(var(--color-success-soft) / <alpha-value>)',
-          text: 'rgb(var(--color-success-text) / <alpha-value>)',
+          DEFAULT: token('success'),
+          soft: token('success-soft'),
+          text: token('success-text'),
         },
         warning: {
-          DEFAULT: 'rgb(var(--color-warning) / <alpha-value>)',
-          soft: 'rgb(var(--color-warning-soft) / <alpha-value>)',
-          text: 'rgb(var(--color-warning-text) / <alpha-value>)',
+          DEFAULT: token('warning'),
+          soft: token('warning-soft'),
+          text: token('warning-text'),
         },
         danger: {
-          DEFAULT: 'rgb(var(--color-danger) / <alpha-value>)',
-          soft: 'rgb(var(--color-danger-soft) / <alpha-value>)',
-          text: 'rgb(var(--color-danger-text) / <alpha-value>)',
+          DEFAULT: token('danger'),
+          on: token('danger-on'),
+          soft: token('danger-soft'),
+          text: token('danger-text'),
         },
-        'info-text': 'rgb(var(--color-info-text) / <alpha-value>)',
-        accent: {
-          DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
-          soft: 'rgb(var(--color-accent-soft) / <alpha-value>)',
-          hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
+        destructive: {
+          DEFAULT: token('danger'),
+          soft: token('danger-soft'),
         },
-        // Текст
-        ink: {
-          DEFAULT: 'rgb(var(--color-ink) / <alpha-value>)',
-          muted: 'rgb(var(--color-ink-muted) / <alpha-value>)',
-          faint: 'rgb(var(--color-ink-faint) / <alpha-value>)',
+        info: {
+          DEFAULT: token('info'),
+          soft: token('info-soft'),
         },
-        // Liquid Glass: материал и световая кромка (уровни — см. main.css)
-        glass: 'rgb(var(--glass) / <alpha-value>)',
-        'glass-border': 'rgb(var(--glass-border-rgb) / <alpha-value>)',
+        focus: token('focus'),
+        glass: token('surface'),
+        'glass-border': token('border'),
       },
       fontFamily: {
-        sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)'],
+        display: ['var(--font-display)'],
+        mono: ['var(--font-mono)'],
       },
       fontSize: {
-        xs: ['0.75rem', { lineHeight: '1.5' }],
-        sm: ['0.875rem', { lineHeight: '1.5' }],
-        base: ['1rem', { lineHeight: '1.6' }],
-        lg: ['1.125rem', { lineHeight: '1.6' }],
-        xl: ['1.5rem', { lineHeight: '1.4' }],
-        '2xl': ['1.5rem', { lineHeight: '1.3' }],
-        '3xl': ['2rem', { lineHeight: '1.2' }],
+        xs: ['0.75rem', { lineHeight: '1.4167' }],
+        sm: ['0.875rem', { lineHeight: '1.4286' }],
+        base: ['1rem', { lineHeight: '1.5' }],
+        lg: ['1.125rem', { lineHeight: '1.4375' }],
+        xl: ['1.5rem', { lineHeight: '1.3333' }],
+        '2xl': ['1.5rem', { lineHeight: '1.3333' }],
+        '3xl': ['1.875rem', { lineHeight: '1.35' }],
+      },
+      fontWeight: {
+        normal: '400',
+        medium: '450',
+        semibold: '600',
+        bold: '700',
+        extrabold: '800',
       },
       borderRadius: {
-        card: '20px',
-        pill: '999px',
+        none: '0',
+        control: 'var(--radius-control)',
+        surface: 'var(--radius-surface)',
+        dialog: 'var(--radius-dialog)',
+        card: 'var(--radius-surface)',
+        pill: 'var(--radius-pill)',
       },
       boxShadow: {
-        // Тени прототипа CMR (sh-1/sh-2) — значения в main.css
-        // (--shadow-card / --shadow-card-hover), темы различаются.
-        card: 'var(--shadow-card)',
-        'card-hover': 'var(--shadow-card-hover)',
+        overlay: 'var(--shadow-overlay)',
+        sticky: 'var(--shadow-sticky)',
+        card: 'none',
+        'card-hover': 'none',
       },
       transitionTimingFunction: {
-        soft: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        trade: 'cubic-bezier(0.2, 0, 0, 1)',
       },
       spacing: {
         18: '4.5rem',

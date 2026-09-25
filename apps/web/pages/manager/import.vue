@@ -25,9 +25,9 @@ const ALLOWED_EXT = ['.csv', '.txt']
 const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB']
 
 const MODES: { value: ImportMode; label: string; hint: string }[] = [
-  { value: 'UPSERT', label: 'Upsert', hint: 'Обновить и добавить новые позиции' },
-  { value: 'REPLACE', label: 'Replace', hint: 'Полная замена каталога' },
-  { value: 'ARCHIVE_MISSING', label: 'Archive-missing', hint: 'Архивировать отсутствующие в файле' },
+  { value: 'UPSERT', label: 'Обновить и добавить', hint: 'Обновить существующие позиции и добавить новые' },
+  { value: 'REPLACE', label: 'Полная замена', hint: 'Заменить текущий каталог данными из файла' },
+  { value: 'ARCHIVE_MISSING', label: 'Архивировать отсутствующие', hint: 'Архивировать позиции, которых нет в файле' },
 ]
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -282,6 +282,9 @@ function maybePoll() {
 // --- Rollback версии (§16 п.14) ---
 // Откатить можно только последнюю DONE-версию, ещё не откаченную.
 const rollbackLoadingId = ref<string | null>(null)
+const rollbackTarget = ref<PriceListVersionRead | null>(null)
+const rollbackConfirmButton = ref<HTMLButtonElement | null>(null)
+let rollbackTrigger: HTMLElement | null = null
 
 const latestDoneId = computed(() => {
   // список отсортирован по created_at DESC — первая DONE и есть последняя
@@ -293,12 +296,21 @@ function canRollback(v: PriceListVersionRead): boolean {
   return v.id === latestDoneId.value && !v.rolled_back_at
 }
 
-async function onRollback(v: PriceListVersionRead) {
-  const ok = window.confirm(
-    `Откатить версию ${v.filename}? Цены вернутся к предыдущему состоянию, ` +
-    'новые товары версии будут архивированы.',
-  )
-  if (!ok) return
+function askRollback(v: PriceListVersionRead, event: MouseEvent) {
+  rollbackTrigger = event.currentTarget as HTMLElement
+  rollbackTarget.value = v
+  // Подтверждение опасного действия открывается клавиатурно и сразу получает фокус.
+  nextTick(() => rollbackConfirmButton.value?.focus())
+}
+
+function cancelRollback() {
+  rollbackTarget.value = null
+  if (rollbackTrigger?.isConnected) rollbackTrigger.focus()
+}
+
+async function confirmRollback() {
+  const v = rollbackTarget.value
+  if (!v || rollbackLoadingId.value) return
 
   rollbackLoadingId.value = v.id
   submitError.value = ''
@@ -313,6 +325,7 @@ async function onRollback(v: PriceListVersionRead) {
     if (successTimer) clearTimeout(successTimer)
     successTimer = setTimeout(() => (successMsg.value = ''), 6000)
     await loadHistory()
+    cancelRollback()
   } catch (e) {
     submitError.value = getErrorMessage(e, 'Не удалось откатить версию')
   } finally {
@@ -369,7 +382,9 @@ async function downloadErrors() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && showModal.value) closeModal()
+  if (e.key !== 'Escape') return
+  if (rollbackTarget.value) cancelRollback()
+  else if (showModal.value) closeModal()
 }
 
 onMounted(async () => {
@@ -388,22 +403,26 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">Импорт прайс-листа</h1>
-      <p class="text-sm text-ink-muted mt-1">
-        Загрузите CSV-файл. Импорт выполняется в фоне — статус виден в истории ниже.
-      </p>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Импорт прайс-листа"
+      description="Загрузите CSV-файл. Импорт выполняется в фоне — статус виден в истории ниже."
+    />
 
     <!-- Форма загрузки -->
-    <div class="card p-6 mb-8">
+    <div class="mb-5 border border-border bg-surface p-5">
       <h2 class="font-semibold mb-4">Новый импорт</h2>
 
       <!-- Dropzone -->
       <div
-        class="rounded-card border-2 border-dashed p-8 text-center cursor-pointer transition-colors mb-2"
-        :class="dragging ? 'border-primary bg-primary-soft' : 'border-border hover:border-primary/60'"
+        class="border border-border border-2 border-dashed p-8 text-center cursor-pointer transition-colors mb-2"
+        :class="dragging ? 'border-primary bg-info-soft' : 'border-border hover:border-action'"
+        role="button"
+        tabindex="0"
+        aria-label="Выбрать файл прайс-листа"
         @click="pickFile"
+        @keydown.enter.prevent="pickFile"
+        @keydown.space.prevent="pickFile"
         @dragover.prevent="dragging = true"
         @dragleave.prevent="dragging = false"
         @drop.prevent="onDrop"
@@ -423,7 +442,7 @@ onUnmounted(() => {
           <p class="text-xs text-ink-faint mt-1">.csv или .txt, до 100 МБ</p>
         </template>
         <template v-else>
-          <Icon name="heroicons:document-text" class="w-10 h-10 mx-auto mb-2 text-primary" />
+          <Icon name="heroicons:document-text" class="w-10 h-10 mx-auto mb-2 text-action" />
           <p class="text-sm font-medium text-ink break-all">{{ selectedFile.name }}</p>
           <p class="text-xs text-ink-faint mt-1">{{ formatSize(selectedFile.size) }}</p>
         </template>
@@ -432,7 +451,7 @@ onUnmounted(() => {
       <div v-if="fileError" class="badge-danger w-full justify-center py-2 mt-3">{{ fileError }}</div>
 
       <div v-if="selectedFile" class="flex justify-end mt-2">
-        <button class="btn-ghost text-sm" @click="clearFile">
+        <button class="btn-ghost min-h-11 text-sm" @click="clearFile">
           <Icon name="heroicons:x-mark" class="w-4 h-4" /> Убрать файл
         </button>
       </div>
@@ -440,18 +459,18 @@ onUnmounted(() => {
       <!-- Режим импорта -->
       <div class="mt-6">
         <label class="label">Режим импорта</label>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="divide-y divide-border border border-border">
           <button
             v-for="m in MODES"
             :key="m.value"
             type="button"
-            class="text-left p-4 rounded-card border transition-all"
+            class="min-h-16 w-full border-b border-border p-3 text-left last:border-b-0"
             :class="mode === m.value
-              ? 'border-primary bg-primary-soft'
-              : 'border-border bg-surface hover:border-primary/60'"
+              ? 'border-primary bg-info-soft'
+              : 'border-border bg-surface hover:border-action'"
             @click="mode = m.value"
           >
-            <span class="block font-semibold text-sm" :class="mode === m.value ? 'text-primary' : 'text-ink'">
+            <span class="block font-semibold text-sm" :class="mode === m.value ? 'text-action' : 'text-ink'">
               {{ m.label }}
             </span>
             <span class="block text-xs text-ink-muted mt-1">{{ m.hint }}</span>
@@ -494,13 +513,13 @@ onUnmounted(() => {
         :disabled="submitting || !selectedFile"
         @click="onSubmit"
       >
-        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white  animate-spin"/>
         {{ submitting ? 'Запуск…' : 'Импортировать' }}
       </button>
     </div>
 
     <!-- ZIP с фото серий (§16 п.17) -->
-    <div class="card p-6 mt-6">
+    <div class="mt-5 border border-border bg-surface p-5">
       <h2 class="font-semibold mb-2">Фото серий</h2>
       <p class="text-sm text-ink-muted mb-4">
         ZIP с файлами вида <code>serie-a.jpg</code> — имя файла (без расширения) должно
@@ -508,7 +527,7 @@ onUnmounted(() => {
       </p>
       <input ref="zipInput" type="file" accept=".zip" class="hidden" @change="onZipChange">
 
-      <div v-if="!zipFile" class="border-2 border-dashed border-border rounded-card p-6 text-center">
+      <div v-if="!zipFile" class="border-2 border-dashed border-border border border-border p-6 text-center">
         <button class="btn-ghost py-2" :disabled="zipSubmitting" @click="pickZip">
           <Icon name="heroicons:photo" class="w-4 h-4" /> Выбрать ZIP
         </button>
@@ -522,7 +541,7 @@ onUnmounted(() => {
         <div class="flex gap-2">
           <button class="btn-ghost py-2" :disabled="zipSubmitting" @click="clearZip">Убрать</button>
           <button class="btn-primary py-2.5 px-5" :disabled="zipSubmitting" @click="onZipSubmit">
-            <span v-if="zipSubmitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+            <span v-if="zipSubmitting" class="w-4 h-4 border-2 border-white/40 border-t-white  animate-spin"/>
             {{ zipSubmitting ? 'Обработка…' : 'Загрузить и обработать' }}
           </button>
         </div>
@@ -551,19 +570,19 @@ onUnmounted(() => {
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="loadHistory()">Повторить</button>
+      <button class="btn-ghost min-h-11 text-sm" @click="loadHistory()">Повторить</button>
     </div>
 
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 4" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!versions.length" class="card p-10 text-center text-ink-muted">
-      <Icon name="heroicons:clock" class="w-10 h-10 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!versions.length" class="border border-border bg-surface p-6 text-center text-ink-muted">
+      <Icon name="heroicons:clock" class="size-8 mb-3 text-ink-faint" />
       <p>Импортов пока не было</p>
     </div>
 
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -598,7 +617,7 @@ onUnmounted(() => {
                 </template>
                 <template v-else>
                   <div class="flex items-center gap-2">
-                    <div class="flex-1 h-2 bg-surface-2 rounded-full overflow-hidden min-w-[80px]">
+                    <div class="flex-1 h-2 bg-surface-2  overflow-hidden min-w-[80px]">
                       <div class="h-full bg-primary transition-all" :style="{ width: progress(v) + '%' }"/>
                     </div>
                     <span class="text-xs text-ink-muted w-9 text-right">{{ progress(v) }}%</span>
@@ -617,20 +636,20 @@ onUnmounted(() => {
                 </template>
                 <button
                   v-else-if="canRollback(v)"
-                  class="btn-ghost text-sm py-1.5 text-danger"
+                  class="btn-ghost min-h-11 text-sm text-danger"
                   :disabled="rollbackLoadingId === v.id"
-                  @click="onRollback(v)"
+                  @click="askRollback(v, $event)"
                 >
                   <span
                     v-if="rollbackLoadingId === v.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current  animate-spin"
                   />
                   <template v-else>Откатить</template>
                 </button>
                 <span v-else class="text-ink-faint">—</span>
               </td>
               <td class="px-4 py-3 text-right">
-                <button class="btn-ghost text-sm py-1.5" @click="openDetails(v.id)">
+                <button class="btn-ghost min-h-11 text-sm" @click="openDetails(v.id)">
                   <Icon name="heroicons:eye" class="w-4 h-4" /> Детали
                 </button>
               </td>
@@ -642,36 +661,67 @@ onUnmounted(() => {
 
     <!-- Пагинация -->
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
         <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
         <button
           v-else
-          class="w-10 h-10 rounded-pill font-medium text-sm"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          class="btn-outline size-11 font-medium text-sm"
+          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>
 
+    <!-- Подтверждение отката: собственный диалог сохраняет единый стиль и клавиатурную доступность -->
+    <div
+      v-if="rollbackTarget"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rollback-confirm-title"
+      @mousedown.self="overlayDown = true"
+      @click.self="if (overlayDown) cancelRollback(); overlayDown = false"
+    >
+      <div class="w-full max-w-md border border-border-strong bg-surface p-5">
+        <h3 id="rollback-confirm-title" class="font-semibold mb-3">Откатить версию?</h3>
+        <p class="text-sm text-ink-muted mb-2">{{ rollbackTarget.filename }}</p>
+        <p class="text-sm text-ink-faint mb-5">
+          Цены вернутся к предыдущему состоянию, новые товары версии будут архивированы.
+        </p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn-ghost min-h-11" :disabled="rollbackLoadingId !== null" @click="cancelRollback">Отмена</button>
+          <button
+            ref="rollbackConfirmButton"
+            type="button"
+            class="btn-primary min-h-11"
+            :disabled="rollbackLoadingId !== null"
+            @click="confirmRollback"
+          >
+            {{ rollbackLoadingId !== null ? 'Откатываем…' : 'Подтвердить' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Модалка деталей версии -->
     <div
       v-if="showModal"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeModal(); overlayDown = false"
     >
-      <div class="card max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none">
+      <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div class="min-w-0">
             <h3 class="font-semibold truncate">Детали импорта</h3>
             <p v-if="detail" class="text-sm text-ink-muted truncate mt-0.5">{{ detail.filename }}</p>
           </div>
-          <button class="btn-ghost p-2 -mr-2 shrink-0" @click="closeModal">
+          <button class="btn-ghost -mr-2 size-11 shrink-0" @click="closeModal">
             <Icon name="heroicons:x-mark" class="w-5 h-5" />
           </button>
         </div>
@@ -693,7 +743,7 @@ onUnmounted(() => {
           <!-- Прогресс -->
           <div v-if="detail.rows_total" class="mb-5">
             <div class="flex items-center gap-2 mb-1.5">
-              <div class="flex-1 h-2.5 bg-surface-2 rounded-full overflow-hidden">
+              <div class="flex-1 h-2.5 bg-surface-2  overflow-hidden">
                 <div class="h-full bg-primary transition-all" :style="{ width: progress(detail) + '%' }"/>
               </div>
               <span class="text-sm font-medium w-10 text-right">{{ progress(detail) }}%</span>
@@ -702,15 +752,15 @@ onUnmounted(() => {
 
           <!-- Агрегаты -->
           <div class="grid grid-cols-3 gap-3 mb-5">
-            <div class="card p-4 text-center">
+            <div class="border border-border bg-surface-2 p-4 text-center">
               <p class="text-xs text-ink-muted mb-1">Всего строк</p>
               <p class="text-xl font-bold">{{ detail.rows_total }}</p>
             </div>
-            <div class="card p-4 text-center">
+            <div class="border border-border bg-surface-2 p-4 text-center">
               <p class="text-xs text-ink-muted mb-1">Успешно</p>
               <p class="text-xl font-bold text-success">{{ detail.rows_ok }}</p>
             </div>
-            <div class="card p-4 text-center">
+            <div class="border border-border bg-surface-2 p-4 text-center">
               <p class="text-xs text-ink-muted mb-1">Ошибок</p>
               <p class="text-xl font-bold" :class="detail.rows_error > 0 ? 'text-danger' : ''">
                 {{ detail.rows_error }}
@@ -719,7 +769,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Курс -->
-          <div class="card p-4 mb-5 text-sm">
+          <div class="mb-5 border border-border bg-surface p-4 text-sm">
             <div class="flex justify-between py-1">
               <span class="text-ink-muted">Валюта прайса</span>
               <span class="font-medium">{{ detail.base_currency }}</span>
@@ -746,15 +796,15 @@ onUnmounted(() => {
 
           <div class="flex justify-end gap-2">
             <button
-              class="btn-secondary"
+              class="btn-outline min-h-11"
               :disabled="!detail.error_log_key || detail.rows_error === 0 || errorsUrlLoading"
               @click="downloadErrors"
             >
-              <span v-if="errorsUrlLoading" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
+              <span v-if="errorsUrlLoading" class="w-4 h-4 border-2 border-current/40 border-t-current  animate-spin"/>
               <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
               Скачать лог ошибок
             </button>
-            <button class="btn-ghost" @click="closeModal">Закрыть</button>
+            <button class="btn-ghost min-h-11" @click="closeModal">Закрыть</button>
           </div>
         </template>
 

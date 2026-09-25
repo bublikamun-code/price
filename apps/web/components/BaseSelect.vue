@@ -108,29 +108,32 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>
-  <div :id="id" ref="containerRef" class="relative" @keydown="onKeydown">
+  <div ref="containerRef" class="relative" @keydown="onKeydown">
     <button
+      :id="id"
       ref="triggerRef"
       type="button"
-      class="input w-full text-left flex items-center justify-between gap-2 pr-10"
+      class="input flex min-h-11 w-full items-center justify-between gap-2 pr-10 text-left"
       role="combobox"
       :aria-expanded="open"
       aria-haspopup="listbox"
       :aria-controls="open ? `${uid}-listbox` : undefined"
       :aria-activedescendant="open && activeIndex >= 0 ? `${uid}-opt-${activeIndex}` : undefined"
+      :aria-label="id ? undefined : (selectedLabel || placeholder || 'Выберите значение')"
       @click="toggle"
     >
       <span class="truncate">{{ selectedLabel }}</span>
       <Icon
         name="heroicons:chevron-down"
-        class="w-4 h-4 text-ink-faint absolute right-3.5 top-1/2 -translate-y-1/2 transition-transform"
+        class="absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-muted transition-transform"
         :class="open ? 'rotate-180' : ''"
+        aria-hidden="true"
       />
     </button>
     <ul
       v-if="open"
       :id="`${uid}-listbox`"
-      class="absolute z-50 mt-1.5 w-full min-w-max glass rounded-[18px] p-1.5 max-h-60 overflow-auto"
+      class="absolute z-50 mt-1 max-h-60 w-full min-w-max overflow-auto border border-border-strong bg-surface p-1 shadow-overlay"
       role="listbox"
     >
       <li
@@ -139,10 +142,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         :key="o.value"
         role="option"
         :aria-selected="modelValue === o.value"
-        class="w-full text-left px-3 py-2 rounded-[18px] text-sm transition-colors whitespace-nowrap cursor-pointer"
+        class="min-h-11 w-full cursor-pointer whitespace-nowrap border-l-2 px-3 py-2 text-left text-sm transition-colors"
         :class="[
           i === activeIndex ? 'bg-surface-2' : '',
-          modelValue === o.value ? 'bg-ink/5 text-ink font-semibold border-l-2 border-primary' : 'text-ink',
+          modelValue === o.value ? 'border-action bg-surface-2 font-semibold text-ink' : 'border-transparent text-ink',
         ]"
         @click="select(o)"
         @mousemove="activeIndex = i"

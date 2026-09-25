@@ -1,49 +1,42 @@
 <script setup lang="ts">
-// Настройки уведомлений: дайджест изменения цен (in-app).
-// Сохранение: PATCH /api/v1/auth/me (price_digest_enabled / price_digest_sources).
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Настройки уведомлений' })
 
 const auth = useAuth()
 
-// Источники позиций для отслеживания (контракт /auth/me: cart|favorite|orders).
-const SOURCES: { value: string; label: string }[] = [
-  { value: 'cart', label: 'Корзина' },
-  { value: 'favorite', label: 'Избранное' },
-  { value: 'orders', label: 'Заказы' },
+const SOURCES: { value: string; label: string; description: string }[] = [
+  { value: 'cart', label: 'Заявка', description: 'Товары, подготовленные к заказу.' },
+  { value: 'favorite', label: 'Избранное', description: 'Сохранённые позиции каталога.' },
+  { value: 'orders', label: 'Заказы', description: 'Позиции из оформленных заказов.' },
 ]
 
-// Локальные копии для формы; init из стора (hydrate из cookie + fetchMe).
-// '??' — на случай устаревшей cookie без новых полей.
 const enabled = ref(auth.user?.priceDigestEnabled ?? false)
 const sources = ref<string[]>([...(auth.user?.priceDigestSources ?? [])])
 const loading = ref(false)
 const errorMsg = ref('')
 const saved = ref(false)
 
-/** Одно и то же множество источников (порядок не важен). */
-function sameSources(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every(x => b.includes(x))
+function sameSources(first: string[], second: string[]): boolean {
+  return first.length === second.length && first.every((value) => second.includes(value))
 }
 
-const savedDigest = () => ({
-  enabled: auth.user?.priceDigestEnabled ?? false,
-  sources: auth.user?.priceDigestSources ?? [],
-})
+function savedDigest() {
+  return {
+    enabled: auth.user?.priceDigestEnabled ?? false,
+    sources: auth.user?.priceDigestSources ?? [],
+  }
+}
 
-// Кнопка активна только при реальном изменении.
 const dirty = computed(() => {
-  const s = savedDigest()
-  return enabled.value !== s.enabled || !sameSources(sources.value, s.sources)
+  const current = savedDigest()
+  return enabled.value !== current.enabled || !sameSources(sources.value, current.sources)
 })
 
-// Изменили форму — убираем прошлые сообщения.
 watch([enabled, sources], () => {
   saved.value = false
   errorMsg.value = ''
 })
 
-// fetchMe после загрузки обновил стор → подтягиваем, если форму не трогали.
 watch(() => auth.user, () => {
   if (!dirty.value) {
     enabled.value = auth.user?.priceDigestEnabled ?? false
@@ -61,8 +54,8 @@ async function onSave() {
       price_digest_sources: sources.value,
     })
     saved.value = true
-  } catch (e) {
-    errorMsg.value = getErrorMessage(e, 'Не удалось сохранить настройки')
+  } catch (error) {
+    errorMsg.value = getErrorMessage(error, 'Не удалось сохранить настройки')
   } finally {
     loading.value = false
   }
@@ -70,53 +63,67 @@ async function onSave() {
 </script>
 
 <template>
-  <div>
-    <!-- Хлебные крошки: Профиль / Уведомления -->
-    <nav class="flex items-center gap-2 text-sm text-ink-muted mb-6">
-      <NuxtLink to="/profile" class="hover:text-primary">Профиль</NuxtLink>
-      <Icon name="heroicons:chevron-right" class="w-3.5 h-3.5 text-ink-faint" />
-      <span class="text-ink">Уведомления</span>
+  <div class="mx-auto max-w-4xl">
+    <nav class="mb-6 flex items-center gap-2 text-sm text-ink-muted" aria-label="Хлебные крошки">
+      <NuxtLink to="/profile" class="hover:text-action">Профиль</NuxtLink>
+      <Icon name="heroicons:chevron-right" class="size-4" aria-hidden="true" />
+      <span class="text-ink" aria-current="page">Уведомления</span>
     </nav>
 
-    <h1 class="text-2xl font-bold mb-6">Настройки уведомлений</h1>
+    <PageHeading
+      eyebrow="Параметры кабинета"
+      title="Уведомления"
+      description="Выберите, какие позиции отслеживать для уведомлений об изменении цены."
+    />
 
-    <div class="card p-5 max-w-2xl">
-      <h3 class="font-semibold mb-1">Дайджест изменения цен</h3>
-
-      <form class="flex flex-col gap-4" @submit.prevent="onSave">
-        <!-- Вкл/выкл дайджест -->
-        <label class="flex items-center gap-2 text-sm cursor-pointer">
-          <input v-model="enabled" type="checkbox" class="rounded border-border">
-          Присылать дайджест при изменении цен на отслеживаемые товары
-        </label>
-        <p class="text-xs text-ink-faint">
-          Уведомления появятся в колокольчике в кабинете.
-        </p>
-
-        <!-- Источники позиций -->
-        <div :class="enabled ? '' : 'opacity-60'">
-          <label class="label">Отслеживать позиции из</label>
-          <label
-            v-for="s in SOURCES"
-            :key="s.value"
-            class="flex items-center gap-2 text-sm py-1"
-            :class="enabled ? 'cursor-pointer' : 'cursor-not-allowed'"
-          >
-            <input v-model="sources" type="checkbox" :value="s.value" class="rounded border-border" :disabled="!enabled">
-            {{ s.label }}
+    <form class="py-6" @submit.prevent="onSave">
+      <section class="grid border-b border-border pb-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="digest-heading">
+        <h2 id="digest-heading" class="text-sm font-bold text-ink">Дайджест цен</h2>
+        <div>
+          <label class="flex cursor-pointer items-start gap-3" for="digest-enabled">
+            <input id="digest-enabled" v-model="enabled" type="checkbox" class="mt-0.5 size-4" :aria-describedby="enabled ? 'digest-description' : undefined">
+            <span>
+              <span class="font-semibold text-ink">Присылать уведомления об изменениях цен</span>
+              <span id="digest-description" class="mt-1 block text-sm text-ink-muted">
+                Сообщение появится в колокольчике кабинета.
+              </span>
+            </span>
           </label>
         </div>
+      </section>
 
-        <div v-if="errorMsg" class="badge-danger w-full justify-center py-2">{{ errorMsg }}</div>
-
-        <div class="flex items-center gap-3">
-          <button type="submit" class="btn-primary" :disabled="loading || !dirty">
-            <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
-            {{ loading ? 'Сохранение...' : 'Сохранить' }}
-          </button>
-          <span v-if="saved" class="text-sm font-medium text-success">Сохранено</span>
+      <section class="grid border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="sources-heading">
+        <div>
+          <h2 id="sources-heading" class="text-sm font-bold text-ink">Источники</h2>
+          <p class="mt-2 text-sm text-ink-muted">Доступны, когда дайджест включён.</p>
         </div>
-      </form>
-    </div>
+        <fieldset :disabled="!enabled" class="divide-y divide-border border-y border-border">
+          <legend class="sr-only">Источники отслеживаемых позиций</legend>
+          <label
+            v-for="source in SOURCES"
+            :key="source.value"
+            class="flex min-h-16 cursor-pointer items-center gap-3 py-3"
+            :class="{ 'cursor-not-allowed opacity-60': !enabled }"
+          >
+            <input v-model="sources" type="checkbox" :value="source.value" class="size-4">
+            <span>
+              <span class="block font-semibold text-ink">{{ source.label }}</span>
+              <span class="mt-0.5 block text-sm text-ink-muted">{{ source.description }}</span>
+            </span>
+          </label>
+        </fieldset>
+      </section>
+
+      <div class="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div aria-live="polite">
+          <p v-if="errorMsg" class="text-sm font-semibold text-danger-text" role="alert">{{ errorMsg }}</p>
+          <p v-else-if="saved" class="text-sm font-semibold text-success-text" role="status">Настройки сохранены.</p>
+        </div>
+        <button type="submit" class="btn-primary sm:min-w-40" :disabled="loading || !dirty">
+          <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+          {{ loading ? 'Сохраняем' : 'Сохранить' }}
+        </button>
+      </div>
+    </form>
   </div>
 </template>

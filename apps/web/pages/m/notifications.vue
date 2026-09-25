@@ -60,47 +60,40 @@ onMounted(load)
 
 <template>
   <div>
-    <h1 class="text-lg font-bold mb-3">Уведомления</h1>
+    <PageHeading
+      eyebrow="События"
+      title="Уведомления"
+      :description="`Непрочитанных: ${unreadCount}`"
+    />
 
-    <div v-if="error" class="flex items-center gap-3 mb-3">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
+    <div v-if="error" class="mb-4 flex items-center gap-3 border border-danger/50 bg-danger-soft p-3" role="alert">
+      <p class="min-w-0 flex-1 text-sm text-ink">{{ error }}</p>
+      <button type="button" class="btn-outline min-h-11 shrink-0" @click="load">Повторить</button>
     </div>
-
-    <!-- Skeleton -->
-    <div v-if="loading" class="card p-4">
-      <div v-for="i in 4" :key="i" class="skeleton h-16 w-full mb-3 last:mb-0" />
+    <div v-if="loading" class="border border-border bg-surface" aria-label="Загрузка уведомлений" aria-busy="true">
+      <div v-for="i in 4" :key="i" class="h-20 border-b border-border p-3 last:border-b-0"><div class="skeleton h-full w-full" /></div>
     </div>
-
-    <!-- Пусто -->
-    <div v-else-if="!items.length" class="card p-8 text-center">
-      <Icon name="heroicons:bell-slash" class="w-10 h-10 mx-auto mb-2 text-ink-faint" />
-      <p class="text-sm text-ink-muted">Нет уведомлений</p>
-    </div>
-
-    <!-- Список -->
-    <div v-else class="flex flex-col gap-2.5">
-      <div
+    <div v-else-if="!items.length" class="border border-border bg-surface p-5"><p class="text-sm font-semibold text-ink">Уведомлений нет</p><p class="mt-1 text-sm text-ink-muted">Новые события появятся в этой ленте.</p></div>
+    <section v-else class="border border-border bg-surface" aria-label="Лента уведомлений">
+      <button
         v-for="n in items"
         :key="n.id"
-        class="card p-3.5 flex items-start gap-3 transition-colors"
-        :class="n.is_read ? '' : 'border-primary/30 bg-primary/5 cursor-pointer active:border-primary/50'"
-        :title="n.is_read ? '' : 'Отметить прочитанным'"
+        type="button"
+        class="flex min-h-20 w-full items-start gap-3 border-b border-border p-3 text-left last:border-b-0 hover:bg-surface-2 disabled:cursor-default"
+        :class="n.is_read ? '' : 'bg-info-soft'"
+        :disabled="n.is_read || !!markingId"
+        :aria-label="n.is_read ? n.title : `${n.title}. Отметить прочитанным`"
         @click="markRead(n)"
       >
-        <span class="w-8 h-8 shrink-0 rounded-pill flex items-center justify-center" :class="typeMeta(n.type).cls">
-          <Icon :name="typeMeta(n.type).icon" class="w-4 h-4" />
+        <span class="flex size-9 shrink-0 items-center justify-center border border-border" :class="typeMeta(n.type).cls"><Icon :name="typeMeta(n.type).icon" class="size-4" /></span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-xs font-semibold uppercase tracking-wide text-ink-muted">{{ typeMeta(n.type).label }}</span>
+          <span class="mt-1 block text-sm font-semibold leading-5 text-ink">{{ n.title }}</span>
+          <span v-if="n.body" class="mt-1 block text-xs leading-5 text-ink-muted">{{ n.body }}</span>
+          <span class="mt-1 block text-xs text-ink-faint">{{ formatDateTime(n.created_at) }}</span>
         </span>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-medium text-sm leading-snug">{{ n.title }}</span>
-            <span class="chip bg-canvas text-ink-muted !px-2 !py-0.5">{{ typeMeta(n.type).label }}</span>
-          </div>
-          <p v-if="n.body" class="text-xs text-ink-muted mt-1">{{ n.body }}</p>
-          <p class="text-[11px] text-ink-faint mt-1">{{ formatDateTime(n.created_at) }}</p>
-        </div>
-        <span v-if="!n.is_read" class="w-2.5 h-2.5 shrink-0 mt-1.5 rounded-pill bg-primary" :class="markingId === n.id ? 'animate-pulse' : ''" />
-      </div>
-    </div>
+        <UiStatusBadge v-if="!n.is_read" class="mt-1" tone="action" label="Новое" />
+      </button>
+    </section>
   </div>
 </template>

@@ -1,21 +1,50 @@
 <script setup lang="ts">
-// Всплывающая корзина снизу справа при добавлении товара.
-// Срабатывает на lastAdded из useCart (module-level ref — виден со всех страниц).
-const { lastAdded, cart } = useCart()
-const { thumbOf } = useProductPhoto()
+// Client cart confirmation. The v2 cart intentionally exposes no media keys;
+// the popup resolves the last-added productId against the current scoped lines.
+const auth = useAuth()
+const cartV2 = auth.isClient ? useCartV2() : null
+const store = cartV2?.store
+
+const addedLine = computed(() => {
+  if (!store) return null
+  const productId = store.lastAddedProductId
+  if (!productId) return null
+
+  const cart = store.cart
+  const owner = store.owner
+  if (!cart || !owner) return null
+  const scopeMatches = owner.commercialScope === 'USER'
+    ? cart.organizationId === null
+    : cart.organizationId === owner.organizationId
+  if (!scopeMatches) return null
+
+  return cart.items.find((item) => item.productId === productId) ?? null
+})
 
 const visible = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 
-watch(lastAdded, (item) => {
-  if (!item) return
-  visible.value = false
-  requestAnimationFrame(() => {
-    visible.value = true
-    clearTimeout(timer)
-    timer = setTimeout(() => { visible.value = false }, 5000)
-  })
-})
+watch(
+  () => store?.lastAddedProductId,
+  () => {
+    if (!addedLine.value) return
+    visible.value = false
+    requestAnimationFrame(() => {
+      visible.value = true
+      clearTimeout(timer)
+      timer = setTimeout(() => { visible.value = false }, 5000)
+    })
+  },
+)
+
+watch(
+  () => store?.cart?.version,
+  () => {
+    if (visible.value && !addedLine.value) visible.value = false
+  },
+)
+
+onBeforeUnmount(() => clearTimeout(timer))
 
 function close() {
   visible.value = false
@@ -25,42 +54,42 @@ function close() {
 <template>
   <Teleport to="body">
     <Transition name="cart-popup">
-      <div
-        v-if="visible && lastAdded"
-        class="fixed right-4 bottom-20 lg:bottom-4 z-50 glass p-3 w-[320px] max-w-[calc(100vw-2rem)]"
+      <section
+        v-if="visible && addedLine"
+        class="fixed bottom-20 right-4 z-50 w-[320px] max-w-[calc(100vw-2rem)] border border-border-strong bg-surface p-3 shadow-overlay lg:bottom-4"
         role="status"
+        aria-live="polite"
+        aria-atomic="true"
       >
         <div class="flex items-start gap-3">
-          <img
-            v-if="thumbOf(lastAdded.photo_key)"
-            :src="thumbOf(lastAdded.photo_key) ?? undefined"
-            :alt="lastAdded.name"
-            class="w-14 h-14 rounded-lg object-contain bg-canvas shrink-0"
+          <span
+            class="flex size-14 shrink-0 items-center justify-center border border-border bg-surface-2 text-ink-muted"
+            aria-hidden="true"
           >
-          <span v-else class="w-14 h-14 rounded-lg bg-canvas text-ink-faint flex items-center justify-center shrink-0">
-            <Icon name="heroicons:photo" class="w-7 h-7" />
+            <Icon name="heroicons:shopping-bag" class="size-7" />
           </span>
           <div class="min-w-0 flex-1">
-            <p class="text-xs font-medium text-success-text flex items-center gap-1 mb-0.5">
-              <Icon name="heroicons:check-circle" class="w-3.5 h-3.5 shrink-0" />
+            <p class="mb-0.5 flex items-center gap-1 text-xs font-semibold text-success-text">
+              <Icon name="heroicons:check-circle" class="size-3.5 shrink-0" aria-hidden="true" />
               Добавлено в корзину
             </p>
-            <p class="text-sm font-medium text-ink leading-snug line-clamp-2">{{ lastAdded.name }}</p>
-            <p class="text-xs text-ink-faint mt-0.5">
-              {{ lastAdded.quantity }} шт · {{ formatMoney(lastAdded.line_total, lastAdded.currency) }}
+            <p class="text-sm font-semibold leading-5 text-ink">{{ addedLine.name }}</p>
+            <p class="numeric mt-0.5 text-xs text-ink-muted">
+              {{ addedLine.sku }} · {{ addedLine.quantity }} шт ·
+              {{ formatMoney(addedLine.lineTotal.amount, addedLine.lineTotal.currency) }}
             </p>
           </div>
-          <button class="btn-ghost p-1 shrink-0 -mt-1 -mr-1" title="Закрыть" @click="close">
-            <Icon name="heroicons:x-mark" class="w-4 h-4" />
-          </button>
+          <UiIconButton label="Закрыть уведомление" size="compact" variant="ghost" @click="close">
+            <Icon name="heroicons:x-mark" class="size-4" aria-hidden="true" />
+          </UiIconButton>
         </div>
-        <div class="flex gap-2 mt-3">
-          <NuxtLink to="/cart" class="btn-primary flex-1 justify-center py-2 text-sm" @click="close">
-            В корзину{{ cart?.total_items ? ` (${cart.total_items})` : '' }}
-          </NuxtLink>
-          <button class="btn-ghost px-3 py-2 text-sm" @click="close">Продолжить</button>
+        <div class="mt-3 flex gap-2">
+          <UiButton class="flex-1" @click="close(); navigateTo('/cart')">
+            В корзину{{ store?.cart?.totalItems ? ` (${store.cart.totalItems})` : '' }}
+          </UiButton>
+          <UiButton variant="secondary" @click="close">Продолжить</UiButton>
         </div>
-      </div>
+      </section>
     </Transition>
   </Teleport>
 </template>
@@ -68,11 +97,17 @@ function close() {
 <style scoped>
 .cart-popup-enter-active,
 .cart-popup-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .cart-popup-enter-from,
 .cart-popup-leave-to {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(8px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cart-popup-enter-active,
+  .cart-popup-leave-active {
+    transition: none;
+  }
 }
 </style>

@@ -201,39 +201,37 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Баннеры</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          Промо-блоки главной страницы: «Акции» и «Новинки». Показываются только активные, по полю sort.
-        </p>
-      </div>
-      <button type="button" class="btn-primary whitespace-nowrap" @click="openCreate">
-        <Icon name="heroicons:plus" class="w-4 h-4" /> Добавить
-      </button>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Баннеры"
+      description="Промо-блоки главной страницы: «Акции» и «Новинки». Показываются только активные, по полю sort."
+    >
+      <template #actions>
+        <UiButton size="touch" @click="openCreate"><template #leading><Icon name="heroicons:plus" class="size-4" /></template>Добавить</UiButton>
+      </template>
+    </PageHeading>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ error }}</div>
-      <button type="button" class="btn-ghost text-sm" @click="load()">Повторить</button>
+      <button type="button" class="btn-ghost min-h-11 text-sm" @click="load()">Повторить</button>
     </div>
 
     <!-- Скелетоны -->
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 3" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0" />
     </div>
 
     <!-- Пусто -->
-    <div v-else-if="!banners.length" class="card p-10 text-center text-ink-muted">
-      <Icon name="heroicons:rectangle-stack" class="w-10 h-10 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!banners.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:rectangle-stack" class="size-8 mb-3 text-ink-faint" />
       <p>Баннеров пока нет</p>
     </div>
 
     <!-- Список -->
-    <div v-else class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-      <div v-for="b in banners" :key="b.id" class="card p-5 flex flex-col">
+    <div v-else class="border border-border bg-surface">
+      <div v-for="b in banners" :key="b.id" class="border-b border-border p-4 last:border-b-0">
         <div class="flex items-start gap-4 mb-4">
-          <div class="shrink-0 w-20 h-20 bg-surface rounded-card border border-border overflow-hidden flex items-center justify-center">
+          <div class="size-20 shrink-0 overflow-hidden border border-border bg-background flex items-center justify-center">
             <img v-if="b.image_key" :src="urlOf(b.image_key)" :alt="b.title" class="w-full h-full object-contain no-dark-invert">
             <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
           </div>
@@ -252,21 +250,21 @@ onMounted(load)
         <p class="text-xs text-ink-muted mb-4">{{ linkLabel(b) }}</p>
 
         <div class="mt-auto flex flex-wrap gap-2">
-          <button type="button" class="btn-outline text-sm py-1.5" :disabled="busyId === b.id" @click="openEdit(b)">
+          <button type="button" class="btn-outline min-h-11 text-sm" :disabled="busyId === b.id" @click="openEdit(b)">
             <Icon name="heroicons:pencil-square" class="w-4 h-4" /> Изменить
           </button>
-          <button type="button" class="btn-ghost text-sm py-1.5" :disabled="busyId === b.id" @click="toggleActive(b)">
+          <button type="button" class="btn-ghost min-h-11 text-sm" :disabled="busyId === b.id" @click="toggleActive(b)">
             {{ b.is_active ? 'Скрыть' : 'Показать' }}
           </button>
           <button
             type="button"
-            class="btn-ghost text-sm py-1.5 text-danger"
+            class="btn-ghost min-h-11 text-sm text-danger"
             :disabled="busyId === b.id"
             @click="remove(b)"
           >
             <span
               v-if="busyId === b.id"
-              class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+              class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
             />
             <template v-else>
               <Icon name="heroicons:trash" class="w-4 h-4" /> Удалить
@@ -277,11 +275,11 @@ onMounted(load)
     </div>
 
     <!-- Модалка -->
-    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" @click.self="closeModal">
-      <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-none p-6">
+    <div v-if="modalOpen" class="fixed inset-0 z-50 bg-ink/60  flex items-center justify-center p-4" @click.self="closeModal">
+      <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5">
         <div class="flex items-center justify-between gap-3 mb-5">
           <h2 class="text-lg font-semibold">{{ editingId ? 'Изменить баннер' : 'Новый баннер' }}</h2>
-          <button type="button" class="btn-ghost p-1.5" aria-label="Закрыть" @click="closeModal">
+          <button type="button" class="btn-ghost size-11" aria-label="Закрыть" @click="closeModal">
             <Icon name="heroicons:x-mark" class="w-5 h-5" />
           </button>
         </div>
@@ -342,14 +340,14 @@ onMounted(load)
               @change="onImageChange"
             >
             <div class="flex items-center gap-4">
-              <div class="shrink-0 w-20 h-20 bg-surface rounded-card border border-border overflow-hidden flex items-center justify-center">
+              <div class="size-20 shrink-0 overflow-hidden border border-border bg-background flex items-center justify-center">
                 <img v-if="form.image_key" :src="urlOf(form.image_key)" alt="Превью баннера" class="w-full h-full object-contain no-dark-invert">
                 <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
               </div>
               <button type="button" class="btn-outline text-sm py-2" :disabled="uploadingImage" @click="pickImage">
                 <span
                   v-if="uploadingImage"
-                  class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+                  class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
                 />
                 <Icon v-else name="heroicons:arrow-up-tray" class="w-4 h-4" />
                 {{ uploadingImage ? 'Загрузка…' : 'Загрузить' }}
@@ -366,9 +364,9 @@ onMounted(load)
           <div v-if="submitError" class="sm:col-span-2 badge-danger w-full justify-center py-2">{{ submitError }}</div>
 
           <div class="sm:col-span-2 flex justify-end gap-3">
-            <button type="button" class="btn-ghost" @click="closeModal">Отмена</button>
-            <button type="submit" class="btn-primary" :disabled="submitting">
-              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            <button type="button" class="btn-ghost min-h-11" @click="closeModal">Отмена</button>
+            <button type="submit" class="btn-primary min-h-11" :disabled="submitting">
+              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
               {{ submitting ? 'Сохранение…' : 'Сохранить' }}
             </button>
           </div>

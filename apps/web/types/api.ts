@@ -4,6 +4,36 @@
 export type UserRole = 'CLIENT' | 'MANAGER' | 'ADMIN'
 export type StockStatus = 'IN_STOCK' | 'PREORDER' | 'ARCHIVED'
 
+export interface ProblemFieldError {
+  field: string
+  code: string
+  message: string
+}
+
+export interface ProblemDetails {
+  type: string
+  title: string
+  status: number
+  detail: string
+  instance: string
+  code: string
+  requestId: string
+  errors: ProblemFieldError[]
+}
+
+export interface MappedApiError {
+  status?: number
+  type?: string
+  title?: string
+  detail?: string
+  instance?: string
+  code?: string
+  requestId?: string
+  errors: ProblemFieldError[]
+  message: string
+  isProblemDetails: boolean
+}
+
 export interface TokenPair {
   access_token: string
   token_type: string

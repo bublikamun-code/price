@@ -20,6 +20,12 @@ const added = ref(false)
 const addError = ref('')
 let addedTimer: ReturnType<typeof setTimeout> | null = null
 
+const catalogMeta = computed(() => {
+  const value = product.value
+  if (!value) return ''
+  return [value.brand?.name, value.series?.name].filter(Boolean).join(' · ') || 'Без бренда и серии'
+})
+
 useHead({ title: computed(() => product.value?.name || 'Товар') })
 
 async function load() {
@@ -67,75 +73,74 @@ onUnmounted(() => {
   if (addedTimer) clearTimeout(addedTimer)
 })
 
-const STOCK_META: Record<string, { label: string; cls: string }> = {
-  IN_STOCK: { label: 'В наличии', cls: 'badge-success' },
-  PREORDER: { label: 'Под заказ', cls: 'badge-warning' },
-  ARCHIVED: { label: 'Архив', cls: 'badge-danger' },
+const STOCK_META: Record<string, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
+  IN_STOCK: { label: 'В наличии', tone: 'success' },
+  PREORDER: { label: 'Под заказ', tone: 'warning' },
+  ARCHIVED: { label: 'Архив', tone: 'danger' },
 }
 </script>
 
 <template>
   <div>
-    <button class="btn-ghost -ml-2 mb-2 py-2" @click="router.back()">
-      <Icon name="heroicons:chevron-left" class="w-5 h-5" /> Назад
+    <button type="button" class="btn-ghost -ml-2 mb-3 min-h-11" @click="router.back()">
+      <Icon name="heroicons:chevron-left" class="size-5" aria-hidden="true" /> Назад
     </button>
 
-    <!-- Skeleton -->
-    <div v-if="loading" class="card p-4">
-      <div class="skeleton aspect-square mb-4 rounded-card" />
-      <div class="skeleton h-5 w-1/3 mb-2" />
-      <div class="skeleton h-7 w-3/4 mb-4" />
-      <div class="skeleton h-10 w-full" />
+    <div v-if="loading" class="border border-border bg-surface" aria-label="Загрузка товара" aria-busy="true">
+      <div class="grid grid-cols-[96px_1fr] gap-4 p-4"><div class="skeleton size-24" /><div><div class="skeleton h-5 w-3/4" /><div class="skeleton mt-3 h-4 w-1/2" /><div class="skeleton mt-5 h-8 w-1/3" /></div></div>
+    </div>
+    <div v-else-if="notFound" class="border border-border bg-surface p-5">
+      <p class="text-sm font-semibold text-ink">Товар не найден</p>
+      <p class="mt-1 text-sm text-ink-muted">Позиция исключена из каталога или ссылка устарела.</p>
+      <NuxtLink to="/m/catalog" class="btn-primary mt-4 inline-flex min-h-11 items-center">В каталог</NuxtLink>
+    </div>
+    <div v-else-if="error" class="border border-danger/50 bg-danger-soft p-5" role="alert">
+      <p class="text-sm font-semibold text-ink">Не удалось загрузить товар</p>
+      <p class="mt-1 text-sm text-ink-muted">{{ error }}</p>
+      <button type="button" class="btn-outline mt-4 min-h-11" @click="load">Повторить</button>
     </div>
 
-    <!-- Не найдено -->
-    <div v-else-if="notFound" class="card p-8 text-center">
-      <Icon name="heroicons:archive-box-x-mark" class="w-10 h-10 mx-auto mb-2 text-ink-faint" />
-      <p class="text-ink-muted mb-4 text-sm">Товар не найден</p>
-      <NuxtLink to="/m/catalog" class="btn-primary">В каталог</NuxtLink>
-    </div>
-
-    <!-- Ошибка -->
-    <div v-else-if="error" class="card p-6 text-center">
-      <div class="badge-danger mb-3 inline-flex">{{ error }}</div>
-      <div><button class="btn-primary" @click="load">Повторить</button></div>
-    </div>
-
-    <!-- Карточка -->
-    <div v-else-if="product">
-      <div class="card aspect-square overflow-hidden bg-surface-2 flex items-center justify-center mb-4">
-        <img v-if="photoOf(product)" :src="photoOf(product)!" :alt="product.name" class="w-full h-full object-cover">
-        <Icon v-else name="heroicons:photo" class="w-16 h-16 text-ink-faint" />
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2 mb-2">
-        <span v-if="product.brand" class="badge-info">{{ product.brand.name }}</span>
-        <span :class="STOCK_META[product.stock_status]?.cls || 'badge-info'">{{ STOCK_META[product.stock_status]?.label || product.stock_status }}</span>
-      </div>
-
-      <h1 class="text-lg font-bold leading-snug mb-1">{{ product.name }}</h1>
-      <p class="text-xs text-ink-faint mb-4"> Артикул: {{ product.sku }}<span v-if="product.series"> · {{ product.series.name }}</span></p>
-
-      <div class="card p-4 mb-4">
-        <div class="flex items-baseline gap-2 flex-wrap">
-          <span class="text-2xl font-bold text-primary">{{ formatMoney(product.has_discount ? product.client_price : product.retail_price, product.currency) }}</span>
-          <span v-if="product.has_discount" class="text-sm text-ink-faint line-through">{{ formatMoney(product.retail_price, product.currency) }}</span>
+    <article v-else-if="product" class="border border-border bg-surface">
+      <header class="grid grid-cols-[96px_minmax(0,1fr)] gap-4 border-b border-border p-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-5">
+        <div class="flex size-24 items-center justify-center overflow-hidden border border-border bg-background sm:size-40">
+          <img v-if="photoOf(product)" :src="photoOf(product)!" :alt="product.name" class="size-full object-contain">
+          <Icon v-else name="heroicons:photo" class="size-10 text-ink-faint" aria-hidden="true" />
         </div>
-        <p v-if="product.has_discount" class="text-xs text-ink-muted mt-1.5">Ваша цена со скидкой</p>
-      </div>
+        <div class="min-w-0 self-center">
+          <PageHeading
+            class="mb-0"
+            :eyebrow="product.sku"
+            :title="product.name"
+            :description="catalogMeta"
+          >
+            <template #actions>
+              <UiStatusBadge :tone="STOCK_META[product.stock_status]?.tone || 'info'" :label="STOCK_META[product.stock_status]?.label || product.stock_status" dot />
+            </template>
+          </PageHeading>
+        </div>
+      </header>
 
-      <div class="flex items-center gap-2">
-        <input v-model="qty" type="number" min="1" class="input py-3 w-20 text-center">
-        <button class="btn-primary flex-1 justify-center py-3" :disabled="adding" @click="addToCart">
-          <span v-if="adding" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-          <Icon v-else-if="added" name="heroicons:check" class="w-4 h-4" />
-          <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
-          {{ added ? 'Добавлено' : 'В корзину' }}
-        </button>
+      <div class="grid sm:grid-cols-[minmax(0,1fr)_18rem]">
+        <section class="border-b border-border p-4 sm:border-b-0 sm:border-r">
+          <p class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Клиентская цена</p>
+          <p class="numeric mt-2 text-2xl font-bold text-action">{{ formatMoney(product.has_discount ? product.client_price : product.retail_price, product.currency) }}</p>
+          <p v-if="product.has_discount" class="numeric mt-1 text-sm text-ink-muted line-through">{{ formatMoney(product.retail_price, product.currency) }}</p>
+          <p v-if="product.has_discount" class="mt-2 text-xs text-success">Цена с индивидуальной скидкой</p>
+        </section>
+        <section class="p-4">
+          <label class="text-xs font-semibold uppercase tracking-wide text-ink-muted" for="m_product_qty">Количество</label>
+          <input id="m_product_qty" v-model="qty" type="number" min="1" inputmode="numeric" :aria-label="`Количество товара «${product.name}»`" class="input numeric mt-2 min-h-11 text-center">
+          <button type="button" class="btn-primary mt-2 min-h-11 w-full justify-center" :disabled="adding" @click="addToCart">
+            <span v-if="adding" class="size-4 animate-spin border-2 border-white/40 border-t-white" />
+            <Icon v-else-if="added" name="heroicons:check" class="size-4" />
+            <Icon v-else name="heroicons:shopping-cart" class="size-4" />
+            {{ added ? 'Добавлено' : 'В корзину' }}
+          </button>
+        </section>
       </div>
-      <div v-if="addError" class="badge-danger w-full justify-center py-2.5 mt-3">{{ addError }}</div>
+      <div v-if="addError" class="border-t border-danger/50 bg-danger-soft p-3 text-sm text-ink" role="alert">{{ addError }}</div>
+    </article>
 
-      <NuxtLink to="/m/cart" class="btn-ghost w-full justify-center py-2.5 mt-2">Перейти в корзину</NuxtLink>
-    </div>
+    <NuxtLink to="/m/cart" class="btn-ghost mt-3 min-h-11 w-full justify-center">Перейти в корзину</NuxtLink>
   </div>
 </template>

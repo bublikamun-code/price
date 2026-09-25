@@ -187,52 +187,49 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Бренды и серии</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          <template v-if="!loading">{{ brands.length }} брендов</template>
-          <template v-else>Загрузка…</template>
-        </p>
-      </div>
-      <button class="btn-primary shrink-0" @click="openCreate">
-        <Icon name="heroicons:plus" class="w-4 h-4" /> Создать бренд
-      </button>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Бренды и серии"
+      :description="loading ? 'Загрузка…' : `${brands.length} брендов`"
+    >
+      <template #actions>
+        <UiButton size="touch" @click="openCreate"><template #leading><Icon name="heroicons:plus" class="size-4" /></template>Создать бренд</UiButton>
+      </template>
+    </PageHeading>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
+      <button class="btn-ghost min-h-11 text-sm" @click="load">Повторить</button>
     </div>
 
-    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      <div v-for="i in 6" :key="i" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface">
+      <div v-for="i in 6" :key="i" class="border border-border bg-surface p-4">
         <div class="skeleton h-5 w-1/2 mb-2" />
         <div class="skeleton h-3.5 w-1/3 mb-4" />
         <div class="skeleton h-10 w-full" />
       </div>
     </div>
 
-    <div v-else-if="!brands.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:tag" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!brands.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:tag" class="size-8 mb-3 text-ink-faint" />
       <p>Брендов пока нет</p>
       <button class="btn-primary mt-4" @click="openCreate">
         <Icon name="heroicons:plus" class="w-4 h-4" /> Создать первый бренд
       </button>
     </div>
 
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      <div v-for="b in brands" :key="b.id" class="card p-5 flex flex-col">
+    <div v-else class="border border-border bg-surface">
+      <div v-for="b in brands" :key="b.id" class="border-b border-border p-4 last:border-b-0">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <h3 class="font-semibold truncate" :title="b.name">{{ b.name }}</h3>
             <p class="text-xs text-ink-faint font-mono mt-0.5 truncate">{{ b.slug }}</p>
           </div>
           <div class="flex gap-1 shrink-0">
-            <button class="btn-ghost text-xs py-1.5 px-2.5" @click="openRename(b)">
+            <button class="btn-ghost min-h-11 px-2 text-xs" @click="openRename(b)">
               <Icon name="heroicons:pencil" class="w-3.5 h-3.5" /> Переименовать
             </button>
-            <button class="btn-ghost text-xs py-1.5 px-2.5 text-danger" @click="confirmDelete(b)">
+            <button class="btn-ghost min-h-11 px-2 text-xs text-danger" @click="confirmDelete(b)">
               <Icon name="heroicons:trash" class="w-3.5 h-3.5" /> Удалить
             </button>
           </div>
@@ -243,17 +240,17 @@ onMounted(load)
         </p>
 
         <!-- Подтверждение удаления -->
-        <div v-if="confirmingId === b.id" class="flex items-center gap-2 mt-3 p-3 rounded-lg bg-danger-soft">
+        <div v-if="confirmingId === b.id" class="flex items-center gap-2 mt-3 p-3 border border-border bg-danger-soft">
           <span class="text-xs text-danger flex-1">Удалить бренд «{{ b.name }}»?</span>
           <button
-            class="btn-outline text-xs py-1.5 px-3 text-danger border-danger"
+            class="btn-outline min-h-11 px-3 text-xs text-danger"
             :disabled="deletingId === b.id"
             @click="doDelete(b)"
           >
-            <span v-if="deletingId === b.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            <span v-if="deletingId === b.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
             {{ deletingId === b.id ? 'Удаление…' : 'Удалить' }}
           </button>
-          <button class="btn-ghost text-xs py-1.5 px-3" @click="confirmingId = null">Отмена</button>
+          <button class="btn-ghost min-h-11 px-3 text-xs" @click="confirmingId = null">Отмена</button>
         </div>
         <div v-if="deleteError?.id === b.id" class="badge-danger mt-3">{{ deleteError.msg }}</div>
 
@@ -265,7 +262,7 @@ onMounted(load)
           <ul v-else class="space-y-2">
             <li v-for="s in visibleSeries(b.id)" :key="s.id">
               <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg overflow-hidden bg-canvas shrink-0 flex items-center justify-center">
+                <div class="size-10 shrink-0 overflow-hidden border border-border bg-background flex items-center justify-center">
                   <img
                     v-if="thumbOf(s.photo_key)"
                     :src="thumbOf(s.photo_key) || ''"
@@ -276,7 +273,7 @@ onMounted(load)
                 </div>
                 <span class="text-sm truncate flex-1" :title="s.name">{{ s.name }}</span>
                 <label
-                  class="btn-ghost text-xs py-1.5 px-2.5 cursor-pointer shrink-0"
+                  class="btn-ghost min-h-11 cursor-pointer px-2 text-xs"
                   :class="{ 'pointer-events-none opacity-60': uploadingId === s.id }"
                 >
                   <input
@@ -285,7 +282,7 @@ onMounted(load)
                     accept=".jpg,.jpeg,.png,.webp"
                     @change="onPhotoPick(s, $event)"
                   >
-                  <span v-if="uploadingId === s.id" class="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+                  <span v-if="uploadingId === s.id" class="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-sm animate-spin" />
                   <Icon v-else name="heroicons:camera" class="w-3.5 h-3.5" />
                   {{ s.photo_key ? 'Заменить' : 'Загрузить фото' }}
                 </label>
@@ -307,10 +304,10 @@ onMounted(load)
     <!-- Создание бренда -->
     <div
       v-if="showCreate"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) showCreate = false; overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6" @submit.prevent="submitCreate">
+      <form class="w-full max-w-lg border border-border-strong bg-surface p-5" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">
           <h3 class="font-semibold">Новый бренд</h3>
           <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="showCreate = false">
@@ -332,9 +329,9 @@ onMounted(load)
         </div>
         <div v-if="createError" class="badge-danger w-full justify-center py-2 mt-5">{{ createError }}</div>
         <div class="flex justify-end gap-2 mt-6">
-          <button type="button" class="btn-ghost" @click="showCreate = false">Отмена</button>
-          <button type="submit" class="btn-primary" :disabled="!createName.trim() || creating">
-            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          <button type="button" class="btn-ghost min-h-11" @click="showCreate = false">Отмена</button>
+          <button type="submit" class="btn-primary min-h-11" :disabled="!createName.trim() || creating">
+            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
             {{ creating ? 'Создание…' : 'Создать' }}
           </button>
         </div>
@@ -344,10 +341,10 @@ onMounted(load)
     <!-- Переименование бренда -->
     <div
       v-if="renaming"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) renaming = null; overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6" @submit.prevent="submitRename">
+      <form class="w-full max-w-lg border border-border-strong bg-surface p-5" @submit.prevent="submitRename">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div class="min-w-0">
             <h3 class="font-semibold">Переименовать бренд</h3>
@@ -370,9 +367,9 @@ onMounted(load)
         </div>
         <div v-if="renameError" class="badge-danger w-full justify-center py-2 mt-5">{{ renameError }}</div>
         <div class="flex justify-end gap-2 mt-6">
-          <button type="button" class="btn-ghost" @click="renaming = null">Отмена</button>
-          <button type="submit" class="btn-primary" :disabled="!renameName.trim() || renamingBusy">
-            <span v-if="renamingBusy" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          <button type="button" class="btn-ghost min-h-11" @click="renaming = null">Отмена</button>
+          <button type="submit" class="btn-primary min-h-11" :disabled="!renameName.trim() || renamingBusy">
+            <span v-if="renamingBusy" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
             {{ renamingBusy ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>

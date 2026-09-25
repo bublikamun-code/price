@@ -1,98 +1,49 @@
 <script setup lang="ts">
-// Footer — см. SITEMAP.md §2. Реквизиты ООО «Свет в доме».
-const COMPANY_NAME = 'ООО «Свет в доме»'
-const COMPANY_ADDRESS = 'Республика Беларусь, г. Минск, ул. Примерная, д. 1, офис 1'
-const COMPANY_UNP = '123456789'
-const COMPANY_PHONE = '+375 (29) 123-45-67'
-const COMPANY_PHONE_HREF = 'tel:+375291234567'
-const COMPANY_EMAIL = 'info@svetvdome.by'
-const COMPANY_EMAIL_HREF = 'mailto:info@svetvdome.by'
-const COMPANY_COPYRIGHT_YEAR = 2026
+import { COMPANY_COPYRIGHT_YEAR, COMPANY_NAME, SITE_URL } from '~/utils/site'
+
+const auth = useAuth()
+const catalogPath = computed(() => (auth.isAuthenticated ? '/catalog' : '/brands'))
+const accountPath = computed(() => (auth.isAuthenticated ? '/dashboard' : '/login'))
 </script>
 
 <template>
-  <footer class="bg-[#0a0a0a] text-white/80 border-t border-white/10 mt-12 lg:mt-16">
-    <div class="container-app py-10 lg:py-12">
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
-        <!-- Логотип и адрес -->
-        <div class="space-y-4">
-          <NuxtLink to="/" class="inline-block">
-            <span class="text-xl font-bold">
-              <span class="text-white">Price</span><span class="text-white">Portal</span>
-            </span>
+  <footer class="border-t border-ink-on-service/15 bg-service text-ink-on-service">
+    <div class="container-app py-10">
+      <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-10">
+        <div>
+          <NuxtLink to="/" class="inline-flex min-h-11 items-center" aria-label="Price Portal — главная">
+            <span class="numeric text-lg font-bold text-ink-on-service">PRICE<span class="text-action">/</span>WEB</span>
           </NuxtLink>
-          <p class="text-sm text-white/70 leading-relaxed">
+          <p class="mt-3 text-sm leading-6 text-ink-on-service/70">
             {{ COMPANY_NAME }}<br>
-            {{ COMPANY_ADDRESS }}
+            <a :href="SITE_URL" class="hover:text-action">{{ SITE_URL }}</a>
           </p>
         </div>
-
-        <!-- Контакты -->
-        <div class="space-y-4">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-white/90">
-            Контакты
-          </h3>
-          <ul class="space-y-2 text-sm">
-            <li>
-              <a :href="COMPANY_PHONE_HREF" class="hover:text-white transition-colors">
-                {{ COMPANY_PHONE }}
-              </a>
-            </li>
-            <li>
-              <a :href="COMPANY_EMAIL_HREF" class="hover:text-white transition-colors">
-                {{ COMPANY_EMAIL }}
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Разделы -->
-        <div class="space-y-4">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-white/90">
-            Разделы
-          </h3>
-          <nav class="flex flex-col gap-2 text-sm">
-            <NuxtLink to="/brands" class="hover:text-white transition-colors">
-              Бренды
-            </NuxtLink>
-            <NuxtLink to="/catalog" class="hover:text-white transition-colors">
-              Каталог
-            </NuxtLink>
-            <NuxtLink to="/" class="hover:text-white transition-colors">
-              Личный кабинет
-            </NuxtLink>
-            <NuxtLink to="/privacy" class="hover:text-white transition-colors">
-              Политика конфиденциальности
-            </NuxtLink>
+        <div>
+          <h2 class="text-xs font-bold uppercase text-ink-on-service">Связаться</h2>
+          <nav class="mt-3 grid text-sm" aria-label="Связаться">
+            <NuxtLink to="/#lead" class="inline-flex min-h-11 items-center text-ink-on-service/70 hover:text-action">Запросить прайс и доступ</NuxtLink>
+            <NuxtLink :to="accountPath" class="inline-flex min-h-11 items-center text-ink-on-service/70 hover:text-action">Личный кабинет</NuxtLink>
           </nav>
         </div>
-
-        <!-- Реквизиты -->
-        <div class="space-y-4">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-white/90">
-            Реквизиты
-          </h3>
-          <dl class="space-y-2 text-sm text-white/70">
-            <div>
-              <dt class="sr-only">Название</dt>
-              <dd>{{ COMPANY_NAME }}</dd>
-            </div>
-            <div>
-              <dt class="sr-only">УНП</dt>
-              <dd>УНП {{ COMPANY_UNP }}</dd>
-            </div>
-            <div>
-              <dt class="sr-only">Юридический адрес</dt>
-              <dd>{{ COMPANY_ADDRESS }}</dd>
-            </div>
-          </dl>
+        <div>
+          <h2 class="text-xs font-bold uppercase text-ink-on-service">Разделы</h2>
+          <nav class="mt-3 grid text-sm" aria-label="Разделы сайта">
+            <NuxtLink to="/brands" class="inline-flex min-h-11 items-center text-ink-on-service/70 hover:text-action">Бренды</NuxtLink>
+            <NuxtLink :to="catalogPath" class="inline-flex min-h-11 items-center text-ink-on-service/70 hover:text-action">Каталог</NuxtLink>
+          </nav>
+        </div>
+        <div>
+          <h2 class="text-xs font-bold uppercase text-ink-on-service">Правовая информация</h2>
+          <nav class="mt-3 grid text-sm" aria-label="Правовая информация">
+            <NuxtLink to="/privacy" class="inline-flex min-h-11 items-center text-ink-on-service/70 hover:text-action">Политика конфиденциальности</NuxtLink>
+          </nav>
+          <p class="mt-3 text-xs leading-5 text-ink-on-service/60">Реквизиты клиента и оператора указываются в договоре и документах заказа.</p>
         </div>
       </div>
-
-      <!-- Копирайт -->
-      <div class="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/50">
+      <div class="mt-8 flex flex-col gap-2 border-t border-ink-on-service/15 pt-5 text-xs text-ink-on-service/70 sm:flex-row sm:items-center sm:justify-between">
         <p>© {{ COMPANY_COPYRIGHT_YEAR }} {{ COMPANY_NAME }}. Все права защищены.</p>
-        <p>Работает на PricePortal</p>
+        <p class="font-mono uppercase">B2B COMMERCE SYSTEM</p>
       </div>
     </div>
   </footer>

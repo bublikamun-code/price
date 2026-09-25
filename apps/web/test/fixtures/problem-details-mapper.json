@@ -1,0 +1,74 @@
+{
+  "cases": [
+    {
+      "name": "v2 order not found",
+      "fixture": "../api/tests/fixtures/v2/problem_order_not_found.json",
+      "expected": {
+        "status": 404,
+        "type": "https://priceweb.local/problems/order-not-found",
+        "title": "Заявка не найдена",
+        "detail": "Заявка не найдена",
+        "instance": "/api/v2/orders/99999999-9999-4999-8999-999999999999",
+        "code": "ORDER_NOT_FOUND",
+        "requestId": "v2-fixture-order-not-found-001",
+        "errors": [],
+        "message": "Заявка не найдена",
+        "isProblemDetails": true
+      }
+    },
+    {
+      "name": "v2 validation field error",
+      "fixture": "../api/tests/fixtures/v2/problem_validation_error.json",
+      "expected": {
+        "status": 422,
+        "type": "https://priceweb.local/problems/validation-error",
+        "title": "Ошибка валидации",
+        "detail": "Проверьте корректность параметров запроса",
+        "instance": "/api/v2/orders/not-a-uuid",
+        "code": "VALIDATION_ERROR",
+        "requestId": "v2-fixture-validation-001",
+        "errors": [
+          {
+            "field": "orderId",
+            "code": "uuid_parsing",
+            "message": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 10"
+          }
+        ],
+        "message": "Проверьте корректность параметров запроса",
+        "isProblemDetails": true
+      },
+      "detailed": "orderId: Input should be a valid UUID, invalid length: expected length 32 for simple format, found 10"
+    },
+    {
+      "name": "legacy FastAPI detail",
+      "input": { "data": { "detail": "Недостаточно товара" }, "response": { "status": 409 } },
+      "expected": {
+        "status": 409,
+        "detail": "Недостаточно товара",
+        "message": "Недостаточно товара",
+        "errors": [],
+        "isProblemDetails": false
+      }
+    },
+    {
+      "name": "legacy nested error",
+      "input": { "data": { "error": { "message": "Ошибка сервиса" } } },
+      "expected": {
+        "message": "Ошибка сервиса",
+        "errors": [],
+        "isProblemDetails": false
+      }
+    },
+    {
+      "name": "unknown input uses fallback",
+      "input": { "response": { "status": 500, "_data": {} } },
+      "fallback": "Не удалось выполнить запрос",
+      "expected": {
+        "status": 500,
+        "message": "Не удалось выполнить запрос",
+        "errors": [],
+        "isProblemDetails": false
+      }
+    }
+  ]
+}

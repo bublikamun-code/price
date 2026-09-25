@@ -19,6 +19,9 @@ const q = ref('')
 const brandId = ref('')
 const page = ref(1)
 const hasMore = computed(() => products.value.length < total.value)
+// Справочник брендов не зависит от поиска/страницы, поэтому загружаем его
+// только при первом открытии мобильного каталога.
+let brandsLoaded = false
 const stockLabel: Record<string, string> = { IN_STOCK: 'В наличии', PREORDER: 'Под заказ' }
 function priceOf(p: ProductCard) {
   return p.has_discount ? p.client_price : p.retail_price
@@ -37,13 +40,17 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [catalog, f] = await Promise.all([
-      request<CatalogPage>('/api/v1/catalog/products', { query: queryParams(page.value) }),
-      request<FiltersOut>('/api/v1/catalog/filters'),
-    ])
+    const catalogPromise = request<CatalogPage>('/api/v1/catalog/products', { query: queryParams(page.value) })
+    const filtersPromise = brandsLoaded
+      ? Promise.resolve(null)
+      : request<FiltersOut>('/api/v1/catalog/filters')
+    const [catalog, f] = await Promise.all([catalogPromise, filtersPromise])
     products.value = catalog.data
     total.value = catalog.meta.total
-    brands.value = f.brands
+    if (f) {
+      brands.value = f.brands
+      brandsLoaded = true
+    }
   } catch (e) {
     error.value = getErrorMessage(e, 'Не удалось загрузить каталог')
   } finally {
@@ -54,6 +61,13 @@ async function load() {
 // Поиск/смена бренда: всегда с первой страницы.
 function search() {
   if (loading.value) return
+  page.value = 1
+  load()
+}
+
+function resetFilters() {
+  q.value = ''
+  brandId.value = ''
   page.value = 1
   load()
 }
@@ -81,79 +95,76 @@ onMounted(load)
 
 <template>
   <div>
-    <h1 class="text-lg font-bold mb-3">Каталог</h1>
+    <PageHeading
+      eyebrow="Каталог v1"
+      title="Товары"
+      :description="`Найдено: ${total}`"
+    />
 
-    <form class="flex flex-col gap-2 mb-4" @submit.prevent="search">
+    <form class="mb-4 border border-border bg-surface p-3" @submit.prevent="search">
+      <label class="sr-only" for="m_catalog_search">Поиск по каталогу</label>
       <div class="relative">
-        <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
-        <input v-model="q" class="input pl-10" type="search" placeholder="Артикул, наименование">
+        <Icon name="heroicons:magnifying-glass" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint" aria-hidden="true" />
+        <input id="m_catalog_search" v-model="q" class="input min-h-11 pl-9" type="search" placeholder="Артикул или наименование">
       </div>
-      <select v-model="brandId" class="input py-2.5" @change="search">
+      <label class="sr-only" for="m_catalog_brand">Производитель</label>
+      <select id="m_catalog_brand" v-model="brandId" class="input mt-2 min-h-11" @change="search">
         <option value="">Все производители</option>
         <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
       </select>
+      <button type="submit" class="btn-primary mt-2 min-h-11 w-full justify-center" :disabled="loading">Найти</button>
     </form>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
+    <div v-if="error" class="mb-4 flex items-center gap-3 border border-danger/50 bg-danger-soft p-3" role="alert">
+      <p class="min-w-0 flex-1 text-sm text-ink">{{ error }}</p>
+      <button type="button" class="btn-outline min-h-11 shrink-0" @click="load">Повторить</button>
     </div>
 
-    <!-- Skeletons -->
-    <div v-if="loading && !products.length" class="grid grid-cols-2 gap-3">
-      <div v-for="i in 6" :key="i" class="card p-3">
-        <div class="skeleton aspect-square mb-3 rounded-card" />
-        <div class="skeleton h-4 w-3/4 mb-2" />
-        <div class="skeleton h-5 w-1/2" />
+    <div v-if="loading && !products.length" class="border border-border bg-surface" aria-label="Загрузка каталога" aria-busy="true">
+      <div v-for="i in 6" :key="i" class="flex h-24 items-center gap-3 border-b border-border p-3 last:border-b-0">
+        <div class="skeleton size-14 shrink-0" />
+        <div class="flex-1"><div class="skeleton h-4 w-3/4" /><div class="skeleton mt-2 h-3 w-1/2" /></div>
       </div>
     </div>
 
-    <!-- Пусто -->
-    <div v-else-if="!products.length" class="card p-8 text-center text-ink-muted">
-      <Icon name="heroicons:archive-box-x-mark" class="w-10 h-10 mx-auto mb-2 text-ink-faint" />
-      <p class="text-sm">Ничего не найдено</p>
+    <div v-else-if="!products.length" class="border border-border bg-surface p-5">
+      <p class="text-sm font-semibold text-ink">Товары не найдены</p>
+      <p class="mt-1 text-sm text-ink-muted">Измените запрос или сбросьте фильтры.</p>
+      <button type="button" class="btn-outline mt-4 min-h-11" @click="resetFilters">Сбросить фильтры</button>
     </div>
 
-    <!-- Плитка -->
-    <div v-else class="grid grid-cols-2 gap-3">
-      <NuxtLink
-        v-for="p in products"
-        :key="p.id"
-        :to="`/m/catalog/${encodeURIComponent(p.sku)}`"
-        class="card card-hover p-3 flex flex-col"
-      >
-        <div class="aspect-square bg-canvas rounded-card mb-2.5 flex items-center justify-center overflow-hidden">
-          <img
-            v-if="thumbOf(p.photo_key)"
-            :src="thumbOf(p.photo_key)!"
-            :alt="p.name"
-            loading="lazy"
-            class="w-full h-full object-contain"
-          >
-          <Icon v-else name="heroicons:photo" class="w-8 h-8 text-ink-faint" />
-        </div>
-        <span v-if="p.brand" class="chip bg-canvas text-ink-muted self-start mb-1.5 !px-2 !py-0.5">{{ p.brand.name }}</span>
-        <span class="text-sm font-medium leading-snug line-clamp-2 mb-2">{{ p.name }}</span>
-        <div class="mt-auto">
-          <div class="flex items-baseline gap-1.5 flex-wrap mb-1">
-            <span class="text-base font-bold" :class="p.has_discount ? 'text-primary' : 'text-ink'">{{ formatMoney(priceOf(p), p.currency) }}</span>
-            <span v-if="p.has_discount" class="text-xs text-ink-faint line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
+    <section v-else class="border border-border bg-surface" aria-label="Список товаров">
+      <header class="flex min-h-11 items-center justify-between border-b border-border bg-surface-2 px-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        <span>Запись товара</span><span class="numeric">{{ products.length }} / {{ total }}</span>
+      </header>
+      <div class="divide-y divide-border">
+        <NuxtLink
+          v-for="p in products"
+          :key="p.id"
+          :to="`/m/catalog/${encodeURIComponent(p.sku)}`"
+          class="grid min-h-24 grid-cols-[56px_minmax(0,1fr)] gap-3 p-3 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-action sm:grid-cols-[64px_minmax(0,1fr)_auto]"
+        >
+          <div class="flex size-14 items-center justify-center overflow-hidden border border-border bg-background sm:size-16">
+            <img v-if="thumbOf(p.photo_key)" :src="thumbOf(p.photo_key)!" :alt="p.name" loading="lazy" class="size-full object-contain">
+            <Icon v-else name="heroicons:photo" class="size-6 text-ink-faint" aria-hidden="true" />
           </div>
-          <span :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'">{{ stockLabel[p.stock_status] || p.stock_status }}</span>
-        </div>
-      </NuxtLink>
-    </div>
+          <div class="min-w-0">
+            <p v-if="p.brand" class="truncate text-xs font-semibold text-ink-muted">{{ p.brand.name }}</p>
+            <p class="mt-0.5 line-clamp-2 text-sm font-semibold leading-5 text-ink">{{ p.name }}</p>
+            <p class="numeric mt-1 truncate text-xs text-ink-muted">SKU {{ p.sku }}</p>
+            <span :class="p.stock_status === 'IN_STOCK' ? 'badge-success' : 'badge-warning'" class="mt-2">{{ stockLabel[p.stock_status] || p.stock_status }}</span>
+          </div>
+          <div class="col-start-2 flex items-end justify-between border-t border-border pt-2 sm:col-start-auto sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
+            <span v-if="p.has_discount" class="numeric text-xs text-ink-muted line-through">{{ formatMoney(p.retail_price, p.currency) }}</span>
+            <span class="numeric text-base font-bold text-action">{{ formatMoney(priceOf(p), p.currency) }}</span>
+          </div>
+        </NuxtLink>
+      </div>
+    </section>
 
-    <button
-      v-if="hasMore && !loading"
-      class="btn-outline w-full justify-center py-3 mt-4"
-      :disabled="loadingMore"
-      @click="loadMore"
-    >
-      <span v-if="loadingMore" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin" />
-      {{ loadingMore ? 'Загрузка…' : 'Ещё' }}
+    <button v-if="hasMore && !loading" type="button" class="btn-outline mt-3 min-h-11 w-full justify-center" :disabled="loadingMore" @click="loadMore">
+      {{ loadingMore ? 'Загрузка…' : 'Показать ещё' }}
     </button>
-
-    <p v-if="!loading && products.length" class="text-xs text-ink-faint text-center mt-3"> Показано {{ products.length }} из {{ total }}</p>
+    <p v-if="!loading && products.length" class="mt-3 text-xs text-ink-muted">Показано {{ products.length }} из {{ total }}</p>
   </div>
 </template>

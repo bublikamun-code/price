@@ -23,58 +23,61 @@ function initialOf(name: string): string {
 </script>
 
 <template>
-  <div class="container-app py-10 lg:py-14">
-    <div class="max-w-2xl mb-8">
-      <span class="chip bg-surface-2 text-primary mb-4">Публичный каталог</span>
-      <h1 class="text-3xl sm:text-4xl font-bold mb-3">Каталоги брендов</h1>
-      <p class="text-lg text-ink-muted">
-        Состав склада открыт: выберите бренд и посмотрите серии с номенклатурой.
-      </p>
-    </div>
+  <div class="container-app py-8 lg:py-12">
+    <PageHeading
+      eyebrow="Публичный каталог"
+      title="Каталоги брендов"
+      description="Состав склада открыт: выберите бренд и посмотрите серии с номенклатурой."
+    />
 
-    <!-- Skeleton -->
-    <div v-if="status === 'pending'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-      <div v-for="i in 8" :key="i" class="card p-5">
-        <div class="skeleton w-12 h-12 rounded-pill mb-4" />
-        <div class="skeleton h-4 w-3/4" />
+    <div v-if="status === 'pending'" class="record-list mt-8" aria-busy="true">
+      <div v-for="i in 6" :key="i" class="record flex items-center gap-4">
+        <UiSkeleton class="size-12 shrink-0" />
+        <div class="min-w-0 flex-1">
+          <UiSkeleton class="h-4 w-2/5" />
+          <UiSkeleton class="mt-2 h-3 w-1/3" />
+        </div>
       </div>
     </div>
 
-    <!-- Ошибка -->
-    <div v-else-if="error" class="card p-12 text-center">
-      <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-danger" />
-      <p class="mb-5">{{ getErrorMessage(error, 'Не удалось загрузить бренды', { nested: true }) }}</p>
-      <button class="btn-primary" @click="() => refresh()">Повторить</button>
-    </div>
+    <UiErrorState
+      v-else-if="error"
+      class="mt-8"
+      title="Не удалось загрузить бренды"
+      :description="getErrorMessage(error, 'Проверьте соединение и повторите попытку.', { nested: true })"
+      @retry="refresh"
+    />
 
-    <!-- Пусто -->
-    <div v-else-if="!brands?.length" class="card p-12 text-center">
-      <Icon name="heroicons:squares-2x2" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
-      <p class="mb-1 font-medium">Скоро здесь появятся каталоги</p>
-      <p class="text-sm text-ink-muted">Мы уже готовим витрину — загляните позже.</p>
-    </div>
+    <UiPanel v-else-if="!brands?.length" class="mt-8">
+      <UiEmptyState
+        icon="heroicons:squares-2x2"
+        title="Скоро здесь появятся каталоги"
+        description="Мы уже готовим витрину — загляните позже."
+      />
+    </UiPanel>
 
-    <!-- Список брендов -->
     <template v-else>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <nav class="record-list mt-8" aria-label="Бренды">
         <NuxtLink
           v-for="b in brands"
           :key="b.id"
           :to="`/brands/${b.slug}`"
-          class="card card-hover p-6 flex items-center gap-4"
+          class="record flex min-h-20 items-center gap-4 hover:bg-surface-2"
         >
-          <span class="shrink-0 w-12 h-12 rounded-pill bg-surface-2 text-secondary flex items-center justify-center text-lg font-bold">{{ initialOf(b.name) }}</span>
-          <span class="min-w-0 flex-1">
-            <span class="block font-semibold truncate">{{ b.name }}</span>
-            <span class="block text-xs text-ink-faint mt-0.5">Серии и номенклатура</span>
+          <span class="flex size-12 shrink-0 items-center justify-center border border-border bg-surface-2 text-lg font-bold text-ink">
+            {{ initialOf(b.name) }}
           </span>
-          <Icon name="heroicons:chevron-right" class="w-5 h-5 shrink-0 text-ink-faint" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate font-semibold text-ink">{{ b.name }}</span>
+            <span class="mt-1 block text-xs text-ink-muted">Серии и номенклатура</span>
+          </span>
+          <Icon name="heroicons:chevron-right" class="size-5 shrink-0 text-ink-muted" aria-hidden="true" />
         </NuxtLink>
-      </div>
+      </nav>
 
-      <section class="card p-6 sm:p-8 mt-8 max-w-4xl">
-        <h2 class="text-lg font-semibold mb-3">О каталогах</h2>
-        <p class="text-sm text-ink-muted leading-relaxed">
+      <section class="mt-10 max-w-4xl border-t border-border pt-6">
+        <h2 class="text-lg font-semibold">О каталогах</h2>
+        <p class="mt-3 text-sm leading-6 text-ink-muted">
           Мы публикуем состав каталогов открыто: по каждому бренду доступны серии, наименования и артикулы.
           Персональные цены со скидками по вашему договору, остатки и оформление заявок доступны после входа
           в личный кабинет — данные выдаёт ваш персональный менеджер.
@@ -82,15 +85,12 @@ function initialOf(name: string): string {
       </section>
     </template>
 
-    <!-- CTA -->
-    <section class="mt-8">
-      <div class="card border-primary/20 bg-surface-2 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div class="text-center sm:text-left">
-          <h2 class="text-lg font-semibold mb-1">Войдите, чтобы увидеть цены</h2>
-          <p class="text-sm text-ink-muted">Персональный прайс-лист, корзина и заявки — в вашем кабинете.</p>
-        </div>
-        <NuxtLink to="/login" class="btn-primary px-6 py-3 shrink-0">Войти в кабинет</NuxtLink>
+    <section class="mt-10 flex flex-col items-start justify-between gap-4 border-y border-border bg-surface px-5 py-6 sm:flex-row sm:items-center">
+      <div>
+        <h2 class="text-lg font-semibold">Войдите, чтобы увидеть цены</h2>
+        <p class="mt-1 text-sm text-ink-muted">Персональный прайс-лист, корзина и заявки — в вашем кабинете.</p>
       </div>
+      <NuxtLink to="/login" class="btn-primary shrink-0">Войти в кабинет</NuxtLink>
     </section>
   </div>
 </template>

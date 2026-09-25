@@ -1,37 +1,32 @@
 <script setup lang="ts">
-// Layout авторизованного клиента: шапка + sidebar (desktop) + нижняя навигация (mobile) + контент.
-// Навигация — см. SITEMAP.md §2. Sidebar — компонент AppSidebar (тот же и на главной).
-// Приватная зона не индексируется (публичная SEO-витрина только на /brands).
 useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 
-// Нижняя навигация для мобильных (<lg) — 4 пункта, «Аналитика» ведёт на /dashboard.
-const bottomNavItems = [
-  { to: '/', label: 'Главная', icon: 'heroicons:home' },
-  { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
-  { to: '/orders', label: 'Заявки', icon: 'heroicons:clipboard-document-list' },
-  { to: '/dashboard', label: 'Аналитика', icon: 'heroicons:bars-3' },
-]
+const route = useRoute()
+const cart = useCartV2()
+const reviewOpen = ref(false)
+const showRequestEntry = computed(() => !['/cart', '/checkout'].includes(route.path))
+
+onMounted(() => {
+  void cart.ensureLoaded().catch(() => undefined)
+})
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-canvas">
-    <AppHeader />
-    <!-- Вся строка (сайдбар + контент) — в одном контейнере с шапкой,
-         чтобы карточка шапки и колонка контента были строго друг под другом -->
-    <div class="flex-1 flex justify-center">
-      <div class="container-app flex">
-        <AppSidebar />
-
-        <!-- Content -->
-        <main class="flex-1 min-w-0 py-6 lg:py-8 pb-24 lg:pb-0">
+  <div class="min-h-screen bg-background text-ink">
+    <MobileClientHeader />
+    <ClientHeader />
+    <div class="flex min-h-[calc(100dvh-3.5rem)] justify-center lg:min-h-[calc(100dvh-4rem)]">
+      <div class="container-app flex w-full items-start px-3 sm:px-4 lg:px-6">
+        <ClientSidebar />
+        <main class="min-w-0 flex-1 py-4 pb-28 sm:py-6 lg:py-8 lg:pb-10">
+          <div v-if="showRequestEntry" class="mb-5 lg:mb-6">
+            <CurrentRequestStrip @open="reviewOpen = true" />
+          </div>
           <slot />
         </main>
       </div>
     </div>
-    <AppFooter />
-    <AppCartPopup />
-
-    <!-- Нижняя навигация (mobile): плавающая карточка, состав — для клиента -->
-    <AppBottomNav :items="bottomNavItems" />
+    <RequestReviewSheet v-model:open="reviewOpen" />
+    <MobileClientNav />
   </div>
 </template>

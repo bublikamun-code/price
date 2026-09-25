@@ -270,20 +270,19 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold">Файлы</h1>
-      <p class="text-sm text-ink-muted mt-1">
-        Загрузка PDF-каталогов брендов, спец-выгрузок CSV и прочих файлов для клиентов.
-      </p>
-    </div>
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Файлы"
+      description="Загрузка PDF-каталогов брендов, спец-выгрузок CSV и прочих файлов для клиентов."
+    />
 
     <!-- Форма загрузки -->
-    <div class="card p-6 mb-8">
+    <div class="mb-5 border border-border bg-surface p-5">
       <h2 class="font-semibold mb-4">Загрузка файла</h2>
 
       <!-- Dropzone -->
       <div
-        class="rounded-card border-2 border-dashed p-8 text-center cursor-pointer transition-colors mb-2"
+        class="border border-border border-2 border-dashed p-8 text-center cursor-pointer transition-colors mb-2"
         :class="dragging ? 'border-primary bg-primary-soft' : 'border-border hover:border-primary/60'"
         @click="pickFile"
         @dragover.prevent="dragging = true"
@@ -314,7 +313,7 @@ onUnmounted(() => {
       <div v-if="fileError" class="badge-danger w-full justify-center py-2 mt-3">{{ fileError }}</div>
 
       <div v-if="selectedFile" class="flex justify-end mt-2">
-        <button class="btn-ghost text-sm" @click="clearFile">
+        <button class="btn-ghost min-h-11 text-sm" @click="clearFile">
           <Icon name="heroicons:x-mark" class="w-4 h-4" /> Убрать файл
         </button>
       </div>
@@ -355,7 +354,7 @@ onUnmounted(() => {
         :disabled="submitting || !selectedFile"
         @click="onSubmit"
       >
-        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
         {{ submitting ? 'Загрузка…' : 'Загрузить' }}
       </button>
     </div>
@@ -385,25 +384,25 @@ onUnmounted(() => {
 
     <div v-if="error" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load()">Повторить</button>
+      <button class="btn-ghost min-h-11 text-sm" @click="load()">Повторить</button>
     </div>
     <div v-if="downloadError" class="badge-danger w-full justify-center py-2 mb-4">
       {{ downloadError }}
     </div>
 
     <!-- Скелетоны -->
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 4" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
     <!-- Пусто -->
-    <div v-else-if="!files.length" class="card p-10 text-center text-ink-muted">
-      <Icon name="heroicons:folder" class="w-10 h-10 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!files.length" class="border border-border bg-surface p-6 text-ink-muted">
+      <Icon name="heroicons:folder" class="size-8 mb-3 text-ink-faint" />
       <p>Файлов пока нет</p>
     </div>
 
     <!-- Таблица -->
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -437,25 +436,25 @@ onUnmounted(() => {
               <td class="px-4 py-3 text-ink-muted whitespace-nowrap">{{ formatDate(f.created_at) }}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 <button
-                  class="btn-ghost text-sm py-1.5"
+                  class="btn-ghost min-h-11 text-sm"
                   :disabled="downloadingId === f.id"
                   @click="download(f)"
                 >
                   <span
                     v-if="downloadingId === f.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
                   />
                   <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
                   Скачать
                 </button>
                 <button
-                  class="btn-ghost text-sm py-1.5 text-danger"
+                  class="btn-ghost min-h-11 text-sm text-danger"
                   :disabled="deletingId === f.id"
                   @click="remove(f)"
                 >
                   <span
                     v-if="deletingId === f.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
                   />
                   <template v-else>
                     <Icon name="heroicons:trash" class="w-4 h-4" /> Удалить
@@ -470,19 +469,19 @@ onUnmounted(() => {
 
     <!-- Пагинация -->
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
         <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
         <button
           v-else
-          class="w-10 h-10 rounded-pill font-medium text-sm"
-          :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+          class="btn-outline size-11 font-medium text-sm"
+          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>

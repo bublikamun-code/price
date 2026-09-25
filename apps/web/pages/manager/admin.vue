@@ -118,19 +118,23 @@ onMounted(load)
 
 <template>
   <div>
-    <div class="flex items-center justify-between gap-4 mb-6">
-      <h1 class="text-2xl font-bold">Администрирование</h1>
-      <button type="button" class="btn-primary" @click="openCreate">
-        <Icon name="heroicons:plus" class="w-5 h-5" />
-        <span>Создать менеджера</span>
-      </button>
-    </div>
+    <PageHeading eyebrow="Сервис менеджера" title="Администрирование">
+      <template #actions>
+        <UiButton size="touch" @click="openCreate">
+          <template #leading><Icon name="heroicons:plus" class="size-5" /></template>
+          Создать менеджера
+        </UiButton>
+      </template>
+    </PageHeading>
 
     <div v-if="error" class="badge-danger w-full justify-center py-2 mb-4">{{ error }}</div>
     <div v-if="actionError" class="badge-danger w-full justify-center py-2 mb-4">{{ actionError }}</div>
 
-    <div class="card overflow-hidden">
-      <table class="w-full text-sm">
+    <div class="border border-border bg-surface">
+      <!-- На узких экранах таблица не влезает: скроллим по горизонтали
+           вместо сжатия колонок до нечитаемой ширины. -->
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[640px]">
         <thead>
           <tr class="text-left text-ink-faint border-b border-border">
             <th class="px-4 py-3 font-medium">Имя</th>
@@ -158,7 +162,7 @@ onMounted(load)
             <td class="px-4 py-3 text-right whitespace-nowrap">
               <button
                 type="button"
-                class="btn-ghost text-sm"
+                class="btn-ghost min-h-11 text-sm"
                 :disabled="togglingId === m.id"
                 @click="askToggle(m)"
               >{{ m.is_active ? 'Блокировать' : 'Разблокировать' }}</button>
@@ -166,18 +170,19 @@ onMounted(load)
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Создание менеджера -->
     <div
       v-if="showCreate"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeCreate(); overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none" @submit.prevent="submitCreate">
+      <form class="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5" @submit.prevent="submitCreate">
         <div class="flex items-start justify-between gap-4 mb-5">
           <h3 class="font-semibold">Новый менеджер</h3>
-          <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="closeCreate">
+          <button type="button" class="btn-ghost -mr-2 size-11 shrink-0" @click="closeCreate">
             <Icon name="heroicons:x-mark" class="w-5 h-5" />
           </button>
         </div>
@@ -201,8 +206,8 @@ onMounted(load)
         <div v-if="createError" class="badge-danger w-full justify-center py-2 mt-5">{{ createError }}</div>
 
         <div class="flex justify-end gap-2 mt-6">
-          <button type="button" class="btn-ghost" @click="closeCreate">Отмена</button>
-          <button type="submit" class="btn-primary" :disabled="!createValid || creating">
+          <button type="button" class="btn-ghost min-h-11" @click="closeCreate">Отмена</button>
+          <button type="submit" class="btn-primary min-h-11" :disabled="!createValid || creating">
             {{ creating ? 'Создание…' : 'Создать' }}
           </button>
         </div>
@@ -212,10 +217,10 @@ onMounted(load)
     <!-- Подтверждение блокировки / разблокировки -->
     <div
       v-if="confirmTarget"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) cancelToggle(); overlayDown = false"
     >
-      <div class="card max-w-md w-full p-6">
+      <div class="w-full max-w-md border border-border-strong bg-surface p-5">
         <h3 class="font-semibold mb-3">{{ confirmTarget.is_active ? 'Заблокировать менеджера?' : 'Разблокировать менеджера?' }}</h3>
         <p class="text-sm text-ink-muted mb-2">{{ confirmTarget.full_name }} ({{ confirmTarget.email }})</p>
         <p v-if="confirmTarget.is_active" class="text-sm text-ink-faint mb-5">
@@ -223,8 +228,8 @@ onMounted(load)
         </p>
         <div v-else class="mb-5" />
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn-ghost" @click="cancelToggle">Отмена</button>
-          <button type="button" class="btn-primary" :disabled="togglingId !== null" @click="confirmToggle">
+          <button type="button" class="btn-ghost min-h-11" @click="cancelToggle">Отмена</button>
+          <button type="button" class="btn-primary min-h-11" :disabled="togglingId !== null" @click="confirmToggle">
             {{ togglingId !== null ? 'Сохранение…' : 'Подтвердить' }}
           </button>
         </div>

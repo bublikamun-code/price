@@ -1,308 +1,220 @@
 <script setup lang="ts">
-// Детали заявки клиента. См. SITEMAP.md §6, §9 (snapshot цен/курса).
-import type { OrderRead } from '~/types/api'
+import type { OrderDetail } from '~/domain/api/v2/order.schema'
+import { AppProblem } from '~/domain/api/v2/problem'
+import { ORDER_STATUS_META } from '~/utils/order-status'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
 
 const route = useRoute()
-const { request } = useApi()
+const { getById, cancel: cancelOrderV2, repeat } = useOrdersV2()
 
-const STATUS_META: Record<string, { label: string; cls: string }> = {
-  NEW: { label: 'Новая', cls: 'badge-info' },
-  IN_PROGRESS: { label: 'В работе', cls: 'badge-info' },
-  SHIPPED: { label: 'Отгружена', cls: 'badge-warning' },
-  COMPLETED: { label: 'Завершена', cls: 'badge-success' },
-  CANCELLED: { label: 'Отменена', cls: 'badge-danger' },
-}
-
-// --- Status timeline ---
-const STATUS_ORDER = ['NEW', 'IN_PROGRESS', 'SHIPPED', 'COMPLETED'] as const
-const STATUS_LABELS: Record<string, string> = {
-  NEW: 'Новая',
-  IN_PROGRESS: 'В работе',
-  SHIPPED: 'Отгружена',
-  COMPLETED: 'Завершена',
-  CANCELLED: 'Отменена',
-}
+const STATUS_META = ORDER_STATUS_META
 
 const loading = ref(true)
 const error = ref('')
 const notFound = ref(false)
-const order = ref<OrderRead | null>(null)
-const acting = ref(false) // повтор/отмена в процессе
+const order = ref<OrderDetail | null>(null)
+const acting = ref(false)
+let loadSeq = 0
+let isUnmounted = false
+let isMounted = false
 
-useHead({ title: computed(() => order.value ? `Заявка ${formatOrderNumber(order.value.seq, order.value.id)}` : 'Заявка') })
+useHead({
+  title: computed(() => order.value ? `Заявка ${formatOrderNumber(order.value.sequence, order.value.id)}` : 'Заявка'),
+})
 
-function rateSourceLabel(s: string | null | undefined): string {
-  switch (s) {
+function problemMessage(cause: unknown, fallback: string): string {
+  return cause instanceof AppProblem ? cause.message : getErrorMessage(cause, fallback)
+}
+
+function rateSourceLabel(source: string | null): string {
+  switch (source) {
     case 'BYN': return 'Без конвертации (BYN)'
     case 'FIXED': return 'По договору'
     case 'NBRB': return 'Текущий курс НБ РБ'
-    default: return s || '—'
+    default: return source || '—'
   }
 }
-// formatMoney/formatDateTime/formatOrderNumber — автоимпорт из utils/format.ts
-function snapName(item: { product_snapshot?: Record<string, unknown> | null }): string {
-  const name = item.product_snapshot?.name
-  const sku = item.product_snapshot?.sku
-  return (typeof name === 'string' && name) || (typeof sku === 'string' && sku) || '—'
-}
-function snapSku(item: { product_snapshot?: Record<string, unknown> | null }): string {
-  const sku = item.product_snapshot?.sku
-  return (typeof sku === 'string' && sku) || ''
+
+function deliveryLabel(method: OrderDetail['delivery']['method']): string {
+  return method === 'PICKUP' ? 'Самовывоз' : 'Доставка'
 }
 
 async function load() {
+  const seq = ++loadSeq
+  const orderId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id
+  if (!orderId) {
+    notFound.value = true
+    loading.value = false
+    return
+  }
   loading.value = true
   error.value = ''
   notFound.value = false
+  order.value = null
   try {
-    order.value = await request<OrderRead>(`/api/v1/orders/${route.params.id}`)
-  } catch (e) {
-    if (getErrorStatus(e) === 404) notFound.value = true
-    else error.value = getErrorMessage(e, 'Не удалось загрузить заявку')
+    const snapshot = await getById(orderId)
+    if (seq !== loadSeq || isUnmounted) return
+    order.value = snapshot.order
+  } catch (cause) {
+    if (seq !== loadSeq || isUnmounted) return
+    if (cause instanceof AppProblem && cause.status === 404) notFound.value = true
+    else error.value = problemMessage(cause, 'Не удалось загрузить заявку')
   } finally {
-    loading.value = false
+    if (seq === loadSeq && !isUnmounted) loading.value = false
   }
 }
 
 async function repeatOrder() {
   if (acting.value || !order.value) return
+  const current = order.value
   acting.value = true
   error.value = ''
   try {
-    await request(`/api/v1/orders/${order.value.id}/repeat`, { method: 'POST' })
+    await repeat(current.id, current.version)
     await navigateTo('/cart')
-  } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось повторить заказ')
+  } catch (cause) {
+    error.value = problemMessage(cause, 'Не удалось повторить заявку')
   } finally {
     acting.value = false
   }
 }
+
+const canCancel = computed(() => order.value?.status === 'NEW' || order.value?.status === 'IN_PROGRESS')
 
 async function cancelOrder() {
-  if (acting.value || !order.value) return
-  if (!confirm('Отменить заявку?')) return
+  if (acting.value || !order.value || !canCancel.value) return
+  if (!window.confirm('Отменить заявку? Это действие нельзя отменить.')) return
+  const orderId = order.value.id
   acting.value = true
   error.value = ''
   try {
-    order.value = await request<OrderRead>(`/api/v1/orders/${order.value.id}/cancel`, {
-      method: 'POST',
-    })
-  } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось отменить заявку')
+    const snapshot = await cancelOrderV2(orderId)
+    order.value = snapshot.order
+  } catch (cause) {
+    error.value = problemMessage(cause, 'Не удалось отменить заявку')
   } finally {
     acting.value = false
   }
 }
 
-const canCancel = computed(
-  () => order.value && (order.value.status === 'NEW' || order.value.status === 'IN_PROGRESS')
-)
-
-const statusSteps = computed(() => {
-  if (!order.value) return []
-  const currentStatus = order.value.status
-  const isCancelled = currentStatus === 'CANCELLED'
-
-  // Нормальный поток: NEW → IN_PROGRESS → SHIPPED → COMPLETED
-  const currentIdx = STATUS_ORDER.indexOf(currentStatus as typeof STATUS_ORDER[number])
-  const normalSteps = STATUS_ORDER.map((key, idx) => ({
-    key,
-    label: STATUS_LABELS[key],
-    done: currentIdx >= 0 && idx < currentIdx,
-    active: key === currentStatus,
-  }))
-
-  if (isCancelled) {
-    // При отмене: показываем все шаги как неактивные (NEW — пройден) + CANCELLED как текущий
-    return [
-      ...normalSteps.map(s => ({ ...s, active: false, done: s.key === 'NEW' })),
-      { key: 'CANCELLED', label: STATUS_LABELS.CANCELLED, done: false, active: true },
-    ]
-  }
-
-  return normalSteps
-})
-
-// PDF-экспорт заявки (§16 п.25): job-паттерн, поллинг в composables/usePdfExport.ts.
+// Экспортные endpoints пока существуют только в v1. Операции заказа — v2.
 const { activeId: pdfActiveId, error: pdfError, exportOrderPdf } = usePdfExport()
 const pdfBusy = computed(() => pdfActiveId.value !== null)
-// XLSX-экспорт заявки (для 1С): синхронный GET + blob в composables/useXlsxExport.ts.
 const { activeId: xlsxActiveId, error: xlsxError, exportOrderXlsx } = useXlsxExport()
 const xlsxBusy = computed(() => xlsxActiveId.value !== null)
 
 function xlsxFileName(): string {
-  const no = order.value?.seq ? `-${String(order.value.seq).padStart(3, '0')}` : ''
-  return `order${no}-${route.params.id}.xlsx`
+  const number = order.value?.sequence ? `-${String(order.value.sequence).padStart(3, '0')}` : ''
+  return `order${number}-${route.params.id}.xlsx`
 }
 
-onMounted(load)
+onMounted(() => {
+  isMounted = true
+  void load()
+})
+
+watch(
+  () => (Array.isArray(route.params.id) ? route.params.id[0] : route.params.id),
+  () => { if (isMounted) void load() },
+)
+
+onUnmounted(() => {
+  isUnmounted = true
+  loadSeq += 1
+})
 </script>
 
 <template>
-  <div>
-    <nav class="flex items-center gap-2 text-sm text-ink-muted mb-6">
-      <NuxtLink to="/orders" class="hover:text-primary">Мои заявки</NuxtLink>
-      <Icon name="heroicons:chevron-right" class="w-3.5 h-3.5 text-ink-faint" />
-      <span class="text-ink">Детали</span>
+  <div class="min-w-0" data-testid="order-detail-page">
+    <nav class="mb-5 flex min-h-11 items-center gap-2 text-sm text-ink-muted" aria-label="Навигация заявки">
+      <NuxtLink to="/orders" class="inline-flex min-h-11 items-center hover:text-action">Мои заявки</NuxtLink>
+      <Icon name="heroicons:chevron-right" class="size-3.5 text-ink-faint" aria-hidden="true" />
+      <span class="text-ink" aria-current="page">Детали</span>
     </nav>
 
-    <div v-if="loading" class="space-y-4">
-      <div class="skeleton h-24 w-full"/>
-      <div class="skeleton h-64 w-full"/>
+    <div v-if="loading" class="space-y-5" data-testid="order-detail-loading" aria-live="polite" aria-busy="true">
+      <UiSkeleton class="h-24 w-full" /><UiSkeleton class="h-56 w-full" /><UiSkeleton class="h-64 w-full" />
+      <span class="sr-only">Загрузка заявки</span>
     </div>
 
-    <div v-else-if="notFound" class="card p-12 text-center">
-      <Icon name="heroicons:archive-box-x-mark" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
-      <p class="text-ink-muted mb-4">Заявка не найдена</p>
-      <NuxtLink to="/orders" class="btn-primary">К списку заявок</NuxtLink>
-    </div>
+    <UiEmptyState v-else-if="notFound" title="Заявка не найдена" description="Возможно, ссылка устарела или заявка недоступна в вашем контексте." icon="heroicons:archive-box-x-mark" data-testid="order-detail-not-found">
+      <template #action><NuxtLink to="/orders" class="inline-flex min-h-11 items-center justify-center border border-action bg-action px-4 text-sm font-semibold text-action-on hover:bg-action-hover">К списку заявок</NuxtLink></template>
+    </UiEmptyState>
 
-    <div v-else-if="error && !order" class="card p-8 text-center">
-      <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-primary" @click="load">Повторить</button></div>
-    </div>
+    <UiErrorState v-else-if="error && !order" title="Заявка недоступна" :description="error" data-testid="order-detail-error" @retry="load" />
 
-    <div v-else-if="order">
-      <!-- Шапка -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-2xl font-bold">Заявка {{ formatOrderNumber(order.seq, order.id) }}</h1>
-            <span :class="STATUS_META[order.status]?.cls || 'badge-info'">
-              {{ STATUS_META[order.status]?.label || order.status }}
-            </span>
-          </div>
-          <p class="text-sm text-ink-muted">
-            от {{ formatDateTime(order.created_at) }}
-            <span v-if="order.manager_id"> · менеджер назначен</span>
-          </p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button class="btn-secondary" :disabled="acting" @click="repeatOrder">
-            <Icon name="heroicons:arrow-path" class="w-4 h-4" /> Повторить
-          </button>
-          <button class="btn-secondary" :disabled="pdfBusy" @click="exportOrderPdf(order.id)">
-            <span v-if="pdfBusy" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
-            <Icon v-else name="heroicons:document-arrow-down" class="w-4 h-4" />
-            {{ pdfBusy ? 'Готовим PDF…' : 'Скачать PDF' }}
-          </button>
-          <button class="btn-secondary" :disabled="xlsxBusy" @click="exportOrderXlsx(order.id, xlsxFileName())">
-            <span v-if="xlsxBusy" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
-            <Icon v-else name="heroicons:table-cells" class="w-4 h-4" />
-            {{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}
-          </button>
-          <button v-if="canCancel" class="btn-outline text-danger" :disabled="acting" @click="cancelOrder">
-            <Icon name="heroicons:x-circle" class="w-4 h-4" /> Отменить
-          </button>
-        </div>
-      </div>
-
-      <!-- Status timeline -->
-      <div class="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-        <template v-for="(step, i) in statusSteps" :key="step.key">
-          <div class="flex items-center gap-2 shrink-0">
-            <div
-              class="w-8 h-8 rounded-pill flex items-center justify-center text-xs font-bold"
-              :class="step.active ? 'bg-primary text-white' : step.done ? 'bg-success text-white' : 'bg-canvas text-ink-faint'"
-            >
-              <Icon v-if="step.done" name="heroicons:check" class="w-4 h-4" />
-              <span v-else>{{ i + 1 }}</span>
-            </div>
-            <span class="text-xs whitespace-nowrap" :class="step.active ? 'font-semibold text-ink' : 'text-ink-muted'">
-              {{ step.label }}
-            </span>
-          </div>
-          <div v-if="i < statusSteps.length - 1" class="w-8 h-px bg-border shrink-0" />
+    <article v-else-if="order" data-testid="order-detail">
+      <PageHeading
+        eyebrow="Мои заявки"
+        :title="formatOrderNumber(order.sequence, order.id)"
+        :description="`Создана ${formatDateTime(order.createdAt)} · версия ${order.version}${order.managerId ? ' · менеджер назначен' : ''}`"
+      >
+        <template #actions>
+          <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot data-testid="order-detail-status" />
+          <UiButton variant="outline" size="touch" :loading="acting" :disabled="acting" data-testid="order-detail-repeat" @click="repeatOrder"><template #leading><Icon name="heroicons:arrow-path" class="size-4" /></template>Повторить</UiButton>
+          <UiButton variant="outline" size="touch" :loading="pdfBusy" :disabled="pdfBusy" :data-testid="`order-detail-pdf-${order.id}`" @click="exportOrderPdf(order.id)"><template #leading><Icon name="heroicons:document-arrow-down" class="size-4" /></template>{{ pdfBusy ? 'Готовим PDF…' : 'PDF' }}</UiButton>
+          <UiButton variant="outline" size="touch" :loading="xlsxBusy" :disabled="xlsxBusy" :data-testid="`order-detail-xlsx-${order.id}`" @click="exportOrderXlsx(order.id, xlsxFileName())"><template #leading><Icon name="heroicons:table-cells" class="size-4" /></template>{{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}</UiButton>
+          <UiButton v-if="canCancel" variant="danger" size="touch" :loading="acting" :disabled="acting" data-testid="order-detail-cancel" @click="cancelOrder"><template #leading><Icon name="heroicons:x-circle" class="size-4" /></template>Отменить</UiButton>
         </template>
+      </PageHeading>
+
+      <UiErrorState v-if="error" class="mt-4" title="Действие не выполнено" :description="error" data-testid="order-detail-action-error" />
+      <UiErrorState v-if="pdfError || xlsxError" class="mt-4" title="Экспорт недоступен" :description="pdfError || xlsxError || ''" data-testid="order-detail-export-error" />
+
+      <section class="mt-6 border-b border-border pb-6" aria-labelledby="order-status-title">
+        <div class="mb-4 flex items-center justify-between gap-4">
+          <h2 id="order-status-title" class="text-lg font-bold text-ink">Статус</h2>
+          <span class="text-xs text-ink-muted">Обновлён {{ formatDateTime(order.updatedAt) }}</span>
+        </div>
+        <OrderStatusTimeline :status="order.status" />
+      </section>
+
+      <section class="mt-7" aria-labelledby="order-lines-title">
+        <div class="flex items-end justify-between gap-4 border-b border-border pb-3">
+          <div><p class="text-xs font-semibold uppercase tracking-wider text-ink-muted">Состав</p><h2 id="order-lines-title" class="mt-1 text-lg font-bold text-ink">Позиции заявки</h2></div>
+          <span class="numeric text-sm text-ink-muted">{{ order.lines.length }} {{ pluralize(order.lines.length, 'позиция', 'позиции', 'позиций') }}</span>
+        </div>
+        <div class="border-b border-border" data-testid="order-detail-lines">
+          <OrderLineRecord v-for="item in order.lines" :key="item.id" :line="item" readonly />
+        </div>
+      </section>
+
+      <div class="mt-7 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div class="min-w-0 border-y border-border">
+          <section class="border-b border-border px-4 py-4 sm:px-5" aria-labelledby="order-delivery-title">
+            <h2 id="order-delivery-title" class="text-sm font-semibold text-ink">Получение</h2>
+            <dl class="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <div class="flex justify-between gap-4 sm:block"><dt class="text-ink-muted">Способ</dt><dd class="font-medium text-ink sm:mt-1">{{ deliveryLabel(order.delivery.method) }}</dd></div>
+              <div v-if="order.delivery.pickupPoint" class="flex justify-between gap-4 sm:block"><dt class="text-ink-muted">Точка</dt><dd class="text-right font-medium text-ink sm:mt-1 sm:text-left">{{ order.delivery.pickupPoint }}</dd></div>
+              <div v-if="order.delivery.address" class="flex justify-between gap-4 sm:col-span-2 sm:block"><dt class="text-ink-muted">Адрес</dt><dd class="text-right font-medium text-ink sm:mt-1 sm:text-left">{{ order.delivery.address }}</dd></div>
+              <div v-if="order.delivery.preferredDate" class="flex justify-between gap-4 sm:block"><dt class="text-ink-muted">Желаемая дата</dt><dd class="font-medium text-ink sm:mt-1">{{ formatDate(order.delivery.preferredDate) }}</dd></div>
+            </dl>
+            <p v-if="order.delivery.comment" class="mt-4 border-t border-border pt-3 text-sm leading-6 text-ink-muted">{{ order.delivery.comment }}</p>
+          </section>
+
+          <section class="px-4 py-4 sm:px-5" aria-labelledby="order-rate-title">
+            <h2 id="order-rate-title" class="text-sm font-semibold text-ink">Курс и фиксация цены</h2>
+            <dl class="mt-3 space-y-2 text-sm">
+              <div class="flex justify-between gap-4"><dt class="text-ink-muted">Валюта</dt><dd class="font-medium text-ink">{{ order.total.currency }}</dd></div>
+              <div class="flex justify-between gap-4"><dt class="text-ink-muted">Курс к BYN</dt><dd class="numeric font-medium text-ink">{{ order.exchangeRate.value }}</dd></div>
+              <div class="flex justify-between gap-4"><dt class="text-ink-muted">Источник</dt><dd class="text-right font-medium text-ink">{{ rateSourceLabel(order.exchangeRate.source) }}</dd></div>
+            </dl>
+            <p class="mt-3 text-xs leading-5 text-ink-muted">Курс и цены зафиксированы на момент оформления и не пересчитываются.</p>
+          </section>
+        </div>
+
+        <aside class="bg-service p-5 text-service-ink lg:sticky lg:top-24" aria-labelledby="order-total-title">
+          <p class="text-xs font-semibold uppercase tracking-wider text-service-muted">Итог</p>
+          <h2 id="order-total-title" class="mt-1 text-lg font-bold">Сумма заявки</h2>
+          <p v-if="order.notes" class="mt-4 border-b border-service-border pb-4 text-sm leading-6 text-service-muted">{{ order.notes }}</p>
+          <div class="mt-5 flex items-baseline justify-between gap-4 border-t border-service-border pt-4">
+            <span class="font-semibold">Всего</span>
+            <strong class="numeric text-xl font-bold">{{ formatMoney(order.total.amount, order.total.currency) }}</strong>
+          </div>
+          <p class="mt-4 text-xs leading-5 text-service-muted">Повторная заявка использует текущую версию {{ order.version }} исходной заявки.</p>
+        </aside>
       </div>
-
-      <div v-if="error" class="badge-danger w-full justify-center py-2 mb-4">{{ error }}</div>
-      <div v-if="pdfError || xlsxError" class="badge-warning w-full justify-center py-2 mb-4">{{ pdfError || xlsxError }}</div>
-
-      <!-- Позиции -->
-      <div class="card overflow-hidden mb-6">
-        <div class="px-5 py-4 border-b border-border">
-          <h3 class="font-semibold">Позиции ({{ order.items?.length || 0 }})</h3>
-        </div>
-        <!-- Таблица: планшет/десктоп -->
-        <div class="overflow-x-auto hidden md:block">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-ink-muted text-left bg-surface-2 border-b border-border">
-                <th class="px-5 py-3 font-medium">Товар</th>
-                <th class="px-5 py-3 font-medium text-center">Кол-во</th>
-                <th class="px-5 py-3 font-medium text-right">Цена</th>
-                <th class="px-5 py-3 font-medium text-right">Сумма</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in order.items" :key="item.id" class="border-t border-border">
-                <td class="px-5 py-3">
-                  <p class="font-medium">{{ snapName(item) }}</p>
-                  <p class="text-xs text-ink-faint">
-                    Артикул: {{ snapSku(item) }}
-                    <NuxtLink v-if="snapSku(item)" :to="`/catalog/${snapSku(item)}`" class="text-primary hover:underline ml-1">→ каталог</NuxtLink>
-                  </p>
-                  <p v-if="item.note" class="text-xs text-ink-muted mt-1">📝 {{ item.note }}</p>
-                </td>
-                <td class="px-5 py-3 text-center">{{ item.quantity }}</td>
-                <td class="px-5 py-3 text-right">{{ formatMoney(item.unit_price, item.currency_code) }}</td>
-                <td class="px-5 py-3 text-right font-medium">{{ formatMoney(item.unit_price * item.quantity, item.currency_code) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Строки-блоки: мобильные (таблица на 390px не влезает) -->
-        <div class="md:hidden px-5 py-1.5 divide-y divide-border">
-          <article v-for="item in order.items" :key="item.id" class="py-3.5">
-            <p class="font-medium leading-snug">{{ snapName(item) }}</p>
-            <p class="text-xs text-ink-faint mt-0.5">
-              Артикул: {{ snapSku(item) }}
-              <NuxtLink v-if="snapSku(item)" :to="`/catalog/${snapSku(item)}`" class="text-primary hover:underline ml-1">→ каталог</NuxtLink>
-            </p>
-            <p v-if="item.note" class="text-xs text-ink-muted mt-1">📝 {{ item.note }}</p>
-            <div class="flex items-center justify-between gap-3 mt-2">
-              <span class="text-sm text-ink-muted">{{ item.quantity }} × {{ formatMoney(item.unit_price, item.currency_code) }}</span>
-              <span class="font-bold whitespace-nowrap">{{ formatMoney(item.unit_price * item.quantity, item.currency_code) }}</span>
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <!-- Сводка + курс -->
-      <div class="grid sm:grid-cols-2 gap-6">
-        <div class="card p-5">
-          <h3 class="font-semibold mb-3">Курс и валюта</h3>
-          <div class="flex justify-between text-sm py-1">
-            <span class="text-ink-muted">Валюта</span>
-            <span class="font-medium">{{ order.currency_code }}</span>
-          </div>
-          <div class="flex justify-between text-sm py-1">
-            <span class="text-ink-muted">Курс к BYN</span>
-            <span class="font-medium">{{ order.exchange_rate }}</span>
-          </div>
-          <div class="flex justify-between text-sm py-1">
-            <span class="text-ink-muted">Источник</span>
-            <span class="font-medium">{{ rateSourceLabel(order.rate_source) }}</span>
-          </div>
-          <p class="text-xs text-ink-faint mt-3">Курс и цены зафиксированы на момент оформления и не пересчитываются.</p>
-        </div>
-
-        <div class="card p-5">
-          <h3 class="font-semibold mb-3">Итого</h3>
-          <div v-if="order.notes" class="text-sm py-1 mb-2">
-            <span class="text-ink-muted">Комментарий: </span>
-            <span>{{ order.notes }}</span>
-          </div>
-          <div class="flex justify-between text-xl font-bold pt-2 border-t border-border mt-2">
-            <span>Сумма</span>
-            <span>{{ formatMoney(order.total_amount, order.currency_code) }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    </article>
   </div>
 </template>

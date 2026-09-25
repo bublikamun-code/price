@@ -8,7 +8,9 @@
 //   логин-редирект и auth.session/fetchMe заполнят пользователя на клиенте;
 // - строгое сравнение с false: у старой cookie поля нет (undefined) — не редиректим.
 export default defineNuxtRouteMiddleware((to) => {
-  const SKIP_PATHS = ['/consent', '/login', '/privacy']
+  // Публичная главная / всегда остаётся публичной (SITEMAP §5): клиент без
+  // принятого согласия должен видеть лендинг, а не редирект на /consent.
+  const SKIP_PATHS = ['/', '/consent', '/login', '/privacy']
   if (SKIP_PATHS.includes(to.path)) return
   // Mini App /m/** (§16 п.27): consent принимается в веб-кабинете,
   // повторно в Telegram webview не запрашивается.

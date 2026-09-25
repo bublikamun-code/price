@@ -77,23 +77,32 @@ const unreadTotal = ref(0)
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
+let loadSeq = 0
+let isUnmounted = false
+
 async function load() {
+  const seq = ++loadSeq
+  // Фиксируем страницу и фильтр, чтобы устаревший ответ не переписал новый.
+  const requestedPage = page.value
+  const requestedType = typeFilter.value
   loading.value = true
   error.value = ''
   try {
     const res = await request<NotificationsPage>('/api/v1/notifications', {
-      query: { page: page.value, per_page: PER_PAGE, type: typeFilter.value || undefined },
+      query: { page: requestedPage, per_page: PER_PAGE, type: requestedType || undefined },
     })
+    if (seq !== loadSeq || isUnmounted) return
     items.value = res.data
     total.value = res.meta.total
     unreadTotal.value = res.meta.unread_count ?? 0
     // Бейдж шапки обновляем только из загрузки без фильтра
     // (unread_count — свои непрочитанные; при фильтре семантика не гарантирована).
-    if (!typeFilter.value) unreadCount.value = unreadTotal.value
+    if (!requestedType) unreadCount.value = unreadTotal.value
   } catch (e) {
+    if (seq !== loadSeq || isUnmounted) return
     error.value = getErrorMessage(e, 'Не удалось загрузить уведомления')
   } finally {
-    loading.value = false
+    if (seq === loadSeq && !isUnmounted) loading.value = false
   }
 }
 
@@ -144,93 +153,110 @@ function formatDateTime(s: string): string {
   return new Date(s).toLocaleString('ru-RU')
 }
 
+onUnmounted(() => {
+  isUnmounted = true
+  loadSeq++
+})
+
 onMounted(load)
 </script>
 
 <template>
   <div>
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <h1 class="text-2xl font-bold">Уведомления</h1>
-      <button class="btn-outline" :disabled="markingAll || !unreadTotal" @click="markAll">
-        <span v-if="markingAll" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-full animate-spin"/>
-        <Icon v-else name="heroicons:check" class="w-4 h-4" />
-        Отметить все прочитанными
-      </button>
-    </div>
+    <PageHeading eyebrow="Рабочий кабинет" title="Уведомления">
+      <template #actions>
+        <UiButton variant="outline" size="touch" :loading="markingAll" :disabled="markingAll || !unreadTotal" @click="markAll">
+          <template #leading><Icon name="heroicons:check" class="size-4" aria-hidden="true" /></template>
+          Отметить все прочитанными
+        </UiButton>
+      </template>
+    </PageHeading>
 
-    <!-- Фильтр по типу -->
-    <div class="flex flex-wrap gap-2 mb-6">
+    <nav class="mt-5 flex flex-wrap gap-2" aria-label="Фильтр уведомлений">
       <button
         v-for="f in TYPE_FILTERS"
         :key="f.value || 'all'"
-        class="px-3.5 py-1.5 rounded-pill text-sm font-medium transition-colors"
-        :class="typeFilter === f.value ? 'bg-primary text-white' : 'bg-surface border border-border text-ink-muted hover:border-primary/60'"
+        class="min-h-11 border px-3.5 text-sm font-medium transition-colors"
+        :class="typeFilter === f.value
+          ? 'border-action bg-action text-action-on'
+          : 'border-border bg-surface text-ink-muted hover:border-ink-muted hover:text-ink'"
+        :aria-pressed="typeFilter === f.value"
         @click="applyType(f.value)"
       >{{ f.label }}</button>
+    </nav>
+
+    <div v-if="error" class="mt-5 flex flex-col items-start justify-between gap-3 border-y border-danger/30 bg-danger-soft px-4 py-3 sm:flex-row sm:items-center">
+      <p class="text-sm text-danger-text" role="alert">{{ error }}</p>
+      <button class="btn-ghost min-h-11" @click="load">Повторить</button>
     </div>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
-    </div>
-
-    <div v-if="loading" class="card p-5">
-      <div v-for="i in 4" :key="i" class="skeleton h-16 w-full mb-3 last:mb-0"/>
-    </div>
-
-    <div v-else-if="!items.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:bell-slash" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
-      <p>Нет уведомлений</p>
-    </div>
-
-    <!-- Timeline-список -->
-    <div v-else class="flex flex-col gap-3">
-      <div
-        v-for="n in items"
-        :key="n.id"
-        class="card p-4 flex items-start gap-3 transition-colors"
-        :class="n.is_read ? '' : 'border-primary/30 bg-primary/5 cursor-pointer hover:border-primary/50'"
-        :title="n.is_read ? '' : 'Отметить прочитанным'"
-        @click="markRead(n)"
-      >
-        <span class="w-9 h-9 shrink-0 rounded-pill flex items-center justify-center" :class="typeMeta(n.type).cls">
-          <Icon :name="typeMeta(n.type).icon" class="w-5 h-5" />
-        </span>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-medium text-sm">{{ n.title }}</span>
-            <span class="chip bg-canvas text-ink-muted">{{ typeMeta(n.type).label }}</span>
-            <span v-if="n.is_broadcast" class="chip bg-canvas text-ink-muted" title="Массовая рассылка">Всем</span>
-          </div>
-          <p v-if="n.body" class="text-sm text-ink-muted mt-1">{{ n.body }}</p>
-          <p class="text-xs text-ink-faint mt-1.5">{{ formatDateTime(n.created_at) }}</p>
-          <NuxtLink
-            v-if="getNotificationLink(n)"
-            :to="getNotificationLink(n) ?? undefined"
-            class="btn-ghost text-xs py-1 px-2 mt-2 inline-flex items-center gap-1"
-            @click.stop
-          >
-            Открыть
-            <Icon name="heroicons:arrow-right" class="w-3 h-3" />
-          </NuxtLink>
-        </div>
-        <span v-if="!n.is_read" class="w-2.5 h-2.5 shrink-0 mt-2 rounded-pill bg-primary" :class="markingId === n.id ? 'animate-pulse' : ''"/>
+    <div v-if="loading" class="record-list mt-6" aria-busy="true">
+      <div v-for="i in 4" :key="i" class="record">
+        <UiSkeleton class="h-12 w-full" />
       </div>
     </div>
 
-    <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
-        <Icon name="heroicons:chevron-left" class="w-5 h-5" />
+    <div v-else-if="!items.length" class="mt-6 border-y border-border py-14 text-center text-ink-muted">
+      <Icon name="heroicons:bell-slash" class="mx-auto size-10 text-ink-faint" aria-hidden="true" />
+      <p class="mt-3">Нет уведомлений</p>
+    </div>
+
+    <section v-else class="record-list mt-6" aria-label="Список уведомлений">
+      <article
+        v-for="n in items"
+        :key="n.id"
+        class="record flex items-start gap-3"
+        :class="n.is_read ? '' : 'bg-surface-2/60'"
+      >
+        <span class="flex size-11 shrink-0 items-center justify-center border border-border" :class="typeMeta(n.type).cls">
+          <Icon :name="typeMeta(n.type).icon" class="size-5" aria-hidden="true" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-semibold text-ink">{{ n.title }}</span>
+            <span class="border border-border bg-surface px-2 py-0.5 text-xs text-ink-muted">{{ typeMeta(n.type).label }}</span>
+            <span v-if="n.is_broadcast" class="border border-border bg-surface px-2 py-0.5 text-xs text-ink-muted" title="Массовая рассылка">Всем</span>
+            <span v-if="!n.is_read" class="size-2 bg-action" aria-label="Новое уведомление" />
+          </div>
+          <p v-if="n.body" class="mt-1 text-sm leading-5 text-ink-muted">{{ n.body }}</p>
+          <p class="mt-1.5 text-xs text-ink-faint">{{ formatDateTime(n.created_at) }}</p>
+          <NuxtLink
+            v-if="getNotificationLink(n)"
+            :to="getNotificationLink(n) ?? undefined"
+            class="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-action hover:underline"
+          >
+            Открыть
+            <Icon name="heroicons:arrow-right" class="size-4" aria-hidden="true" />
+          </NuxtLink>
+        </div>
+        <button
+          v-if="!n.is_read"
+          type="button"
+          class="btn-ghost size-11 shrink-0"
+          :disabled="markingId === n.id"
+          :aria-label="`Отметить уведомление «${n.title}» прочитанным`"
+          @click="markRead(n)"
+        >
+          <UiSpinner v-if="markingId === n.id" :size="14" />
+          <Icon v-else name="heroicons:check" class="size-5" aria-hidden="true" />
+        </button>
+      </article>
+    </section>
+
+    <nav v-if="!loading && totalPages > 1" class="mt-6 flex items-center justify-center gap-1" aria-label="Страницы уведомлений">
+      <button class="btn-ghost size-11 shrink-0" :disabled="page <= 1" aria-label="Предыдущая страница" @click="goPage(page - 1)">
+        <Icon name="heroicons:chevron-left" class="size-5" />
       </button>
       <button
         v-for="pgn in totalPages"
         :key="pgn"
-        class="w-10 h-10 rounded-pill font-medium text-sm"
-        :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+        class="size-11 border border-border bg-surface font-medium text-sm text-ink transition-colors hover:bg-surface-2"
+        :class="pgn === page ? 'bg-action text-action-on' : ''"
+        :aria-current="pgn === page ? 'page' : undefined"
         @click="goPage(pgn)"
       >{{ pgn }}</button>
-      <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
-        <Icon name="heroicons:chevron-right" class="w-5 h-5" />
+      <button class="btn-ghost size-11 shrink-0" :disabled="page >= totalPages" aria-label="Следующая страница" @click="goPage(page + 1)">
+        <Icon name="heroicons:chevron-right" class="size-5" />
       </button>
     </nav>
   </div>

@@ -293,31 +293,28 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl font-bold">Управление каталогом</h1>
-        <p class="text-sm text-ink-muted mt-1">
-          <template v-if="!loading">{{ total }} товаров</template>
-          <template v-else>Загрузка…</template>
-        </p>
-      </div>
-      <div class="flex items-center gap-3 shrink-0">
-        <button class="btn-secondary" :disabled="exporting" @click="startFullExport">
-          <Icon name="heroicons:arrow-down-tray" class="w-4 h-4" />
+    <PageHeading
+      eyebrow="Сервис менеджера"
+      title="Управление каталогом"
+      :description="loading ? 'Загрузка…' : `${total} товаров`"
+    >
+      <template #actions>
+        <UiButton variant="outline" size="touch" :loading="exporting" :disabled="exporting" @click="startFullExport">
+          <template #leading><Icon name="heroicons:arrow-down-tray" class="size-4" /></template>
           {{ exporting ? 'Экспорт…' : 'Экспорт CSV' }}
-        </button>
-        <NuxtLink to="/manager/import" class="btn-secondary shrink-0">
-          <Icon name="heroicons:arrow-up-tray" class="w-4 h-4" /> Импортировать прайс
+        </UiButton>
+        <NuxtLink to="/manager/import" class="btn-outline inline-flex min-h-11 items-center gap-2 px-4 text-sm font-semibold">
+          <Icon name="heroicons:arrow-up-tray" class="size-4" /> Импортировать прайс
         </NuxtLink>
-      </div>
-    </div>
+      </template>
+    </PageHeading>
 
     <div v-if="exportError" class="flex items-center gap-3 mb-4">
       <div class="badge-danger">{{ exportError }}</div>
     </div>
 
     <!-- Фильтры -->
-    <form class="card p-4 mb-6" @submit.prevent="applySearch">
+    <form class="mb-5 border border-border bg-surface p-3" @submit.prevent="applySearch">
       <div class="flex flex-col lg:flex-row lg:items-center gap-3">
         <div class="relative flex-1 min-w-0">
           <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
@@ -344,8 +341,8 @@ onUnmounted(() => {
           <option :value="100">100 / стр.</option>
         </select>
         <div class="flex gap-2 shrink-0">
-          <button type="submit" class="btn-primary flex-1 lg:flex-none">Найти</button>
-          <button type="button" class="btn-ghost" @click="resetFilters">Сбросить</button>
+          <button type="submit" class="btn-primary min-h-11 flex-1 lg:flex-none">Найти</button>
+          <button type="button" class="btn-ghost min-h-11" @click="resetFilters">Сбросить</button>
         </div>
       </div>
     </form>
@@ -355,16 +352,16 @@ onUnmounted(() => {
       <button class="btn-ghost text-sm" @click="load">Повторить</button>
     </div>
 
-    <div v-if="loading" class="card p-5">
+    <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 8" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0" />
     </div>
 
-    <div v-else-if="!sortedRows.length" class="card p-12 text-center text-ink-muted">
-      <Icon name="heroicons:cube" class="w-12 h-12 mx-auto mb-3 text-ink-faint" />
+    <div v-else-if="!sortedRows.length" class="border border-border bg-surface p-6 text-center text-ink-muted">
+      <Icon name="heroicons:cube" class="size-8 mb-3 text-ink-faint" />
       <p>{{ appliedQ || brandId || stock ? 'По этим фильтрам товаров нет' : 'Товаров пока нет' }}</p>
     </div>
 
-    <div v-else class="card overflow-hidden">
+    <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -409,7 +406,7 @@ onUnmounted(() => {
                 <span :class="STOCK_META[p.stock_status].cls">{{ STOCK_META[p.stock_status].label }}</span>
               </td>
               <td class="px-4 py-3 text-right">
-                <button class="btn-outline text-xs py-1.5 px-3" @click="openEdit(p)">Изменить</button>
+                <button class="btn-outline min-h-11 px-3 text-xs" @click="openEdit(p)">Изменить</button>
               </td>
             </tr>
           </tbody>
@@ -423,19 +420,19 @@ onUnmounted(() => {
     >
       <p class="text-sm text-ink-muted">Показано {{ shownFrom }}–{{ shownTo }} из {{ total }}</p>
       <nav v-if="totalPages > 1" class="flex items-center gap-1">
-        <button class="btn-ghost p-2.5" :disabled="page <= 1" @click="goPage(page - 1)">
+        <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
           <Icon name="heroicons:chevron-left" class="w-5 h-5" />
         </button>
         <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
           <span v-if="pgn === '...'" class="px-2 text-ink-faint">…</span>
           <button
             v-else
-            class="w-10 h-10 rounded-pill font-medium text-sm transition-colors duration-150"
-            :class="pgn === page ? 'bg-primary text-white' : 'text-ink-muted hover:bg-canvas'"
+            class="btn-outline size-11 font-medium text-sm"
+            :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
             @click="goPage(pgn as number)"
           >{{ pgn }}</button>
         </template>
-        <button class="btn-ghost p-2.5" :disabled="page >= totalPages" @click="goPage(page + 1)">
+        <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
           <Icon name="heroicons:chevron-right" class="w-5 h-5" />
         </button>
       </nav>
@@ -444,16 +441,16 @@ onUnmounted(() => {
     <!-- Изменение товара -->
     <div
       v-if="editing"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
       @mousedown.self="overlayDown = true" @click.self="if (overlayDown) closeEdit(); overlayDown = false"
     >
-      <form class="card max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto scrollbar-none" @submit.prevent="submitEdit">
+      <form class="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5" @submit.prevent="submitEdit">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div class="min-w-0">
             <h3 class="font-semibold">Товар {{ editing.sku }}</h3>
             <p class="text-sm text-ink-muted mt-0.5 truncate">{{ editing.name }}</p>
           </div>
-          <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="closeEdit">
+          <button type="button" class="btn-ghost -mr-2 size-11 shrink-0" @click="closeEdit">
             <Icon name="heroicons:x-mark" class="w-5 h-5" />
           </button>
         </div>
@@ -509,9 +506,9 @@ onUnmounted(() => {
         <div v-else-if="editError" class="badge-danger w-full justify-center py-2 mt-5">{{ editError }}</div>
 
         <div class="flex justify-end gap-2 mt-6">
-          <button type="button" class="btn-ghost" @click="closeEdit">Закрыть</button>
-          <button type="submit" class="btn-primary" :disabled="saving || editSuccess">
-            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          <button type="button" class="btn-ghost min-h-11" @click="closeEdit">Закрыть</button>
+          <button type="submit" class="btn-primary min-h-11" :disabled="saving || editSuccess">
+            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
             {{ saving ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>
