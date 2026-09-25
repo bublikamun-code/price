@@ -1,10 +1,12 @@
 # 🗺️ Карта сайта / Экранов B2B-портала
 
-> **Сопутствующий файл к `ARCHITECTURE_PLAN.md` (v1.9).**
+> **Сопутствующий файл к `ARCHITECTURE_PLAN.md` (v2.0).**
 > Каноничное описание **всех экранов (страниц)**, их иерархии, состава и связей.
 > Назначение: дать нейросети/разработчику точный список «что генерировать», чтобы исключить галлюцинации и разночтения с архитектурой.
 >
 > **Правило:** любая новая страница или изменение существующей → сначала правка здесь, потом код (см. `ARCHITECTURE_PLAN.md` §21).
+>
+> **Миграционный статус:** этот файл описывает целевую replacement-карту. Legacy-строки с `/api/v1` ниже сохраняются как traceability старой реализации; новый frontend использует `/api/v2` по `docs/API_V2_CONTRACT.md` и не копирует page-local v1 orchestration.
 
 ---
 
@@ -17,7 +19,7 @@
 5. [Публичные страницы](#5-публичные-страницы)
 6. [Страницы клиента](#6-страницы-клиента)
 7. [Страницы менеджера](#7-страницы-менеджера)
-8. [Telegram Mini App (post-MVP)](#8-telegram-mini-app-post-mvp)
+8. [Telegram Mini App](#8-telegram-mini-app)
 9. [Ключевые пользовательские потоки](#9-ключевые-пользовательские-потоки)
 10. [Состояния UI (universal)](#10-состояния-ui-universal)
 11. [Чек-лист соответствия архитектуре](#11-чек-лист-соответствия-архитектуре)
@@ -31,7 +33,9 @@
 - **Auth-middleware:** `middleware/auth.ts` — проверка JWT, редирект на `/login`.
 - **Role-middleware:** `middleware/role.ts` — `meta: { roles: ['MANAGER'] }` на layout/page.
 - **Адаптив:** mobile-first (640/768/1024/1280).
-- **Дизайн:** см. `ARCHITECTURE_PLAN.md` §3 (плоский, воздушный, мягкие цвета, плитка).
+- **Дизайн:** `docs/TRADE_DESIGN_SYSTEM.md` — прямоугольный плотный B2B, warm light primary, dark-green service surfaces, terracotta action; без pill/capsule, floating glass и ambient orbs.
+- **Frontend architecture:** `docs/REPLACEMENT_FRONTEND_ARCHITECTURE.md`; page templates заменяются полностью, page-local API/polling/types не переносятся.
+- **API:** новый web использует `/api/v2`; старые v1-клиенты сохраняются до завершения миграции.
 
 ### Layouts
 - `default.vue` — публичный (шапка с лого, без sidebar).
@@ -54,27 +58,29 @@
 - Аватар/ФИО → dropdown: Профиль / Сессии / Уведомления / Выйти.
 
 ### Sidebar (client.vue)
-- 🏠 Главная (`/`)
-- 📦 Каталог (`/catalog`)
-- ⭐ Избранное (`/favorites`)
-- ➕ Массовое добавление (`/bulk-add`)
-- 🛒 Корзина (`/cart`)
-- 📋 Мои заявки (`/orders`)
-- 📁 Файлы (`/files`)
-- 👤 Профиль (`/profile`)
+- Главная (`/dashboard`)
+- Каталог (`/catalog`)
+- Избранное (`/favorites`)
+- Массовое добавление (`/bulk-add`)
+- Заявка (`/cart`)
+- Мои заявки (`/orders`)
+- Файлы (`/files`)
+- Профиль и организация (`/profile`)
 
 ### Sidebar (manager.vue)
-- 📊 Дашборд (`/manager`)
-- 📦 Каталог (`/manager/catalog`)
-- ⬆️ Импорт прайса (`/manager/import`)
-- 🏷 Бренды и серии (`/manager/brands`)
-- 👥 Клиенты (`/manager/users`)
-- 📋 Заявки (`/manager/orders`)
-- 📁 Файлы (`/manager/files`)
-- 💱 Курсы валют (`/manager/currency`)
-- 🔔 Уведомления (`/notifications`)
-- 🛡 Аудит (`/manager/audit`)
-- 👤 Профиль (`/profile`)
+- Дашборд (`/manager`)
+- Каталог (`/manager/catalog`)
+- Импорт прайса (`/manager/import`)
+- Бренды и серии (`/manager/brands`)
+- Организации и контакты (`/manager/organizations`)
+- Клиенты-доступы (`/manager/users`)
+- Заявки (`/manager/orders`)
+- Файлы (`/manager/files`)
+- Курсы валют (`/manager/currency`)
+- Уведомления (`/notifications`)
+- Аудит (`/manager/audit`)
+- Администрирование (`/manager/admin`)
+- Профиль (`/profile`)
 
 ### Подвал (Footer)
 - Контакты, телефон, email.
@@ -88,7 +94,7 @@
 | Роль | Доступ |
 |---|---|
 | **Гость** | `/`, `/login`, `/privacy`, `/brands`, `/brands/[slug]` |
-| **Клиент** | все публичные + `/catalog*`, `/cart`, `/checkout`, `/orders*`, `/favorites`, `/bulk-add`, `/files`, `/profile*`, `/notifications`, `/consent` (1 раз) |
+| **Клиент** | все публичные + `/dashboard`, `/catalog*`, `/cart`, `/checkout`, `/orders*`, `/favorites`, `/bulk-add`, `/files`, `/profile*`, `/notifications`, `/consent` (1 раз) |
 | **Менеджер** | все клиентские (как суперпользователь каталога) + `/manager/**` |
 | **Mini App** | подмножество клиентских под layout `miniapp` |
 
@@ -99,50 +105,60 @@
 ## 4. Дерево роутов
 
 ```
-/                                (public)
-├── /login                       (public)
+/                                (public landing, всегда)
+├── /login                       (public/auth)
+├── /reset-password              (public/auth)
+├── /force-change-password       (authenticated temporary password)
 ├── /privacy                     (public)
-├── /brands                      (public, SEO-витрина, §16 п.29)
-│   └── /brands/[slug]           (public)
-├── /consent                     (client — после первого входа, 1 раз)
+├── /brands                      (public SEO)
+│   └── /brands/[slug]
+├── /consent                     (client, first login)
 │
+├── /dashboard                   (client)
 ├── /catalog                     (client/manager)
-│   └── /[sku]                   (client/manager)
+│   └── /catalog/[sku]            (public-safe product projection; price after auth)
 ├── /favorites                   (client)
 ├── /bulk-add                    (client)
 ├── /cart                        (client)
 ├── /checkout                    (client)
 ├── /orders                      (client)
-│   └── /[id]                    (client)
+│   └── /orders/[id]
 ├── /files                       (client)
 ├── /notifications               (client/manager)
 │
 ├── /profile                     (client/manager)
-│   ├── /profile/notifications   (настройки уведомлений)
-│   ├── /profile/sessions        (активные сессии)
-│   └── /profile/security        (2FA — для менеджера)
+│   ├── /profile/organization    (legal/contacts/delivery points)
+│   ├── /profile/notifications
+│   ├── /profile/sessions
+│   └── /profile/security
 │
-└── /manager                     (manager only)
+└── /manager                     (MANAGER/ADMIN)
     ├── /manager/catalog
     ├── /manager/import
-    │   └── /manager/import/[versionId]   (отчёт импорта)
+    │   └── import report — dialog on /manager/import
     ├── /manager/brands
-    ├── /manager/users
-    │   └── /manager/users/[id]           (профиль клиента + матрица скидок)
+    ├── /manager/organizations
+    │   └── /manager/organizations/[id]
+    ├── /manager/users            (login access; can belong to organizations)
+    │   └── /manager/users/[id]
     ├── /manager/orders
     │   └── /manager/orders/[id]
     ├── /manager/files
     ├── /manager/currency
-    └── /manager/audit
+    ├── /manager/audit
+    └── /manager/admin
 ```
+
+`/` больше не переключается между landing и dashboard по наличию session. После login клиент попадает на `/dashboard` или `/catalog` по согласованному return flow, менеджер — `/manager`.
 
 ---
 
 ## 5. Публичные страницы
 
-### `/` — Главная
-- **Роль:** public. Авторизованному клиенту — дашборд (см. §2), менеджеру — переход в `/manager`; гостю — лендинг (блоки ниже).
-- **Назначение:** первый контакт, брендинг, витрина каталога, призыв войти.
+### `/` — Public landing
+- **Роль:** public для всех посетителей, включая авторизованных. Авторизация не меняет назначение route.
+- **Назначение:** B2B-позиционирование импортёра, публичная витрина без цен/остатков, доверие к сервису и CTA входа.
+- **Правило commerce-конверсии:** CTA ведёт в `/login?returnTo=...`; после успешного login клиент возвращается в разрешённый client route, менеджер — в manager route.
 - **Блоки лендинга:**
   1. Hero (чип «B2B-портал», заголовок, CTA «Войти в личный кабинет» → `/login`, «Связаться с менеджером»; чипы-итоги каталога: бренды/серии/наименования).
   2. Товары из каталога (витрина до 24 товаров из первых серий первых 3 брендов, фото, бренд, артикул; без цен — бейдж «после входа»; ссылки → `/brands/{slug}`).
@@ -201,7 +217,7 @@
   3. График заявок за 30 дней + статусы заявок.
   4. Топ-5 товаров по количеству + последние 5 заявок.
   5. Заявки в работе (NEW/IN_PROGRESS), изменения цен в избранном, последние поступления.
-- **API:** `GET /api/v1/dashboard` (агрегаты текущего пользователя, кэш Redis 60 с).
+- **API:** v2 composable client/manager metric queries; presentation-shaped quick actions и formatted blocks не приходят из backend DTO. Контракт — `docs/API_V2_CONTRACT.md`.
 
 ### `/consent` — Согласие на обработку ПДн (однократно)
 - **Роль:** client (middleware: если `users.consent_accepted_at IS NULL`).
@@ -368,7 +384,10 @@
   4. **История импортов** (таблица): версия, файл, дата, статус (QUEUED/PROCESSING/DONE/FAILED), прогресс-бар, rows_ok/rows_error, действия: «Открыть отчёт» / «Откатить».
 - **API:** `POST /manager/prices/import` (multipart), `GET /manager/prices/versions`.
 
-### `/manager/import/[versionId]` — Отчёт импорта
+### Отчёт импорта — модалка на `/manager/import`
+> Отдельной страницы `/manager/import/[versionId]` нет: отчёт открывается
+> модальным окном из истории импортов на `/manager/import` (см.
+> `apps/web/pages/manager/import.vue`). Запись в дереве роутов выше — историческая.
 - **Блоки:**
   1. Шапка: статус, прогресс, агрегаты (новых/обновлено/без изменений/Δ цена ↑/↓/сброшена фикс-цена).
   2. Вкладка **«Изменения цен»**: таблица SKU | старая цена | новая цена | Δ% (сортировка по Δ) — основа уведомления `PRICE_CHANGED`.
@@ -380,12 +399,22 @@
 - **Блоки:** список брендов (плитки), внутри каждого — серии с привязанным фото; CRUD (создать/переименовать/удалить); загрузка/замена фото серии.
 - **API:** `GET/POST/PATCH/DELETE /manager/brands`, `/manager/series`.
 
-### `/manager/users` — Клиенты
+### `/manager/organizations` — Организации и коммерческие условия
 - **Блоки:**
-  1. Таблица клиентов: ФИО/компания, email, телефон, скидка (средняя / «—»), зафиксированный курс, статус (активен/заблокирован), дата создания, кол-во заказов.
-  2. Фильтры/поиск.
-  3. Кнопка «Создать клиента» → модалка (email, ФИО, компания, телефон, начальная скидка). Показ temp-пароля 1 раз.
-- **API:** `GET /manager/users`, `POST /manager/users`.
+  1. Плотная таблица: legal/display name, УНП, активные контакты, валюта, статус, число заявок.
+  2. Server-side поиск/фильтр/сортировка/cursor pagination.
+  3. Действия: создать организацию, открыть профиль, назначить контакт, деактивировать membership.
+- **API v2:** `GET/POST /organizations`, `GET/PATCH /organizations/{id}`, membership endpoints. Старые `/manager/users` остаются для управления login access и compatibility.
+
+### `/manager/organizations/[id]` — Организация
+- **Блоки:** legal/delivery details; memberships; pricing agreement; organization-brand terms; fixed rate; история заказов и audit reference.
+- **Правила:** update отправляет `version`/`If-Match`; conflict показывает reload/merge state без silent overwrite.
+- **API v2:** `GET/PATCH /organizations/{id}`, `GET/POST/PATCH .../members`, `GET/PUT .../pricing-terms`.
+
+### `/manager/users` — Доступы клиентов
+- **Назначение:** управление login identity, временным паролем и блокировкой; commercial terms находятся в организации.
+- **Блоки:** email, ФИО, телефон, organizations/memberships, active/blocked, дата создания; server search/sort/cursor; создание access и reset password.
+- **API:** v2 session/admin user resource; v1 `/manager/users` остаётся compatibility projection.
 
 ### `/manager/users/[id]` — Профиль клиента + матрица скидок ⭐
 - **Блоки:**
@@ -421,10 +450,10 @@
 
 ---
 
-## 8. Telegram Mini App (Этап 12, §16 п.27)
+## 8. Telegram Mini App
 
 - **Layout:** `miniapp.vue` (без шапки/sidebar, mobile-only, безопасная зона Telegram).
-- **Auth:** `POST /api/m/v1/auth/telegram` (по `initData` + одноразовый `link_code` при первом входе; повторные — по `initData`). Неаутентифицированному — экран связки с кодом из веб-кабинета (Профиль → Telegram), не редирект на `/login`. Данные — существующие `/api/v1/**` с Bearer.
+- **Auth:** отдельный Telegram channel session (по `initData` и одноразовому `link_code` при первом входе); после стабилизации API v2 использует shared v2 domain contracts. Неаутентифицированному показывается экран связки с кодом из web-кабинета, без редиректа на `/login`.
 - **Экраны (подмножество):**
   - Каталог (упрощённый, плитка, только поиск + фильтр по бренду).
   - Детали товара.
@@ -452,7 +481,7 @@
 [Менеджер /manager/import]
 [Загрузка CSV + ZIP фото, выбор режима/валюты/курса]
 [POST /import → Celery task → прогресс в UI]
-[DONE → /manager/import/[versionId] (отчёт, Δ цен, ошибки)]
+[DONE → модалка отчёта на /manager/import (Δ цен, ошибки)]
 [Менеджер: TG-сводка PRICE_CHANGED]
 [Клиенты с затронутыми товарами в корзине/избранном: PRICE_CHANGED_DIGEST]
 ```
@@ -482,7 +511,7 @@
 
 | Состояние | Что показывать |
 |---|---|
-| **Loading** | skeleton/shimmer (плитки-заглушки), не spinner. |
+| **Loading** | skeleton, повторяющий форму контента, или локальный spinner для короткой операции; shimmer не используется. |
 | **Empty** | friendly-иллюстрация + текст + CTA («В каталоге пусто — сбросьте фильтры»). |
 | **Error** | карточка с текстом ошибки + кнопка «Повторить». |
 | **No access** | «Недостаточно прав» + ссылка на выход. |
@@ -497,11 +526,13 @@
 
 - [ ] Имя роута совпадает с деревом в §4.
 - [ ] Роль/доступ совпадает с §3.
-- [ ] Все эндпоинты существуют в `ARCHITECTURE_PLAN.md` §6 (иначе — сначала дополнить §6).
-- [ ] Использует дизайн-систему из `ARCHITECTURE_PLAN.md` §3 (палитра, плитки, радиусы).
-- [ ] Реализованы все состояния из §10.
-- [ ] Адаптив mobile-first.
-- [ ] Кэш/пагинация — согласно §4 архитектуры (Redis tags, LIMIT/OFFSET).
+- [ ] Все новые endpoints описаны в `ARCHITECTURE_PLAN.md` §6 и `docs/API_V2_CONTRACT.md`; v1 используется только старыми клиентами во время миграции.
+- [ ] Используется `docs/TRADE_DESIGN_SYSTEM.md`: семантические токены, radius 0–2px, без pill/capsule/glass/ambient orbs.
+- [ ] Реализованы loading/empty/error/success/offline/no-access из §10 без shimmer-only presentation.
+- [ ] Desktop 1280, tablet 768 и mobile 390 не имеют horizontal overflow страницы; табличный scroll ограничен рабочей областью.
+- [ ] Keyboard navigation, visible focus, status-without-color и reduced motion проверены.
+- [ ] Server-side search/sort/cursor и request cancellation используются там, где список превышает одну страницу.
+- [ ] Domain services не дублируются в page templates; write flows используют UUID, idempotency и concurrency semantics из API v2.
 
 ---
 

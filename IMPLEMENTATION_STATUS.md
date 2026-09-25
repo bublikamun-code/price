@@ -2,6 +2,24 @@
 
 Источник: вставленный отчёт аудита этапов 0–5. Проверено относительно текущего кода и канона `ARCHITECTURE_PLAN.md` (§6, §11; документ читался поиском по секциям).
 
+## Текущая миграция Trade + API v2 (2026-09-24)
+
+Ниже сохранён исторический журнал аудита и пакетов. Этот раздел отделяет уже подтверждённое runtime-состояние от новой целевой архитектуры.
+
+| Этап | Статус | Фактическое состояние |
+|---|---|---|
+| 0. Baseline и канон | `[x]` | Зафиксировано dirty-tree preservation; обновлены `ARCHITECTURE_PLAN.md` v2.0 и `SITEMAP.md`; созданы Trade, replacement frontend, API v2 и iOS contract документы. Read-only проверка документации, `git diff --check` и targeted contradiction scan завершены; рабочее дерево сохранено. |
+| 1. Критические backend-контракты | `[~]` | Подтверждены v1 order-create slice и v2 transport slice: duplicate SKU агрегируются; typed order errors/`X-Error-Code`, idempotency replay/conflict, structured delivery, `Order.version`/`If-Match`, manager stock recheck без reservation; миграции `0010`–`0016`. Добавлены v2 order, session, catalog, organization и cart contracts; cart mutations используют scoped storage, optimistic `If-Match`/`ETag` и stable Problem Details codes. Все v2 routes используют единый `application/problem+json` OpenAPI helper. Frontend `mapProblemDetails` покрыт shared fixtures и Vitest; semantic compatibility gate подключён к CI. v1 float/legacy responses сохранены. Полный API regression — 457 passed; Ruff и compileall проходят; media resources и полный v2 surface ещё не завершены. |
+| 2. Organization-aware B2B model | `[~]` | Добавлены `Organization`, `OrganizationMembership`, organization pricing agreement/brand terms/addresses; `users.active_organization_id` и `orders.organization_id` добавлены nullable без backfill. Membership-aware context, organization pricing isolation, organization order ownership/access и legacy order fallback реализованы. Добавлены manager-only v2 organization list/detail/member list/add/patch и organization-aware catalog/cart pricing. Cart storage разделён на legacy USER (`organization_id IS NULL`) и `(user_id, organization_id)` carts; v1 работает только с USER cart. `User.company` не объединяется. Organization create/patch, reviewed backfill и перенос favorites/exports/cache на organization scope ещё не завершены. |
+| 3. API v2 | `[~]` | Реализованы session/organization selection, authenticated catalog, orders create/list/detail/cancel/repeat, manager organization/member routes и полный client cart contract (`GET /cart`, add/replace/delete/clear). Cart использует UUID writes, current scoped pricing, decimal-string money, `ETag`/`If-Match`, stale-write protection и не выдаёт internal media keys. V2 create требует `Idempotency-Key`; cart mutations используют optimistic version без idempotency key. Repeat organization order требует совпадения active scope, иначе `CART_SCOPE_MISMATCH`; v2 create очищает только active scoped cart, v1 — legacy USER cart. OpenAPI snapshot, shared fixtures, Problem Details и semantic gate проверяются автоматически. Native auth, organization create/patch, media resources и manager order surfaces ещё не реализованы. `/api/v1` остаётся рабочим. |
+| 4–7. Frontend replacement | `[~]` | Изолированные typed frontend domain-срезы v2 cart и v2 order-create готовы и проверены, включая scoped invalidation, ETag, idempotency replay и post-order cart refresh. Legacy `useCart()` и v1 checkout/pages ещё не переключены; page templates, shell, Trade primitives и новые маршруты не реализованы. Статический прототип остаётся reference-only. |
+| 8. Tests и rollout | `[~]` | После cart/order slices подтверждены 34 frontend Vitest tests, typecheck, Node 22 ESLint и production Nuxt build; полный backend regression — 457 passed, Ruff и compileall проходят, clean Alembic `0016` upgrade/check/downgrade/re-upgrade и migration refusal проверены. Playwright и visual rollout checks ещё не выполнены. |
+| 9. SwiftUI | `[ ]` | Реализация отложена до стабилизации web/API v2. `docs/IOS_API_CONTRACT.md` — рабочий projection, не SDK. |
+
+**Граница backend-изменений:** refresh rotation, CSRF, RS256 production JWT, 2FA/recovery, session revocation, consent, RBAC, pricing formulas, fixed/NBRB rates, frozen order prices, order FSM, audit, imports/rollback, storage validation и async jobs сохраняются. Backend меняется только для organization ownership, cross-client v2 contract и исправления подтверждённых commerce-инвариантов.
+
+**Текущий следующий gate:** coordinated cutover cart/checkout consumers на v2 create path; legacy `useCart()` не переключать частично. v1 не переписывается in-place, request-not-reservation semantics сохраняются.
+
 ## Классификация
 
 | Пункт | Статус | Результат |

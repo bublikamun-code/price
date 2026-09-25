@@ -3,8 +3,8 @@
 
 > **Роль документа:** Мастер-план (Technical Design Document + RFC), на основе которого ведётся пошаговая реализация. Документ расширяет исходное ТЗ и закрывает пробелы (security, edge-cases, observability, deploy).
 >
-> **Статус:** v1.9 — готов к передаче команде / ИИ-ассистенту.
-> **Дата:** 2026-08-26
+> **Статус:** v2.0 — миграция полного web + API v2 и организации.
+> **Дата:** 2026-09-24
 
 > ## ⚠️ ЕДИНЫЙ ИСТОЧНИК ИСТИНЫ (обязательно для ИИ и разработчиков)
 >
@@ -124,75 +124,58 @@
 
 ---
 
-## 3. Дизайн-система (UI/UX)
+## 3. Дизайн-система Trade (UI/UX)
 
-> Принципы: **плоский, воздушный, минимализм, мягкие цвета, плитка (card-based).**
+> Канон: `docs/TRADE_DESIGN_SYSTEM.md`. Решение заказчика от 2026-09-24. Предыдущие правила stone/pill/Liquid Glass считаются историческими и не применяются к новой реализации.
 
-### Палитра (soft / pastel)
+### Принципы
+- серьёзный плотный B2B-интерфейс без «стоковой» SaaS-эстетики;
+- тёплый светлый canvas, тёмно-зелёные служебные поверхности, терракотовый CTA;
+- плоские поверхности, тонкие жёсткие границы, радиус 0–2 px;
+- высокая плотность строк и таблиц, но ясная иерархия;
+- светлая тема — основная, тёмная — полноценная вторая тема;
+- responsive-first, включая отдельный мобильный web и будущий SwiftUI-клиент.
+
+### Токены
+```css
+--bg: #f5f2eb;
+--surface: #fffdf8;
+--surface-2: #e6e9df;
+--ink: #1b2a24;
+--muted: #65736b;
+--line: #c8d0c7;
+--accent: #c65c3b;
+--dark: #1b2a24;
 ```
-Background canvas : #F7F9FC  (очень светло-серо-голубой)
-Surface / card    : #FFFFFF
-Surface elevated  : #FFFFFF + soft shadow (0 4px 20px rgba(43,57,83,0.06))
-Border            : #E6EAF0
-Primary accent    : #5B8DEF  (мягкий сине-фиолетовый)
-Primary hover     : #4A7DD8
-Secondary accent  : #8B7EE6 (лаванда)
-Success (in stock): #4CAF85  (приглушённый зелёный)
-Warning (preorder): #F2B33D
-Danger (archived) : #E26D6D
-Text primary      : #1F2937
-Text secondary    : #6B7280
-Text muted        : #9CA3AF
-```
+
+Все значения цвета, радиуса, тени и motion входят только через семантические токены. Hardcoded hex/rgba в компонентах запрещён, кроме форматов данных, которые не являются UI-стилем.
 
 ### Типографика
-- Шрифт: **Inter** (.variable), вторичный — **Manrope** (для заголовков).
-- Размеры: 12/14/16/18/24/32px. Межстрочный — 1.5–1.6 для воздушности.
+- **Manrope** — интерфейс, заголовки, навигация и формы;
+- **IBM Plex Mono** — SKU, цены, количества, остатки, курсы, валюты, технические ID и даты в таблицах;
+- минимальный размер текста — 12 px; табличный текст — 12–14 px;
+- моноширинные числа с `font-variant-numeric: tabular-nums`.
 
-### Карточки / Плитка
-- `border-radius: 16px`, padding 20–24px, мягкая тень.
-- Hover: лёгкий lift (`translateY(-2px)`), усиление тени.
-- Активные фильтры — чипы (pills) с возможностью удаления.
+### Геометрия и компоненты
+- радиус контейнеров и контролов: 0–2 px; pill/capsule-кнопки, бейджи, чипы и навигация запрещены;
+- круг допустим только для spinner, avatar, status-dot и icon-only элемента;
+- `glass`, ambient radial/background glow, floating card и декоративные orb запрещены;
+- карточки допустимы как функциональные блоки с жёсткой границей, не как универсальная декоративная плитка;
+- тень — только для sticky/dropdown/dialog и только жёсткая, не размытая декоративная;
+- focus-visible обязателен, motion уважает `prefers-reduced-motion`.
 
-### Компоненты каталога
-- **Вид «Плитка»** (по умолчанию): карточка с фото серии сверху, артикул, наименование, бейдж бренда, статус, цена.
-- **Вид «Таблица»** (toggle): плотная таблица для опытных покупателей.
+### Каталог и плотность
+- desktop по умолчанию использует плотный табличный режим, grid — переключаемый режим;
+- SKU, цена, наличие, количество и статус образуют устойчивую колоночную структуру;
+- активные фильтры — прямоугольные removable controls, не pill chips;
+- на мобильных фильтры открываются rectangular sheet/drawer, нижняя навигация — плоская полоса, не floating capsule.
 
-### Анимации
-- Framer-Motion-like transitions через CSS (`transition: 200ms cubic-bezier(0.4, 0, 0.2, 1)`).
-- Skeletons при загрузке, shimmer-эффект.
-- Микро-взаимодействия на кнопках (ripple, scale).
+### Темы и motion
+- `preference: light`, `fallback: light`; сохранённая старая dark-настройка не должна принудительно переключать новую систему;
+- тёмная тема сохраняет ту же геометрию и контраст, меняя только семантические значения токенов;
+- переходы 120–180 ms только для hover/focus/dialog; shimmer запрещён, loading skeletons повторяют форму контента.
 
-### Адаптивность
-- Mobile-first breakpoints: 640 / 768 / 1024 / 1280.
-- На мобильных — bottom-sheet для фильтров, sticky-корзина внизу.
-
-### Liquid Glass — двухуровневое стекло (2026-09-05; действует)
-> Реализация в `apps/web/assets/css/main.css` (токены `--glass-*`, `--ambient-*`) и
-> `tailwind.config.ts` (`glass`, `glass-border`, стеклянные `shadow-card`). Палитра
-> не менялась — материал берётся из `--color-surface` с альфой.
-
-- **Уровень 1 — `.glass` («живое» стекло):** `backdrop-filter: blur(20px) saturate(1.6)`
-  + полупрозрачный фон (`--glass-a-strong`). Только плавающие элементы, под которыми
-  прокручивается контент: шапка (AppHeader), нижняя навигация (AppBottomNav, miniapp),
-  попап корзины, тосты, дропдауны (BaseSelect), sticky-пагинация каталога, панели поиска.
-  Fallback `@supports not (backdrop-filter)` → плотный фон.
-- **Уровень 2 — `.card` («статичное» стекло):** полупрозрачный фон (`--glass-a`) +
-  световая кромка (блики в `shadow-card`: верх `--glass-spec-top`, кольцо
-  `--glass-spec-ring`, низ `--glass-spec-bot`), **без** backdrop-filter — нулевая
-  цена для GPU на сетках каталога. Выход в плотный вид — утилита `.card-solid`.
-- **Ambient-фон:** `body::before` — 3 фиксированных радиальных пятна (`--ambient-1..3`,
-  альфа `--ambient-a`: ~0.10 light / ~0.22 dark), на которых стекло «читается».
-- **Плотными остаются:** `.btn-primary`, активный `.nav-link-active` (с тонким верхним
-  бликом), AppFooter. Оверлеи модалок — `bg-black/50 backdrop-blur-sm`.
-- Тёмная тема: те же классы, значения альф и бликов — в `.dark`-переопределениях токенов.
-
-### Эксперимент «Corporate Blue» (2026-09-08) — ОТКЛОНЁН пользователем 2026-09-09
-> Плоская slate-палитра с синим акцентом (#2563EB light / #3B82F6 dark, радиусы
-> 12/10px) была реализована через токены и отклонена пользователем по цвету.
-> Канон остаётся Liquid Glass (выше). Ценность эксперимента: подтверждено, что
-> смена палитры через токены (`main.css` + `tailwind.config.ts`) меняет дизайн
-> всех ролей синхронно; воспроизведение — 30 минут (сценарий в design-lab).
+Полные правила, компоненты, responsive-матрица, accessibility и критерии приёмки находятся в `docs/TRADE_DESIGN_SYSTEM.md`.
 
 ---
 
@@ -254,7 +237,7 @@ app/
 - **API-first:** сначала пишем OpenAPI-спеку, потом код.
 - **Stateless API:** сессии в JWT/Redis, легко масштабировать по горизонтали.
 - **Кэширование:** каталог кэшируется в Redis с тегами; инвалидация при импорте/смене курса/смене скидок. Кэш fail-open: при недоступном Redis запрос обслуживается из БД («мимо кэша»), запись/инвалидация — best-effort.
-- **API-versioning:** префикс `/api/v1/...`, для breaking changes — `/v2`.
+- **API-versioning:** `/api/v1/**` остаётся совместимым во время миграции; новый web, Telegram и будущий iOS используют `/api/v2/**`. V2 не переписывает v1 in-place, а публикует стабильный cross-client контракт.
 
 ---
 
@@ -309,6 +292,31 @@ app/
 | role | ENUM('CLIENT','MANAGER') | |
 | is_active | BOOLEAN | менеджер может блокировать |
 | created_at / updated_at | TIMESTAMPTZ | |
+
+#### `organizations` / `organization_memberships` — B2B ownership (API v2)
+> Миграция expand-and-contract: новые поля nullable, старые user-based поля сохраняются на переходный период. Пользователи с одинаковым free-text `company` автоматически не объединяются.
+
+| organizations column | type | note |
+|---|---|---|
+| id | UUID PK | |
+| legal_name | TEXT | обязательное юридическое/публичное имя |
+| display_name | TEXT | краткое имя в интерфейсе |
+| tax_id | TEXT NULL | УНП/налоговый identifier при наличии |
+| default_currency | CHAR(3) | default display/commercial currency |
+| version | INTEGER | optimistic concurrency |
+| created_at / updated_at | TIMESTAMPTZ | |
+
+| organization_memberships column | type | note |
+|---|---|---|
+| organization_id | UUID FK | |
+| user_id | UUID FK | contact/login identity |
+| role | ENUM('OWNER','BUYER','CONTACT','VIEWER') | роль внутри организации |
+| is_active | BOOLEAN | |
+| version | INTEGER | optimistic concurrency |
+| created_at / updated_at | TIMESTAMPTZ | |
+| **UNIQUE** | (organization_id, user_id) | |
+
+Organization pricing terms и organization-brand discounts переносятся из `UserBrand` в organization-scoped таблицы. `orders.organization_id` становится ownership boundary; `client_id` сохраняется как инициатор для compatibility projection и audit.
 
 #### `brands`
 | id | UUID PK |
@@ -427,6 +435,23 @@ app/
 ---
 
 ## 6. REST API спецификация
+
+### Версионирование и совместимость
+- `/api/v1/**` остаётся рабочим compatibility surface и не переписывается in-place.
+- `/api/v2/**` — канонический контракт replacement web, Telegram Mini App и будущего SwiftUI-клиента.
+- Новые breaking fields/errors/pagination rules публикуются в v2; v1 получает compatibility projection.
+- OpenAPI snapshot, shared JSON fixtures и semantic diff обязательны до cutover.
+- Полная спецификация v2: `docs/API_V2_CONTRACT.md`; iOS projection: `docs/IOS_API_CONTRACT.md`.
+
+### API v2 — базовые правила
+- UUID для write resources; SKU остаётся visible/search/import identifier.
+- Money: decimal string + ISO 4217 currency; timestamp: RFC 3339 UTC; date: `YYYY-MM-DD`.
+- Success: `{data, meta}`; list pagination: opaque cursor; filters/search/sort выполняет сервер.
+- Error: RFC 9457-style Problem Details с обязательным stable `code` и `requestId`.
+- `POST /api/v2/orders` принимает `Idempotency-Key`; duplicate product lines запрещены; availability проверяется на create и manager confirmation, но не резервирует stock автоматически.
+- Изменяемые manager/admin resources имеют `version`/`If-Match`; stale update → 409 `STALE_RESOURCE_VERSION`.
+- Media responses содержат resource id/url/metadata, но не S3 `photo_key`.
+- Browser session остаётся cookie+CSRF; native session получает explicit Bearer/refresh grant для Keychain.
 
 ### Единый envelope ответа
 ```json
@@ -937,6 +962,11 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 28 | Security-hardening бэкенда (по итогам аудита) | **Согласовано 2026-08-26** | Backfill решений, применённых в коде 2026-08-25, + сопутствующие правки техдолга. (1) **Lockout брутфорса**: после `LOGIN_MAX_ATTEMPTS` неудачных логинов по email — блокировка на `LOGIN_LOCKOUT_MINUTES` в Redis; проверка выполняется до rate-limiter. (2) **Кэш сессий**: живость сессии кэшируется в Redis TTL 60 с; отзыв (`invalidate_session`) удаляет ключ немедленно. (3) **Поиск каталога**: LIKE-метасимволы экранируются (`_like_escape` в repositories/catalog.py); pg_trgm GIN-индексы — §5.2. (4) **Health-эндпоинты** (`/healthz`, `/readyz`) не раскрывают env/конфигурацию. (5) **PATCH /auth/me**: whitelist полей — setattr только по разрешённым колонкам User (mass-assignment guard). (6) **App-hardening** (main.py): Swagger/OpenAPI отключаются в prod, CORS из allowlist (без `*`), security-headers, лимит JSON-тела 1 МБ, X-Request-ID + structlog context. Сопровождающие правки пакета: CVE-обновления `python-multipart==0.0.20` (CVE-2024-53981) и `python-jose==3.4.0` (CVE-2024-33663/33664); SQL из `api/miniapp.py` → `repositories/users.get_by_telegram_id`; доменная логика diff/digest перенесена из `repositories/price_changes.py` в новый `services/price_changes.py` (соответствие §4); дедупликация Celery boilerplate → общий `tasks/_common.py`; креды Grafana — через env (`GF_SECURITY_ADMIN_*`, дефолт admin — dev-only). |
 | 29 | Публичная SEO-витрина каталога | **Согласовано 2026-08-26** | Цель — органический трафик Яндекса/Google по бренду/артикулу с конверсией в регистрацию. **Только публичные данные без цен/остатков/скидок/ПДн.** (1) API (read-only, без авторизации, envelope и пагинация §6): `GET /api/v1/public/brands` → `{data: [{id, name, slug}]}` — бренды, имеющие неархивные товары; `GET /api/v1/public/brands/{slug}` → `{data: {id, name, slug, series: [{id, name, slug, photo_thumb}]}}` (404 если бренд пуст); `GET /api/v1/public/series/{slug}/products?page&page_size` → `{data: [{sku, name, photo}]}` — только неархивные (photo: личное фото товара, дополнено 2026-09-08 для витрины лендинга). Кэш Redis тегом `catalog` (инвалидация импортом, §7.2); rate-limit 60/мин на IP; CSRF не применяется (GET). Thumb-фото серий — `GET /api/v1/public/photo?key=` (валидация префикса/суффикса → 307 presigned). Slug серии — вычисляемый (нормализация имени `_slugify`, без колонки в БД); коллизии нормализованных имён разрешаются детерминированно (первая по алфавиту); физический уникальный slug — при необходимости отдельной миграцией. (2) Frontend (SSR): страницы `/brands` (все бренды, плитки) и `/brands/[slug]` (бренд: серии с фото-thumb + список SKU, CTA «Войти в кабинет» → `/login`); `useSeoMeta` (title/description/OG); анонимный доступ мимо consent/auth-middleware. (3) Индексация: `robots.txt` (Allow `/`, `/brands`; Disallow приватных зон), server-route `/sitemap.xml` (статика + бренды, кэш 24 ч, fail-open), `noindex` в head авторизованных лейаутов (client/manager/miniapp). |
 | 30 | Pre-deploy hardening: куки, CSP, секреты, шифрование at rest, бэкапы как код | **Согласовано 2026-08-26** | (1) **Кука access-токена**: флаг `Secure` при prod (`COOKIE_SECURE=true` в prod-compose/.env); SameSite=Lax уже задан. Полный переход access на httpOnly (BFF-паттерн) — пост-MVP: ломает Bearer-клиентов m-app; остаточный XSS-риск принят осознанно и снижается CSP. (2) **CSP**: заголовок `Content-Security-Policy-Report-Only` из конфига (`CONTENT_SECURITY_POLICY`, дефолт self-политика с unsafe-inline для Nuxt-payload; пусто = выключено); перевод в enforcing — после прогона отчётов на проде. (3) **Секреты**: `.env.prod.template` — чек-лист всех переменных с генерацией через `openssl rand` (SECRET_KEY, пароли БД/MinIO/Grafana), chmod 600, порядок — RUNBOOK. (4) **Шифрование at rest**: требование к VPS — шифрованный диск/LUKS у провайдера или включение шифрования тома (RUNBOOK, шаг деплоя); MinIO versioning/WAL-G — пост-MVP (п.24). (5) **Бэкапы как код**: `infra/scripts/restore_db.sh` + `make restore-test` (проверка дампа восстановлением во временную БД), systemd unit+timer для nightly backup вместо ручного cron. (6) **Healthchecks** api/web/nginx в dev- и prod-compose. |
+| 31 | Новая граница работ | **Полная замена всех presentation/page templates существующего Nuxt frontend; backend меняется по продуктовой необходимости** (согласовано 2026-09-24) | Старый static prototype остаётся reference-only. Существующие Nuxt/FastAPI infrastructure и проверенное backend core сохраняются. Новые страницы, layouts, Trade design system и domain layer создаются в `apps/web`; targeted backend changes разрешены для B2B/cross-client contract. `docs/REPLACEMENT_FRONTEND_ARCHITECTURE.md`. |
+| 32 | Дизайн-система | **Trade**: warm light `#f5f2eb`, dark-green service surfaces, terracotta accent, Manrope + IBM Plex Mono, radius 0–2px, light primary + full dark theme; pill/capsule, floating glass, ambient orbs и generic card kit запрещены | Полный visual replacement, а не reskin. Token source — `docs/TRADE_DESIGN_SYSTEM.md`; §3 и historical Stone/Liquid Glass правила больше не применимы к новой системе. |
+| 33 | Версионирование API | **Сосуществование v1/v2; новый web + Mini App + будущий iOS переходят на `/api/v2`** | V1 не переписывается in-place. V2 публикует стабильные errors, money/date/enums, UUID writes, media resources, cursor pagination, search/sort, async jobs и native auth. `docs/API_V2_CONTRACT.md`, `docs/IOS_API_CONTRACT.md`. |
+| 34 | B2B ownership | **Organization — commercial owner; user — membership/contact** | Добавляются `organizations`, `organization_memberships`, organization pricing/brand terms, legal/delivery details и `orders.organization_id`; `client_id` остаётся initiator compatibility field. Expand-and-contract, без автоматического merge по совпадению `User.company`. |
+| 35 | Критические commerce-инварианты | **Request-not-reservation + idempotent submit + optimistic concurrency** | Availability проверяется при создании и manager confirmation, но stock не резервируется автоматически. Duplicate product lines запрещаются; `Idempotency-Key` возвращает исходный order или `IDEMPOTENCY_KEY_REUSED`; stale manager writes возвращают 409. Money публикуется decimal string + currency; errors используют stable codes. |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 
@@ -1174,7 +1204,11 @@ CREATE INDEX ix_notif_user_unread ON notifications(user_id) WHERE is_read = FALS
 ### 21.1. Каноничные источники
 1. `ARCHITECTURE_PLAN.md` (этот файл) — архитектура, БД, API, логика, решения.
 2. `SITEMAP.md` — карта экранов, роутинг, состав страниц, навигация.
-3. `openapi.yaml` (будет сгенерирован) — контракт API уровня схемы.
+3. `docs/TRADE_DESIGN_SYSTEM.md` — визуальный и accessibility-контракт.
+4. `docs/REPLACEMENT_FRONTEND_ARCHITECTURE.md` — новая frontend domain architecture.
+5. `docs/API_V2_CONTRACT.md` — v2 API, errors, money, idempotency, concurrency, pagination.
+6. `docs/IOS_API_CONTRACT.md` — native session и cross-client projection.
+7. `openapi.yaml` (будет сгенерирован) — исполняемый контракт API уровня схемы.
 
 ### 21.2. Когда требуется обновить документ
 Обязательно обновлять, если в коде появляется (или планируется):
@@ -1202,5 +1236,5 @@ CREATE INDEX ix_notif_user_unread ON notifications(user_id) WHERE is_read = FALS
 
 ---
 
-> **Текущая версия документа:** v1.5
-> **Сопутствующие файлы:** `SITEMAP.md` (карта сайта/экранов).
+> **Текущая версия документа:** v2.0
+> **Сопутствующие файлы:** `SITEMAP.md`, `docs/TRADE_DESIGN_SYSTEM.md`, `docs/REPLACEMENT_FRONTEND_ARCHITECTURE.md`, `docs/API_V2_CONTRACT.md`, `docs/IOS_API_CONTRACT.md`.
