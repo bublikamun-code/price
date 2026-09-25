@@ -5,6 +5,6 @@
     </NuxtLayout>
     <CookieConsentBanner />
     <GlobalSearch />
-    <ToastViewport />
+    <UiToastViewport />
   </div>
 </template>

@@ -375,14 +375,15 @@ onUnmounted(() => {
           >{{ activeFilterCount }}</span>
           <p class="ml-auto text-xs text-ink-muted">Уточните состав каталога</p>
         </div>
-        <ClientCatalogFilters
-          v-model:brands="filters.brands"
-          v-model:series="filters.series"
-          v-model:stock="filters.stock"
-          v-model:model-value="filters.model"
+        <CatalogFilters
+          :filters="filters"
           :facets="facets"
           :model-options="modelOptions"
           instance="rail"
+          @update:brands="filters.brands = $event"
+          @update:series="filters.series = $event"
+          @update:stock="filters.stock = $event"
+          @update:model-value="filters.model = $event"
           @change="applyFilters"
           @reset="resetFilters"
         />
@@ -394,14 +395,15 @@ onUnmounted(() => {
         title="Фильтры"
         :description="activeFilterCount ? `Выбрано фильтров: ${activeFilterCount}` : 'Уточните состав каталога'"
       >
-        <ClientCatalogFilters
-          v-model:brands="filters.brands"
-          v-model:series="filters.series"
-          v-model:stock="filters.stock"
-          v-model:model-value="filters.model"
+        <CatalogFilters
+          :filters="filters"
           :facets="facets"
           :model-options="modelOptions"
           instance="sheet"
+          @update:brands="filters.brands = $event"
+          @update:series="filters.series = $event"
+          @update:stock="filters.stock = $event"
+          @update:model-value="filters.model = $event"
           @change="applyFilters"
           @reset="resetFilters"
         />

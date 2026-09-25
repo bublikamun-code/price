@@ -131,7 +131,7 @@ describe('Trade presentation contract', () => {
   })
 
   it('uses the canonical toast viewport and shared empty states in migrated surfaces', () => {
-    expect(app).toContain('<ToastViewport />')
+    expect(app).toContain('<UiToastViewport />')
     expect(app).not.toContain('<ToastContainer />')
     expect(read('pages/favorites.vue')).toContain('<UiEmptyState')
     expect(read('pages/analytics.vue')).toContain('<UiEmptyState')
@@ -241,7 +241,11 @@ describe('Client cabinet contract', () => {
     const catalog = read('pages/catalog/index.vue')
     expect(catalog).toContain('<UiSheet')
     expect(catalog).toContain('side="bottom"')
-    expect(catalog).toContain('<ClientCatalogFilters')
+    expect(catalog).toContain('<CatalogFilters')
+    // Название компонента должно совпадать с зарегистрированным, иначе Vue
+    // тихо рендерит пустой тег и фильтры исчезают (был такой баг на проде).
+    expect(catalog).not.toContain('<ClientCatalogFilters')
+    expect(catalog).toContain(':filters="filters"')
     expect(catalog).toContain('data-testid="catalog-filters"')
     expect(catalog).not.toContain('<CurrentRequestStrip')
     expect(catalog).toContain('to="/cart"')
