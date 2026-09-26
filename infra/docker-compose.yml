@@ -227,10 +227,36 @@ services:
       start_period: 10s
     networks: [pp-net]
 
+  # ---------- Линтеры/форматтер фронта (make lint / make fmt) ----------
+  # Отдельный сервис, потому что `web` собран с target: runtime: в нём нет ни
+  # package.json, ни devDependencies — `docker compose exec web npm run lint`
+  # падал с ENOENT. Здесь dev-образ + исходники; node_modules в именованном
+  # томе, поэтому установка не переделывается на каждом прогоне.
+  #
+  # Второй шаг (`npm install --no-save`) обязателен: лок собран на macOS, и
+  # `npm ci` на linux/arm64-musl не ставит optional-зависимости с нативными
+  # биндингами (unrs-resolver → eslint падает с "Cannot find native binding",
+  # это баг npm #4828). --no-save, чтобы не переписать package-lock.json
+  # в примонтированном репозитории.
+  #
+  # Под профилем tools: `make up` его не поднимает, работает через `run --rm`.
+  web-tools:
+    profiles: ["tools"]
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ../apps/web:/app
+      - web-tools-node-modules:/app/node_modules
+    command: sh -c "npm ci --no-audit --no-fund && npm install --no-save --no-audit --no-fund && echo 'deps ready'"
+    networks: [pp-net]
+
 volumes:
   postgres-data:
   redis-data:
   minio-data:
+  web-tools-node-modules:
 
 networks:
   pp-net:

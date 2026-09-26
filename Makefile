@@ -70,11 +70,11 @@ test-pattern: ## прогнать отдельный тест: make test-pattern
 
 lint: ## линтеры (api: ruff; web: eslint)
 	$(DC) exec api ruff check .
-	$(DC) exec web npm run lint
+	$(DC) run --rm -T web-tools sh -c "npm run lint"
 
 fmt: ## форматирование
 	$(DC) exec api ruff format .
-	$(DC) exec web npm run format
+	$(DC) run --rm -T web-tools sh -c "npm run format"
 
 db-reset: ## пересоздать БД с нуля (ОСТОРОЖНО: удаляет данные)
 	$(DC) down -v
