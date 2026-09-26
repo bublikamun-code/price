@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;450;500;600;700;750;800&display=swap');
+/* Шрифты Manrope + IBM Plex Mono подключены НЕ через @import (см. nuxt.config
+   app.head.link), а отдельным <link> в <head> + preconnect к обоим origin'ам.
+   @import внутри CSS создаёт цепочку «HTML → CSS приложения → CSS шрифтов →
+   файлы шрифтов» с последовательными round-trip'ами и блокирует рендер;
+   head-ссылка грузится параллельно с CSS приложения, а preconnect снимает
+   отдельные TCP/TLS-рукопожатия. Тот же URL, CSP его уже разрешает. */
 
 @tailwind base;
 @tailwind components;

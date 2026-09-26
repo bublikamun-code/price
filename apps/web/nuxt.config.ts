@@ -76,7 +76,18 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'description', content: 'B2B-портал «Свет в доме»: каталог светотехники и электромонтажа, персональные цены по договору, заявки онлайн для юридических лиц и ИП.' },
       ],
-      link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        // Шрифты: preconnect к обоим origin'ам, затем сам CSS. Раньше шрифты
+        // приезжали через @import внутри main.css — это добавляло к
+        // render-blocking цепочку лишний последовательный round-trip и ~0.3 с
+        // потерянного preconnect. Теперь браузер находит <link> сразу в
+        // исходном HTML, грузит его параллельно с CSS приложения, а preconnect
+        // снимает отдельные TCP/TLS-рукопожатия с fonts.gstatic.com.
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;450;500;600;700;750;800&display=swap' },
+      ],
         // Яндекс.Метрика: подключается только если задан NUXT_PUBLIC_METRIKA_ID.
         // ID подставляется в innerHTML тела скрипта, поэтому проверяем, что это
         // именно счётчик (только цифры) — иначе значение из окружения станет
