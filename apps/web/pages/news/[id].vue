@@ -30,6 +30,19 @@ const paragraphs = computed(() =>
     .filter(Boolean),
 )
 
+// image_url приходит из содержимого новости, то есть из редакторского ввода.
+// Пропускать его в <img src> как есть нельзя — это даёт внешний запрос (и
+// маячок) от имени посетителя. Показываем картинку только с разрешённых хостов,
+// см. allowlist в composables/useProductPhoto.ts.
+const articleImage = computed(() => {
+  const raw = article.value?.image_url
+  if (!raw) return null
+  if (!/^https?:\/\//i.test(raw)) return raw
+  return useRuntimeConfig().public.imageAllowedHosts.includes(
+    new URL(raw).host.toLowerCase(),
+  ) ? raw : null
+})
+
 const errorMessage = computed(() => error.value
   ? getErrorMessage(error.value, 'Не удалось загрузить новость', { nested: true })
   : '')
@@ -76,8 +89,8 @@ function formatDate(s: string): string {
         <PageHeading :title="article.title" />
 
         <img
-          v-if="article.image_url"
-          :src="article.image_url"
+          v-if="articleImage"
+          :src="articleImage"
           :alt="article.title"
           class="mb-8 w-full border border-border"
           loading="lazy"

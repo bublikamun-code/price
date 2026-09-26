@@ -16,20 +16,29 @@ const emit = defineEmits<{
   remove: []
 }>()
 
+const { load: loadPhoto, photoFor } = useLinePhoto()
+
 const isCartLine = computed(() => 'stockStatus' in props.line)
 const canEdit = computed(() => !props.readonly && isCartLine.value)
 const lineKey = computed(() =>
   isCartLine.value ? (props.line as CartLine).productId : (props.line as OrderLine).id,
 )
-const stockLabel = computed(() => {
+const stockStatus = computed<'IN_STOCK' | 'PREORDER' | null>(() => {
   if (!isCartLine.value) return null
-  const line = props.line as CartLine
-  return line.stockStatus === 'IN_STOCK' ? 'В наличии' : 'Под заказ'
+  return (props.line as CartLine).stockStatus === 'IN_STOCK' ? 'IN_STOCK' : 'PREORDER'
 })
-const stockTone = computed<'success' | 'warning'>(() =>
-  isCartLine.value && (props.line as CartLine).stockStatus === 'IN_STOCK'
-    ? 'success'
-    : 'warning',
+
+// Фото подтягиваем по артикулу из v1-каталога; если его нет или загрузка
+// сорвалась — остаётся иконка-заглушка. При смене артикула сброс сбоя.
+const photoFailed = ref(false)
+const photoUrl = computed(() => (photoFailed.value ? null : photoFor(props.line.sku)))
+onMounted(() => loadPhoto(props.line.sku))
+watch(
+  () => props.line.sku,
+  (sku) => {
+    photoFailed.value = false
+    loadPhoto(sku)
+  },
 )
 </script>
 
@@ -40,25 +49,28 @@ const stockTone = computed<'success' | 'warning'>(() =>
   >
     <div class="flex min-w-0 gap-3">
       <div
-        class="flex size-14 shrink-0 items-center justify-center border border-border bg-surface-2 text-ink-muted"
+        class="flex size-14 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2 text-ink-muted"
         aria-hidden="true"
       >
-        <Icon name="heroicons:package" class="size-6" />
+        <img
+          v-if="photoUrl"
+          :src="photoUrl"
+          alt=""
+          loading="lazy"
+          class="size-full object-contain"
+          @error="photoFailed = true"
+        >
+        <Icon v-else name="heroicons:package" class="size-6" />
       </div>
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="numeric text-xs font-semibold text-ink">{{ line.sku || 'Артикул недоступен' }}</span>
-          <UiStatusBadge
-            v-if="stockLabel"
-            :tone="stockTone"
-            :label="stockLabel"
-            dot
-          />
+          <StockBadge v-if="stockStatus" :status="stockStatus" />
           <span v-if="props.readonly" class="text-xs text-ink-muted">Зафиксировано</span>
         </div>
         <NuxtLink
           v-if="line.sku"
-          :to="`/catalog/${line.sku}`"
+          :to="`/catalog/${encodeURIComponent(line.sku)}`"
           class="mt-1 block text-sm font-semibold leading-5 text-ink hover:text-action"
         >
           {{ line.name || 'Позиция заявки' }}

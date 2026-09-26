@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import Settings
+from app.core.config import Settings, settings
 from app.core.limiter import limiter
 from app.main import app
 
@@ -40,3 +40,33 @@ def test_redis_url_uses_configured_connection_fields() -> None:
 
 def test_rate_limiter_uses_redis_storage() -> None:
     assert limiter._storage_uri.startswith("redis://")
+
+
+# ===========================================================================
+# /metrics: в prod закрыт (404 без токена, точное совпадение — с токеном)
+# ===========================================================================
+def test_metrics_open_outside_prod(client: TestClient) -> None:
+    """dev/staging: поведение прежнее, иначе локальный стенд и сборщик
+    метрик остались бы без данных."""
+    assert Settings().env != "prod"
+    assert client.get("/metrics").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("token", "header", "expected"),
+    [
+        ("", None, 404),  # токен не задан → ручка не существует
+        ("", "wrong-token", 404),
+        ("s3cret-metrics-token", None, 404),  # без заголовка — тоже 404
+        ("s3cret-metrics-token", "wrong-token", 404),
+        ("s3cret-metrics-token", "s3cret-metrics-token", 200),
+    ],
+)
+def test_metrics_gated_in_prod(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, token: str, header, expected: int
+) -> None:
+    monkeypatch.setattr(settings, "env", "prod")
+    monkeypatch.setattr(settings, "metrics_token", token)
+
+    headers = {"X-Metrics-Token": header} if header else {}
+    assert client.get("/metrics", headers=headers).status_code == expected

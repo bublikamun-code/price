@@ -371,9 +371,9 @@ async function downloadErrors() {
   detailError.value = ''
   try {
     const res = await request<{ url: string }>(
-      `/api/v1/manager/prices/versions/${selectedVersionId.value}/errors`,
+      `/api/v1/manager/prices/versions/${encodeURIComponent(selectedVersionId.value)}/errors`,
     )
-    window.open(res.url, '_blank')
+    window.open(res.url, '_blank', 'noopener,noreferrer')
   } catch (e) {
     detailError.value = getErrorMessage(e, 'Не удалось получить ссылку на лог ошибок')
   } finally {

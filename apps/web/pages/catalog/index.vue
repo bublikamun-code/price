@@ -95,10 +95,6 @@ const modelOptions = computed(() => [
   ...facets.value.models.map((model) => ({ value: model, label: model })),
 ])
 const cartLines = computed(() => cartV2.store.cart?.items ?? [])
-const stockLabel: Record<CatalogStockStatus, string> = {
-  IN_STOCK: 'В наличии',
-  PREORDER: 'Под заказ',
-}
 const activeFilterCount = computed(() => {
   return filters.brands.length
     + filters.series.length
@@ -471,11 +467,14 @@ onUnmounted(() => {
                 <tr class="min-h-12 border-b border-border hover:bg-surface-2" :data-testid="`catalog-row-${product.id}`">
                   <td class="numeric max-w-0 truncate px-3 py-2 text-xs text-ink" :title="product.sku">{{ product.sku }}</td>
                   <td class="max-w-0 px-3 py-2">
-                    <NuxtLink :to="`/catalog/${product.sku}`" class="block truncate text-sm font-semibold text-ink hover:text-action" :title="product.name">{{ product.name }}</NuxtLink>
+                    <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="block truncate text-sm font-semibold text-ink hover:text-action" :title="product.name">{{ product.name }}</NuxtLink>
                     <span class="block truncate text-xs text-ink-muted">{{ product.brand?.name || 'Без бренда' }}<template v-if="product.series"> · {{ product.series.name }}</template></span>
                   </td>
                   <td class="px-3 py-2">
-                    <UiStatusBadge :tone="product.stockStatus === 'IN_STOCK' ? 'success' : 'warning'" :label="product.stockStatus === 'IN_STOCK' && product.stockQuantity != null ? `${product.stockQuantity} шт` : stockLabel[product.stockStatus]" dot />
+                    <StockBadge
+                      :status="product.stockStatus"
+                      :quantity="product.stockStatus === 'IN_STOCK' ? product.stockQuantity : null"
+                    />
                   </td>
                   <td class="numeric whitespace-nowrap px-3 py-2 text-right">
                     <template v-if="hasPositivePrice(product)">

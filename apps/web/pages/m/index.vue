@@ -52,8 +52,9 @@ onMounted(async () => {
 
 function submit() {
   const code = linkCode.value.trim()
-  if (!/^\d{6}$/.test(code)) {
-    errorMsg.value = 'Введите 6-значный код из веб-кабинета'
+  // 8 цифр — LINK_CODE_LENGTH в apps/api/app/services/telegram_auth.py.
+  if (!/^\d{8}$/.test(code)) {
+    errorMsg.value = 'Введите 8-значный код из веб-кабинета'
     return
   }
   void tryAuth(code)
@@ -89,8 +90,8 @@ function submit() {
           type="text"
           inputmode="numeric"
           autocomplete="one-time-code"
-          maxlength="6"
-          placeholder="000000"
+          maxlength="8"
+          placeholder="00000000"
         >
         <p class="mt-1.5 text-xs leading-5 text-ink-muted">Профиль → Telegram в веб-кабинете.</p>
         <button type="submit" class="btn-primary mt-4 min-h-11 w-full justify-center" :disabled="submitting">

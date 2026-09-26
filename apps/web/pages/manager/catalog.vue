@@ -266,7 +266,7 @@ function pollExport(jobId: string): Promise<void> {
         return resolve()
       }
       if (job.status === 'DONE' && job.url) {
-        window.open(job.url, '_blank')
+        window.open(job.url, '_blank', 'noopener,noreferrer')
         exporting.value = false
         return resolve()
       }

@@ -94,7 +94,7 @@ async function submit() {
   try {
     // The orders store owns the v2 Idempotency-Key and serializes retries.
     const result = await ordersV2.submit(buildPayload())
-    await navigateTo(`/orders/${result.order.id}`)
+    await navigateTo(`/orders/${encodeURIComponent(result.order.id)}`)
   } catch (cause) {
     submitError.value = problem(cause, 'Не удалось оформить заявку')
   } finally {

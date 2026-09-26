@@ -32,8 +32,8 @@ const banner = computed(() => props.banners[0] ?? null)
 const bannerHref = computed(() => {
   const b = banner.value
   if (!b) return null
-  if (b.link_type === 'PRODUCT' && b.link_value) return `/catalog/${b.link_value}`
-  if (b.link_type === 'NEWS' && b.link_value) return `/news/${b.link_value}`
+  if (b.link_type === 'PRODUCT' && b.link_value) return `/catalog/${encodeURIComponent(b.link_value)}`
+  if (b.link_type === 'NEWS' && b.link_value) return `/news/${encodeURIComponent(b.link_value)}`
   return null
 })
 
@@ -59,7 +59,7 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
     <div class="hidden lg:block aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface-2 overflow-hidden border border-border">
       <img
         v-if="banner?.image_key"
-        :src="urlOf(banner.image_key)"
+        :src="urlOf(banner.image_key)!"
         :alt="banner.title"
         class="w-full h-full object-contain no-dark-invert"
         loading="lazy"
@@ -88,7 +88,7 @@ const visible = computed(() => banner.value !== null || props.fallback !== null)
     <div class="hidden lg:block aspect-auto lg:flex-1 lg:min-h-[160px] mx-5 mb-3 bg-surface-2 overflow-hidden border border-border">
       <img
         v-if="banner.image_key"
-        :src="urlOf(banner.image_key)"
+        :src="urlOf(banner.image_key)!"
         :alt="banner.title"
         class="w-full h-full object-contain no-dark-invert"
         loading="lazy"

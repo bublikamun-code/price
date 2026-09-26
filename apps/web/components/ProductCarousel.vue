@@ -40,7 +40,7 @@ const sectionId = computed(() => `product-record-${props.title.toLowerCase().rep
       <NuxtLink
         v-for="p in props.items"
         :key="p.id"
-        :to="props.itemLink ? props.itemLink(p) : `/catalog/${p.sku}`"
+        :to="props.itemLink ? props.itemLink(p) : `/catalog/${encodeURIComponent(p.sku)}`"
         class="group grid min-h-16 grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-action sm:grid-cols-[56px_minmax(0,1fr)_minmax(8rem,auto)]"
       >
         <div class="flex size-12 items-center justify-center overflow-hidden border border-border bg-background sm:size-14">

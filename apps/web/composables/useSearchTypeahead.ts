@@ -88,7 +88,9 @@ export function useSearchTypeahead(opts: UseSearchTypeaheadOptions = {}) {
 
   function goProduct(p: TypeaheadProduct) {
     clear()
-    navigateTo(`/catalog/${p.sku}`)
+    // sku приходит из API: без кодирования «../» или «?» в значении уехали бы
+    // в путь. Образец — GlobalSearch.vue, который кодирует это же поле.
+    navigateTo(`/catalog/${encodeURIComponent(p.sku)}`)
   }
 
   function goCatalog() {
@@ -100,7 +102,7 @@ export function useSearchTypeahead(opts: UseSearchTypeaheadOptions = {}) {
     }
     const exact = results.value.find(p => p.sku === q)
     if (exact) {
-      navigateTo(`/catalog/${exact.sku}`)
+      navigateTo(`/catalog/${encodeURIComponent(exact.sku)}`)
     } else {
       navigateTo({ path: '/catalog', query: { q } })
     }

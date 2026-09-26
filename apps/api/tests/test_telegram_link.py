@@ -55,6 +55,17 @@ class _FakeRedis:
         dl = self.deadlines.get(key)
         return -1 if dl is None else max(0, int(dl - time.monotonic()))
 
+    def incr(self, key) -> int:
+        value = int(self.values.get(key, 0)) + 1
+        self.values[key] = str(value)
+        return value
+
+    def expire(self, key, seconds) -> bool:
+        if key not in self.values:
+            return False
+        self.deadlines[key] = time.monotonic() + seconds
+        return True
+
 
 @pytest.fixture
 def fake_redis(monkeypatch):
@@ -93,8 +104,8 @@ class TestGenerateLinkCode:
 
         assert set(result) == {"code", "expires_in"}  # контракт TelegramLinkCodeOut
         code = result["code"]
-        assert len(code) == 6
-        assert code.isdigit()  # формат ввода в Mini App: \d{6}
+        assert len(code) == tg_auth.LINK_CODE_LENGTH == 8
+        assert code.isdigit()  # формат ввода в Mini App: \d{8}
         assert result["expires_in"] == tg_auth.LINK_CODE_TTL_SEC == 900
 
         assert fake_redis.get(f"tg:link:{code}") == str(user.id)
@@ -125,6 +136,7 @@ class TestGenerateLinkCode:
         assert fake_redis.get(f"tg:link:{c2}") == str(u2.id)
 
 
+
 # ===========================================================================
 # bind_by_code: успех / одноразовость / ошибки
 # ===========================================================================
@@ -146,41 +158,72 @@ class TestBindByCode:
         with pytest.raises(ValueError):
             await tg_auth.bind_by_code(code, CHAT_ID)  # код уже сожжён (GETDEL)
 
-    async def test_unknown_or_expired_code_raises(self, fake_redis, fake_db):
-        with pytest.raises(ValueError):
-            await tg_auth.bind_by_code("DEADBEEF", CHAT_ID)
-        with pytest.raises(ValueError):
-            await tg_auth.bind_by_code("", CHAT_ID)
-
-    async def test_bind_same_chat_is_idempotent_success(
-        self, fake_redis, fake_db, session_factory
-    ):
-        user = await create_user(session_factory, email="tg7@x.by", role=UserRole.CLIENT)
-        await _set_telegram(session_factory, user.id, CHAT_ID)
+    async def test_successful_consume_clears_reverse_index(self, fake_redis, session_factory):
+        """Обратный индекс живёт только пока код актуален: иначе ключи копятся
+        в Redis до конца TTL."""
+        user = await create_user(session_factory, email="tg-clear@x.by", role=UserRole.CLIENT)
         code = tg_auth.generate_link_code(user.id)["code"]
 
-        bound = await tg_auth.bind_by_code(code, CHAT_ID)
+        assert tg_auth.consume_link_code(code) == user.id
 
-        assert bound.telegram_id == CHAT_ID  # успех без ошибки
+        assert fake_redis.get(f"tg:linku:{user.id}") is None
+        assert fake_redis.get(f"tg:link:{code}") is None
 
-    async def test_bind_other_chat_raises(self, fake_redis, fake_db, session_factory):
-        user = await create_user(session_factory, email="tg8@x.by", role=UserRole.CLIENT)
-        await _set_telegram(session_factory, user.id, 111)
+    async def test_consume_is_one_time_only(self, fake_redis, session_factory):
+        user = await create_user(session_factory, email="tg-once@x.by", role=UserRole.CLIENT)
         code = tg_auth.generate_link_code(user.id)["code"]
 
-        with pytest.raises(ValueError, match="другому чату"):
-            await tg_auth.bind_by_code(code, 222)
+        assert tg_auth.consume_link_code(code) == user.id
+        assert tg_auth.consume_link_code(code) is None
 
-    async def test_bind_chat_taken_by_another_user_raises(
-        self, fake_redis, fake_db, session_factory
-    ):
-        other = await create_user(session_factory, email="tg9@x.by", role=UserRole.CLIENT)
-        user = await create_user(session_factory, email="tg10@x.by", role=UserRole.CLIENT)
-        await _set_telegram(session_factory, other.id, CHAT_ID)
+
+# ===========================================================================
+# consume_link_code: троттлинг перебора по Telegram-аккаунту
+# ===========================================================================
+class TestConsumeLinkCodeThrottle:
+    async def test_wrong_codes_counted_per_telegram_account(self, fake_redis):
+        scope = "tg:424242"
+
+        for expected in range(1, tg_auth.LINK_CODE_MAX_ATTEMPTS):
+            assert tg_auth.consume_link_code("99999999", throttle_scope=scope) is None
+            assert fake_redis.get(f"tg:linktry:{scope}") == str(expected)
+
+    async def test_rate_limited_after_max_attempts(self, fake_redis):
+        scope = "tg:424242"
+        for _ in range(tg_auth.LINK_CODE_MAX_ATTEMPTS - 1):
+            assert tg_auth.consume_link_code("99999999", throttle_scope=scope) is None
+
+        with pytest.raises(tg_auth.LinkCodeRateLimited):
+            tg_auth.consume_link_code("99999999", throttle_scope=scope)
+
+    async def test_throttle_is_per_account_not_global(self, fake_redis):
+        """Чужой перебор не должен блокировать честного пользователя."""
+        attacker = "tg:1"
+        victim = "tg:2"
+        for _ in range(tg_auth.LINK_CODE_MAX_ATTEMPTS - 1):
+            tg_auth.consume_link_code("00000000", throttle_scope=attacker)
+        with pytest.raises(tg_auth.LinkCodeRateLimited):
+            tg_auth.consume_link_code("00000000", throttle_scope=attacker)
+
+        assert tg_auth.consume_link_code("00000000", throttle_scope=victim) is None
+
+    async def test_correct_code_resets_throttle(self, fake_redis, session_factory):
+        """Опечатка не должна наказывать: после верного кода лимит сброшен."""
+        user = await create_user(session_factory, email="tg-reset@x.by", role=UserRole.CLIENT)
         code = tg_auth.generate_link_code(user.id)["code"]
+        scope = "tg:424242"
+        for _ in range(tg_auth.LINK_CODE_MAX_ATTEMPTS - 1):
+            tg_auth.consume_link_code("99999999", throttle_scope=scope)
 
-        with pytest.raises(ValueError, match="другому аккаунту"):
-            await tg_auth.bind_by_code(code, CHAT_ID)
+        assert tg_auth.consume_link_code(code, throttle_scope=scope) == user.id
+
+        assert fake_redis.get(f"tg:linktry:{scope}") is None
+        assert tg_auth.consume_link_code(code, throttle_scope=scope) is None
+
+    async def test_no_scope_means_no_throttle(self, fake_redis):
+        """Бот вызывает без scope: там своя защита, лимит не должен мешать."""
+        for _ in range(tg_auth.LINK_CODE_MAX_ATTEMPTS + 3):
+            assert tg_auth.consume_link_code("99999999") is None
 
 
 # ===========================================================================

@@ -125,6 +125,19 @@ export function getErrorStatus(e: unknown): number | undefined {
 }
 
 /**
+ * Отказ именно в сессии (401/403), а не сбой связи с API.
+ *
+ * Различие принципиально для подтверждения сессии при SSR и гидрации: стирать
+ * cookie по любой ошибке нельзя, иначе недоступный API или 5xx выкидывали бы
+ * живых пользователей из сессии навсегда. Сброс делаем только когда сервер
+ * прямо сказал «доступа нет»; всё остальное — «не удалось спросить».
+ */
+export function isSessionRejected(e: unknown): boolean {
+  const status = getErrorStatus(e)
+  return status === 401 || status === 403
+}
+
+/**
  * Текст ошибки из unknown. Приоритет: v2 detail/title → legacy detail/error →
  * Error.message (при opts.withMessage) → fallback.
  */

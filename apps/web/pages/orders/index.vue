@@ -143,12 +143,12 @@ onMounted(load)
             </tr>
           </template>
           <tr v-for="order in orders" :key="order.id" class="border-b border-border last:border-b-0 hover:bg-surface-2" :data-testid="`orders-row-${order.id}`">
-            <td class="px-4 py-3.5"><NuxtLink :to="`/orders/${order.id}`" class="font-semibold text-ink hover:text-action" :data-testid="`orders-open-${order.id}`">{{ formatOrderNumber(order.sequence, order.id) }}</NuxtLink></td>
+            <td class="px-4 py-3.5"><NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="font-semibold text-ink hover:text-action" :data-testid="`orders-open-${order.id}`">{{ formatOrderNumber(order.sequence, order.id) }}</NuxtLink></td>
             <td class="whitespace-nowrap px-4 py-3.5 text-sm text-ink-muted">{{ formatDate(order.createdAt) }}</td>
             <td class="px-4 py-3.5"><UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot /></td>
             <td class="numeric whitespace-nowrap px-4 py-3.5 text-right font-semibold text-ink">{{ formatMoney(order.total.amount, order.total.currency) }}</td>
             <td class="w-px whitespace-nowrap px-4 py-3 text-right">
-              <NuxtLink :to="`/orders/${order.id}`" class="inline-flex min-h-8 items-center justify-center gap-2 px-2.5 py-1 text-xs font-semibold text-ink hover:bg-surface-2"><Icon name="heroicons:eye" class="size-4" />Открыть</NuxtLink>
+              <NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="inline-flex min-h-8 items-center justify-center gap-2 px-2.5 py-1 text-xs font-semibold text-ink hover:bg-surface-2"><Icon name="heroicons:eye" class="size-4" />Открыть</NuxtLink>
               <UiButton variant="ghost" size="compact" :loading="repeatingId === order.id" :disabled="repeatingId !== null" :data-testid="`orders-repeat-${order.id}`" @click="repeatOrder(order)"><template #leading><Icon name="heroicons:arrow-path" class="size-4" /></template>Повторить</UiButton>
               <UiButton variant="ghost" size="compact" :loading="pdfActiveId === order.id" :disabled="pdfActiveId !== null" :data-testid="`orders-pdf-${order.id}`" @click="exportOrderPdf(order.id)"><template #leading><Icon name="heroicons:document-arrow-down" class="size-4" /></template>PDF</UiButton>
             </td>
@@ -159,13 +159,13 @@ onMounted(load)
       <div class="border-y border-border md:hidden" data-testid="orders-cards">
         <article v-for="order in orders" :key="order.id" class="border-b border-border bg-surface px-4 py-4 last:border-b-0" :data-testid="`orders-card-${order.id}`">
           <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0"><NuxtLink :to="`/orders/${order.id}`" class="font-semibold text-ink hover:text-action" :data-testid="`orders-card-open-${order.id}`">{{ formatOrderNumber(order.sequence, order.id) }}</NuxtLink><p class="mt-1 text-xs text-ink-muted">{{ formatDate(order.createdAt) }}</p></div>
+            <div class="min-w-0"><NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="font-semibold text-ink hover:text-action" :data-testid="`orders-card-open-${order.id}`">{{ formatOrderNumber(order.sequence, order.id) }}</NuxtLink><p class="mt-1 text-xs text-ink-muted">{{ formatDate(order.createdAt) }}</p></div>
             <p class="numeric shrink-0 font-semibold text-ink">{{ formatMoney(order.total.amount, order.total.currency) }}</p>
           </div>
           <div class="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
             <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot />
             <div class="flex items-center gap-1">
-              <NuxtLink :to="`/orders/${order.id}`" class="flex size-11 items-center justify-center text-ink hover:bg-surface-2" :aria-label="`Открыть ${formatOrderNumber(order.sequence, order.id)}`"><Icon name="heroicons:eye" class="size-4" /></NuxtLink>
+              <NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="flex size-11 items-center justify-center text-ink hover:bg-surface-2" :aria-label="`Открыть ${formatOrderNumber(order.sequence, order.id)}`"><Icon name="heroicons:eye" class="size-4" /></NuxtLink>
               <UiButton variant="ghost" size="compact" class="min-h-11" :loading="repeatingId === order.id" :disabled="repeatingId !== null" :aria-label="`Повторить ${formatOrderNumber(order.sequence, order.id)}`" :data-testid="`orders-card-repeat-${order.id}`" @click="repeatOrder(order)"><Icon name="heroicons:arrow-path" class="size-4" /></UiButton>
               <UiButton variant="ghost" size="compact" class="min-h-11" :loading="pdfActiveId === order.id" :disabled="pdfActiveId !== null" :aria-label="`Скачать PDF ${formatOrderNumber(order.sequence, order.id)}`" @click="exportOrderPdf(order.id)"><Icon name="heroicons:document-arrow-down" class="size-4" /></UiButton>
             </div>

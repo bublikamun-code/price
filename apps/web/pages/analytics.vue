@@ -340,7 +340,7 @@ onMounted(load)
             <tbody>
               <tr v-for="o in data.recent_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
                 <td class="px-6 py-2.5">
-                  <NuxtLink :to="`/orders/${o.id}`" class="inline-flex min-h-11 items-center font-medium text-primary hover:underline whitespace-nowrap">
+                  <NuxtLink :to="`/orders/${encodeURIComponent(o.id)}`" class="inline-flex min-h-11 items-center font-medium text-primary hover:underline whitespace-nowrap">
                     {{ formatOrderNumber(o.seq, o.id) }}
                   </NuxtLink>
                 </td>
@@ -379,7 +379,7 @@ onMounted(load)
               <tbody>
                 <tr v-for="o in data.active_orders" :key="o.id" class="border-t border-border hover:bg-canvas/60 transition-colors duration-150">
                   <td class="px-6 py-2.5">
-                    <NuxtLink :to="`/orders/${o.id}`" class="inline-flex min-h-11 items-center font-medium text-primary hover:underline whitespace-nowrap">
+                    <NuxtLink :to="`/orders/${encodeURIComponent(o.id)}`" class="inline-flex min-h-11 items-center font-medium text-primary hover:underline whitespace-nowrap">
                       {{ o.number }}
                     </NuxtLink>
                   </td>
@@ -404,7 +404,7 @@ onMounted(load)
             description="Добавьте товары в избранное, чтобы следить за ценами."
           />
           <div v-else class="px-6 pb-6 space-y-4">
-            <NuxtLink v-for="p in data.favorite_price_changes" :key="p.product_id" :to="`/catalog/${p.sku}`" class="flex gap-3 group">
+            <NuxtLink v-for="p in data.favorite_price_changes" :key="p.product_id" :to="`/catalog/${encodeURIComponent(p.sku)}`" class="flex gap-3 group">
               <div class="w-16 h-16 shrink-0 bg-canvas border border-border flex items-center justify-center overflow-hidden">
                 <img
                   v-if="thumbOf(p.photo_key)"

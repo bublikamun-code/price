@@ -4,9 +4,30 @@
 // пишет user-cookie напрямую в действиях — без гонки таймингов watcher'ов.
 // Запуск плагина раньше route-middleware гарантирует hydrated-состояние стора.
 import type { AuthUser } from '~/composables/useAuth'
+import { isSessionRejected } from '~/utils/errors'
 
 const USER_MAX_AGE = 60 * 60 * 24 // 1 день
 const COOKIE_OPTS = { sameSite: 'lax' as const, path: '/' }
+
+/**
+ * Подтверждает сессию запросом /me по настоящей HttpOnly access-cookie.
+ *
+ * Ошибку /me нельзя трактовать одинаково: 401/403 — сервер прямо отказал, и
+ * cookie надо стереть, а вот недоступный API, 5xx или таймаут — это «не удалось
+ * спросить». Стирать сессию во втором случае нельзя: одно мигание бэкенда
+ * выкидывало бы живых пользователей навсегда. Тогда сбрасываем только
+ * состояние (auth.failClosed) — гейт роли всё равно закрыт, потому что он
+ * смотрит на стор, а не на cookie, — а как только API отвечает, сессия
+ * подтвердится снова.
+ */
+async function confirmSession(auth: ReturnType<typeof useAuth>) {
+  try {
+    await auth.fetchMe()
+  } catch (e) {
+    if (isSessionRejected(e)) auth.clear()
+    else auth.failClosed()
+  }
+}
 
 export default defineNuxtPlugin(async () => {
   const auth = useAuth()
@@ -17,24 +38,24 @@ export default defineNuxtPlugin(async () => {
   // В Pinia попадает только user-cookie. access_token остаётся HttpOnly и
   // читается плагином API только на сервере из входящего запроса.
   auth.registerCookies({ userC })
-  // На SSR доступ к access-cookie есть у Nuxt, поэтому не пропускаем stale
-  // user-cookie в защищённый маршрут, если access-cookie уже исчезла.
-  // В браузере HttpOnly-cookie не видна, поэтому там ориентируемся на
-  // user-cookie и подтверждаем его запросом /me.
-  auth.user = import.meta.server
-    ? (accessC.value ? (userC.value ?? null) : null)
-    : (userC.value ?? null)
 
-  // После F5 HttpOnly-cookie не видна браузерному JS. Если user-cookie есть,
-  // подтверждаем сессию запросом /me: браузер сам отправит access_token.
-  if (import.meta.client && auth.user) {
-    await auth.fetchMe().catch(() => auth.clear())
+  // user-cookie не подписана: её может переписать любой скрипт в браузере, а
+  // роль из неё питает middleware/role.ts. Поэтому на сервере источником истины
+  // служит только /me по настоящей HttpOnly access-cookie, а сама cookie
+  // становится кэшем, который applyUser перезаписывает серверными данными.
+  if (import.meta.server) {
+    auth.user = null
+    if (accessC.value) {
+      await confirmSession(auth)
+    }
+    return
   }
 
-  // Если user-cookie потерялась, но access-cookie ещё существует, серверный
-  // запрос /me восстановит профиль до route-middleware. В браузере этот путь
-  // недоступен, поэтому клиентский plugin выше оставляет гостя до входа.
-  if (import.meta.server && accessC.value && !auth.user) {
-    await auth.fetchMe().catch(() => auth.clear())
+  // В браузере HttpOnly-cookie не видна, поэтому стартуем от user-cookie, но
+  // всё равно подтверждаем сессию запросом /me — он выполняется до
+  // route-middleware, так что подделка не успевает дойти до проверки роли.
+  auth.user = userC.value ?? null
+  if (auth.user) {
+    await confirmSession(auth)
   }
 })

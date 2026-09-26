@@ -198,11 +198,26 @@ class Settings(BaseSettings):
         "script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; "
         "base-uri 'self'; form-action 'self'"
     )
+    # Токен доступа к /metrics. Пусто в dev/staging — ручка отдаётся как
+    # раньше. В prod пустой токен закрывает ручку в 404 (как /docs), иначе
+    # метрики были бы доступны всем, кто достал URL.
+    metrics_token: str = ""
+    # HSTS отдаётся только на https-запросах. max-age намеренно короткий:
+    # сайт на shared-хостинге с auto-SSL хостера, и годовой HSTS заблокирует
+    # быстрый откат, если сертификат протухнет. Поднимать до года — после
+    # того как автопродление подтверждено.
+    hsts_max_age: int = 86400
+    # Функции браузера, которые портал не использует. Пусто = заголовок выключен.
+    permissions_policy: str = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     cors_origins: str = "http://localhost:3000,http://localhost:8080"
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def is_prod(self) -> bool:
+        return self.env == "prod"
 
     @field_validator("env")
     @classmethod

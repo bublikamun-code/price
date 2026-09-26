@@ -61,7 +61,7 @@ function initialOf(name: string): string {
         <NuxtLink
           v-for="b in brands"
           :key="b.id"
-          :to="`/brands/${b.slug}`"
+          :to="`/brands/${encodeURIComponent(b.slug)}`"
           class="record flex min-h-20 items-center gap-4 hover:bg-surface-2"
         >
           <span class="flex size-12 shrink-0 items-center justify-center border border-border bg-surface-2 text-lg font-bold text-ink">

@@ -6,6 +6,7 @@ for domain, HTTP, validation and unhandled errors.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -19,6 +20,7 @@ from app.schemas.v2.common import ProblemDetails, ProblemFieldError
 PROBLEM_BASE_URL = "https://priceweb.local/problems/"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 _V2_PREFIX = "/api/v2"
+REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 class V2ProblemError(Exception):
@@ -49,7 +51,11 @@ def request_id_for(request: Request) -> str:
     request_id = getattr(request.state, "request_id", None)
     if request_id:
         return str(request_id)
-    return request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    # Фолбэк для случаев вне RequestContextMiddleware: тот же фильтр, что и в
+    # middleware, — значение попадает в тело problem+json, поэтому принимаем
+    # только короткий идентификатор из безопасного алфавита.
+    incoming = request.headers.get("X-Request-ID", "")
+    return incoming if REQUEST_ID_RE.match(incoming) else str(uuid.uuid4())
 
 
 def parse_if_match(value: str | None) -> int:

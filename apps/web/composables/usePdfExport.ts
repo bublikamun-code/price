@@ -55,7 +55,7 @@ export function usePdfExport() {
           return resolve()
         }
         if (job.status === 'DONE' && job.url) {
-          window.open(job.url, '_blank')
+          window.open(job.url, '_blank', 'noopener,noreferrer')
           activeId.value = null
           return resolve()
         }

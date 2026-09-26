@@ -65,12 +65,15 @@ export function useTelegram() {
     if (import.meta.server) {
       return { ok: false, kind: 'error', message: 'Mini App доступен только в Telegram' }
     }
-    const config = useRuntimeConfig()
+    // Через useApi, а не сырой $fetch: plugins/api.ts добавляет X-CSRF-Token на
+    // мутирующие запросы, а useApi.request переживает 401 единым refresh'ем.
+    // С POST /auth/login было то же самое — этот выход оставался последним
+    // мутирующим запросом вне общей обвязки.
+    const { request } = useApi()
     try {
-      const pair = await $fetch<{ access_token: string; refresh_token?: string }>(
+      const pair = await request<{ access_token: string; refresh_token?: string }>(
         '/api/m/v1/auth/telegram',
         {
-          baseURL: config.public.apiBase,
           method: 'POST',
           body: { init_data: initData(), link_code: linkCode },
           credentials: 'include',

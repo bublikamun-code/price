@@ -255,7 +255,7 @@ onMounted(() => {
           <NuxtLink
             v-for="brand in catalogRows"
             :key="brand.slug"
-            :to="`/brands/${brand.slug}`"
+            :to="`/brands/${encodeURIComponent(brand.slug)}`"
             class="product-row product-row--link"
             :aria-label="`Открыть бренд ${brand.name}`"
           >
@@ -296,7 +296,7 @@ onMounted(() => {
         </div>
         <div v-else-if="wallBrands.length" class="brand-list">
           <template v-for="brand in wallBrands" :key="brand.slug">
-            <NuxtLink :to="`/brands/${brand.slug}`" class="brand-list__item">
+            <NuxtLink :to="`/brands/${encodeURIComponent(brand.slug)}`" class="brand-list__item">
               <img v-if="brand.photo" :src="showcasePhotoUrl(brand.photo)" :alt="brand.name" loading="lazy">
               <span v-else>{{ brand.name }}</span>
               <small>{{ brand.seriesCount }} серий · {{ formatCount(brand.productsCount) }} поз.</small>

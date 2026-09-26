@@ -2,6 +2,8 @@
 
 См. ARCHITECTURE_PLAN.md §4 (Clean Architecture), §6 (API), §11 (Security).
 """
+import hmac
+import re
 import uuid
 from contextlib import asynccontextmanager
 
@@ -138,9 +140,16 @@ app.add_middleware(CSRFMiddleware)
 
 
 # ---------- Middleware: correlation id + логирование запросов ----------
+REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        # Клиентский X-Request-ID возвращается эхом в ответе, поэтому принимаем
+        # только короткий идентификатор из безопасного алфавита: иначе в ответ
+        # попадает произвольная строка (инъекция в логи, развод заголовков).
+        incoming = request.headers.get("X-Request-ID", "")
+        request_id = incoming if REQUEST_ID_RE.match(incoming) else str(uuid.uuid4())
         request.state.request_id = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
@@ -157,12 +166,28 @@ app.add_middleware(RequestContextMiddleware)
 
 
 # ---------- Middleware: security-заголовки (L3) ----------
+def _is_https(request: Request) -> bool:
+    """Схема внешнего запроса. За nginx/PM2 TLS терминируется на edge, поэтому
+    ориентируемся на заголовок прокси, а не на собственный socket uvicorn."""
+    proto = request.headers.get("x-forwarded-proto", "")
+    if proto:
+        return proto.split(",")[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        if settings.permissions_policy:
+            response.headers.setdefault("Permissions-Policy", settings.permissions_policy)
+        if settings.hsts_max_age > 0 and _is_https(request):
+            response.headers.setdefault(
+                "Strict-Transport-Security", f"max-age={settings.hsts_max_age}"
+            )
         if settings.content_security_policy:
             # CSP в enforcing-режиме (§16 п.30): браузер блокирует нарушения.
             # Политика допускает 'unsafe-inline' для script/style — Nuxt SSR
@@ -217,9 +242,17 @@ if PrometheusMiddleware is not None:
 
 
 @app.get("/metrics", include_in_schema=False, tags=["root"])
-async def prometheus_metrics() -> Response:
+async def prometheus_metrics(request: Request) -> Response:
     if PrometheusMiddleware is None:
         return Response("Metrics not available", status_code=501)
+    # В prod метрики не публикуются: без токена ручка отвечает 404 (как /docs),
+    # с токеном — только по точному совпадению заголовка. В dev/staging
+    # поведение прежнее, чтобы локальный стенд и сборщик метрик работали.
+    if settings.is_prod:
+        expected = settings.metrics_token
+        supplied = request.headers.get("X-Metrics-Token", "")
+        if not expected or not hmac.compare_digest(supplied, expected):
+            return Response("Not Found", status_code=404)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

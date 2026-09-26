@@ -187,7 +187,9 @@ class TelegramAuthRequest(BaseModel):
     """Mini App auth (§16 п.27): подписанные initData (+код связки при первом входе)."""
 
     init_data: str = Field(min_length=1)
-    link_code: str | None = Field(default=None, min_length=6, max_length=6)
+    # 8 цифр: LINK_CODE_LENGTH в app/services/telegram_auth.py. min/max в схеме
+    # отсекают заведомо неверную длину до похода в Redis.
+    link_code: str | None = Field(default=None, min_length=8, max_length=8)
 
 
 class MiniAppAuthOut(TokenPair):

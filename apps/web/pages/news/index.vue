@@ -82,7 +82,7 @@ function goPage(nextPage: number): void {
         <NuxtLink
           v-for="item in news"
           :key="item.id"
-          :to="`/news/${item.id}`"
+          :to="`/news/${encodeURIComponent(item.id)}`"
           class="group"
         >
           <article class="record flex min-h-48 flex-col p-5 transition-colors hover:bg-surface-2">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CatalogProduct, CatalogStockStatus } from '~/domain/api/v2/catalog.schema'
+import type { CatalogProduct } from '~/domain/api/v2/catalog.schema'
 import { catalogProductIdSchema } from '~/domain/api/v2/catalog.schema'
 import { createCatalogRepository } from '~/domain/catalog/catalog.repository'
 
@@ -18,11 +18,6 @@ const loadError = ref('')
 const notFound = ref(false)
 
 useHead({ title: computed(() => product.value?.name || 'Товар') })
-
-const STOCK_META: Record<CatalogStockStatus, { label: string; tone: 'success' | 'warning' }> = {
-  IN_STOCK: { label: 'В наличии', tone: 'success' },
-  PREORDER: { label: 'Под заказ', tone: 'warning' },
-}
 
 function money(amount: string, currency: string): string {
   return formatMoney(amount, currency)
@@ -222,7 +217,7 @@ onUnmounted(() => {
             :description="catalogMeta"
           >
             <template #actions>
-              <UiStatusBadge :tone="STOCK_META[product.stockStatus].tone" :label="STOCK_META[product.stockStatus].label" dot />
+              <StockBadge :status="product.stockStatus" size="md" />
               <span v-if="product.stockQuantity != null && product.stockQuantity <= 5" class="text-xs font-semibold text-warning-text">Осталось {{ product.stockQuantity }} шт.</span>
             </template>
           </PageHeading>
@@ -305,7 +300,7 @@ onUnmounted(() => {
           <NuxtLink v-if="product.series" :to="`/catalog?series=${product.series.id}`" class="inline-flex min-h-11 items-center text-sm font-semibold text-action hover:underline">Вся серия</NuxtLink>
         </div>
         <div class="border-t border-border">
-          <NuxtLink v-for="item in siblings" :key="item.id" :to="`/catalog/${item.sku}`" class="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border py-3 hover:bg-surface-2 sm:grid-cols-[8rem_minmax(0,1fr)_8rem]">
+          <NuxtLink v-for="item in siblings" :key="item.id" :to="`/catalog/${encodeURIComponent(item.sku)}`" class="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border py-3 hover:bg-surface-2 sm:grid-cols-[8rem_minmax(0,1fr)_8rem]">
             <span class="numeric text-xs text-ink-muted">{{ item.sku }}</span>
             <span class="min-w-0 truncate text-sm font-semibold text-ink">{{ item.name }}</span>
             <span class="numeric text-right text-sm text-ink">{{ hasDisplayPrice(item) ? money(displayPrice(item).amount, displayPrice(item).currency) : 'По запросу' }}</span>

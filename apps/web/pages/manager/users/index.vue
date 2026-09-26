@@ -98,6 +98,11 @@ function goPage(p: number) {
   load()
 }
 
+// id приходит из API: кодируем сегмент, иначе значение уехало бы в путь.
+function openUser(id: string) {
+  return navigateTo(`/manager/users/${encodeURIComponent(id)}`)
+}
+
 // Окно пагинации (1 ... 4 5 6 ... 20)
 function paginationWindow(total: number, current: number, window = 2): (number | '...')[] {
   const pages: (number | '...')[] = []
@@ -287,9 +292,9 @@ onMounted(load)
               role="link"
               tabindex="0"
               :aria-label="`Открыть клиента ${u.full_name}`"
-              @click="navigateTo(`/manager/users/${u.id}`)"
-              @keydown.enter="navigateTo(`/manager/users/${u.id}`)"
-              @keydown.space.prevent="navigateTo(`/manager/users/${u.id}`)"
+              @click="openUser(u.id)"
+              @keydown.enter="openUser(u.id)"
+              @keydown.space.prevent="openUser(u.id)"
             >
               <td class="px-4 py-3">
                 <p class="font-medium">{{ u.full_name }}</p>

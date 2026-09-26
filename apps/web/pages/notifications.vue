@@ -45,7 +45,11 @@ function getNotificationLink(n: NotificationItem): string | null {
     case 'ORDER_STATUS_CHANGED':
       return n.payload?.order_id ? `${prefix}/orders/${n.payload.order_id}` : `${prefix}/orders`
     case 'PRICE_CHANGED':
-      return n.payload?.sku ? `/catalog/${n.payload.sku}` : '/catalog'
+      // payload приходит из данных без типизации, поэтому sku приводим к строке
+      // явно: иначе значение с `/` или `?` разломало бы путь каталога.
+      return n.payload?.sku
+        ? `/catalog/${encodeURIComponent(String(n.payload.sku))}`
+        : '/catalog'
     case 'PRICE_CHANGED_DIGEST':
     case 'STOCK_CHANGED':
       return '/catalog'

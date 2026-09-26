@@ -83,10 +83,13 @@ const COOKIE_MAX_AGE = {
  */
 function persistCookie(name: string, value: string | null, maxAge: number): void {
   if (!import.meta.client) return
+  // Secure только под HTTPS: на локальном стенде (http://localhost) флаг
+  // сделал бы cookie недоступной и выкидывал бы из сессии при разработке.
+  const secure = window.location.protocol === 'https:' ? '; secure' : ''
   if (value === null) {
-    document.cookie = `${name}=; path=/; max-age=0; samesite=lax`
+    document.cookie = `${name}=; path=/; max-age=0; samesite=lax${secure}`
   } else {
-    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; samesite=lax`
+    document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; samesite=lax${secure}`
   }
 }
 
@@ -177,6 +180,22 @@ export const useAuthStore = defineStore('auth', () => {
       cookies.userC.value = null
     }
     persistCookie('auth_user', null, 0)
+    resetClientData(previousRole)
+  }
+
+  /**
+   * Сессия не подтверждена, но и не опровергнута: API недоступен, 5xx, таймаут.
+   *
+   * Состояние сбрасываем обязательно — гейт роли не имеет права опираться на
+   * неподписанную cookie, это вся суть защиты от подделки роли. Cookie при этом
+   * оставляем: access-токен жив, и как только API отвечает, следующий рендер
+   * подтвердит сессию по нему. В отличие от clear(), который означает «сессии
+   * больше нет» и стирает её безвозвратно.
+   */
+  function failClosed() {
+    const previousRole = user.value?.role ?? null
+    user.value = null
+    token.value = null
     resetClientData(previousRole)
   }
 
@@ -314,7 +333,8 @@ export const useAuthStore = defineStore('auth', () => {
     user, token,
     isAuthenticated, isClient, isManager, isAdmin,
     registerCookies,
-    login, verify2fa, fetchMe, updateMe, changePassword, refresh, logout, clear, applyUser, applyTokens,
+    login, verify2fa, fetchMe, updateMe, changePassword, refresh, logout, clear, failClosed,
+    applyUser, applyTokens,
   }
 })
 

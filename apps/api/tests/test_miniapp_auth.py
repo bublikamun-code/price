@@ -46,7 +46,7 @@ def _bot_token(monkeypatch):
 
 
 class _FakeRedis:
-    """Мини-стаб redis для link-кодов (set/get/getdel/delete)."""
+    """Мини-стаб redis для link-кодов (set/get/getdel/delete/incr/expire)."""
 
     def __init__(self):
         self.data: dict = {}
@@ -63,6 +63,13 @@ class _FakeRedis:
 
     def getdel(self, key):
         return self.data.pop(key, None)
+
+    def incr(self, key):
+        self.data[key] = str(int(self.data.get(key, 0)) + 1)
+        return int(self.data[key])
+
+    def expire(self, key, seconds):
+        return True
 
 
 @pytest.fixture
@@ -94,7 +101,8 @@ async def test_miniapp_login_with_link_code_binds_and_200(api_client, session_fa
     )
     user_id = await _user_id(session_factory, "mini@x.by")
     code = generate_link_code(user_id)
-    assert len(code["code"]) == 6 and code["code"].isdigit()
+    # 8 цифр, а не 6: перебор шестизначного кода укладывается в TTL
+    assert len(code["code"]) == 8 and code["code"].isdigit()
 
     r = await api_client.post(
         "/api/m/v1/auth/telegram",
@@ -146,7 +154,17 @@ async def test_miniapp_stale_auth_date_401(api_client):
 async def test_miniapp_wrong_code_401_with_hint(api_client, fake_redis):
     r = await api_client.post(
         "/api/m/v1/auth/telegram",
-        json={"init_data": _make_init_data(TG_ID), "link_code": "000000"},
+        json={"init_data": _make_init_data(TG_ID), "link_code": "00000000"},
     )
     assert r.status_code == 401
     assert "Код" in r.json()["detail"]
+
+
+async def test_miniapp_link_code_format_is_enforced(api_client, fake_redis):
+    """Код другой длины не проходит даже на уровне схемы — иначе перебор
+    идёт по 10**6 вариантов вместо 10**8."""
+    r = await api_client.post(
+        "/api/m/v1/auth/telegram",
+        json={"init_data": _make_init_data(TG_ID), "link_code": "000000"},
+    )
+    assert r.status_code == 422

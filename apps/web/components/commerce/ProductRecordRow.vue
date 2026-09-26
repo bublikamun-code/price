@@ -80,7 +80,7 @@ const actionLabel = computed(() => {
           <Icon :name="favorite ? 'heroicons:heart-solid' : 'heroicons:heart'" class="size-5" aria-hidden="true" />
         </button>
       </div>
-      <NuxtLink :to="`/catalog/${product.sku}`" class="mt-1 block line-clamp-2 text-sm font-semibold leading-5 text-ink hover:text-action">{{ product.name }}</NuxtLink>
+      <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="mt-1 block line-clamp-2 text-sm font-semibold leading-5 text-ink hover:text-action">{{ product.name }}</NuxtLink>
       <p class="numeric mt-1 truncate text-xs text-ink-muted">{{ product.sku }}<span v-if="product.series"> · {{ product.series.name }}</span></p>
       <div class="mt-3 flex items-end justify-between gap-3">
         <div class="min-w-0">

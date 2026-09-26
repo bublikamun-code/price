@@ -156,4 +156,34 @@ else
   die "деплой откачен: новый билд не содержал Trade-токены или record-v2 marker"
 fi
 
+# Регресс-тест на подделку роли. auth_user не подписана: раньше SSR брал роль
+# прямо из неё, поэтому cookie с role:ADMIN открывала менеджерские страницы.
+# Теперь источник истины — /me по настоящей HttpOnly access-cookie, поэтому
+# фейковый токен обязан увести на /login. Тест безопасный: подделанный токен
+# не соответствует ни одной реальной сессии и никого не разлогинивает.
+FORGED_USER='%7B%22id%22%3A%221%22%2C%22email%22%3A%22probe%40example.by%22%2C%22role%22%3A%22ADMIN%22%2C%22is_active%22%3Atrue%7D'
+AUTH_HEADERS="$(curl -s -o /dev/null -D - -w '\n%{http_code}' --max-time 15 \
+  -H "Cookie: access_token=bogus; auth_user=$FORGED_USER" "$SITE_URL/dashboard" | tr -d '\r' || true)"
+AUTH_STATUS="$(echo "$AUTH_HEADERS" | tail -1)"
+AUTH_LOC="$(echo "$AUTH_HEADERS" | grep -i '^location:' | head -1 || true)"
+log "auth-forgery probe: http=$AUTH_STATUS $AUTH_LOC"
+case "$AUTH_STATUS $AUTH_LOC" in
+  2*) die "ДЫРА: подделанная auth_user с role:ADMIN открыла /dashboard (http=$AUTH_STATUS). Откат обязателен." ;;
+  3*login*|*login*3*) log "OK: подделанная роль не дала доступ — редирект на /login" ;;
+  *) log "ВНИМАНИЕ: неожиданный ответ на поддельную сессию (http=$AUTH_STATUS $AUTH_LOC) — проверьте вручную" ;;
+esac
+
+# Заголовки безопасности на HTML: без них ни CSP, ни запрет фрейминга не
+# работают. Проверяем то, что обязаны ставить приложение: прод — PM2 за edge
+# nginx хостера, конфигурации nginx из репозитория на сервере нет.
+for H in content-security-policy x-frame-options x-content-type-options referrer-policy; do
+  curl -sI --max-time 15 "$SITE_URL/" | tr -d '\r' | grep -qi "^$H:" \
+    || log "ВНИМАНИЕ: заголовок $H отсутствует в ответе /"
+done
+
+# X-Powered-By: приложение обязано его снимать (server/plugins/strip-powered-by.ts).
+# Возврат заголовка = плагин выпал из сборки, и по нему сканер определяет стек.
+curl -sI --max-time 15 "$SITE_URL/" | tr -d '\r' | grep -qi "^x-powered-by:" \
+  && log "ВНИМАНИЕ: ответ отдаёт X-Powered-By — плагин strip-powered-by не сработал"
+
 log "деплой $REF завершён"

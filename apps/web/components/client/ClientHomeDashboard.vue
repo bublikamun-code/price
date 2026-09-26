@@ -208,7 +208,7 @@ watch(
           <NuxtLink
             v-for="order in recentOrders"
             :key="order.id"
-            :to="`/orders/${order.id}`"
+            :to="`/orders/${encodeURIComponent(order.id)}`"
             class="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border py-3 hover:bg-surface-2 sm:grid-cols-[minmax(0,1fr)_10rem_9rem_auto] sm:px-2"
           >
             <div class="min-w-0">

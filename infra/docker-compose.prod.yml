@@ -30,11 +30,15 @@ services:
       JWT_PRIVATE_KEY_PATH: /jwt-keys/jwt_rsa.key
       JWT_PUBLIC_KEY_PATH: /jwt-keys/jwt_rsa.pub
       COOKIE_SECURE: true                         # prod: Secure-куки только по HTTPS (§16 п.30)
+    # X-Forwarded-For от nginx обязателен: без него slowapi видит IP самого
+    # nginx, и пер-IP лимиты login (5/15min) становятся глобальными. Доверять
+    # всем адресам безопасно — наружу api не публикуется (ports: !reset ниже).
     command: >
       gunicorn app.main:app
       --worker-class uvicorn.workers.UvicornWorker
       --workers 4 --bind 0.0.0.0:8000
       --timeout 120 --graceful-timeout 30
+      --proxy-headers --forwarded-allow-ips=*
     volumes: !override            # код внутри образа; только JWT-ключи read-only
       - ./jwt-keys:/jwt-keys:ro   # = infra/jwt-keys (make gen-jwt-keys)
     restart: always

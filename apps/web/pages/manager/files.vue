@@ -221,7 +221,7 @@ async function download(f: FileAsset) {
       `/api/v1/files/${f.id}/download`,
     )
     const link = res.data ?? res
-    window.open(link.url, '_blank')
+    window.open(link.url, '_blank', 'noopener,noreferrer')
   } catch (e) {
     downloadError.value = getErrorMessage(e, 'Не удалось получить ссылку на файл')
   } finally {

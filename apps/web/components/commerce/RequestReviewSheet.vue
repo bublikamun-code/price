@@ -52,7 +52,7 @@ async function removeLine(line: CartLine) {
       <ul class="divide-y divide-border border-y border-border">
         <li v-for="line in cartLines" :key="line.productId" class="flex gap-3 py-3">
           <div class="min-w-0 flex-1">
-            <NuxtLink :to="`/catalog/${line.sku}`" class="line-clamp-2 text-sm font-semibold text-ink hover:text-action">{{ line.name }}</NuxtLink>
+            <NuxtLink :to="`/catalog/${encodeURIComponent(line.sku)}`" class="line-clamp-2 text-sm font-semibold text-ink hover:text-action">{{ line.name }}</NuxtLink>
             <p class="numeric mt-1 text-xs text-ink-muted">{{ line.sku }} · {{ line.quantity }} шт.</p>
             <strong class="numeric mt-2 block text-sm text-ink">{{ formatMoney(line.lineTotal.amount, line.lineTotal.currency) }}</strong>
           </div>

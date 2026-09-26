@@ -290,4 +290,39 @@ describe('Client cabinet contract', () => {
     expect(login).toContain('data-testid="login-error"')
     expect(login.match(/:error="errorMsg \|\| undefined"/g) ?? []).toHaveLength(1)
   })
+
+  it('shows a real product photo with an icon fallback in request lines', () => {
+    const line = read('components/commerce/OrderLineRecord.vue')
+    const photo = read('composables/useLinePhoto.ts')
+    // Фото приходит из v1-каталога по артикулу: v2-контракт медиа не несёт.
+    expect(photo).toContain('/api/v1/catalog/products/')
+    expect(photo).toContain('import.meta.server')
+    expect(line).toContain('useLinePhoto')
+    expect(line).toContain('<img')
+    expect(line).toContain('@error="photoFailed = true"')
+    // Иконка остаётся только как фолбэк, а не вместо фото.
+    expect(line).toContain('<Icon v-else name="heroicons:package"')
+    expect(line).not.toMatch(/<Icon name="heroicons:package"/)
+  })
+
+  it('renders the in-stock badge as adjacent-button segments everywhere it appears', () => {
+    const badge = read('components/commerce/StockBadge.vue')
+    const line = read('components/commerce/OrderLineRecord.vue')
+    const detail = read('pages/catalog/[sku].vue')
+    const catalog = read('pages/catalog/index.vue')
+    // Соседние сегменты в одной рамке с разделителями, без скруглений.
+    expect(badge).toContain('border-l border-border')
+    expect(badge).toContain('overflow-hidden border border-border-strong')
+    expect(badge).toContain('role="img"')
+    expect(badge).toContain('В наличии')
+    expect(badge).toContain('Под заказ')
+    // Строка заявки и обе точки каталога используют сегментированный бейдж,
+    // а не одиночный UiStatusBadge-пилюлю.
+    expect(line).toContain('<StockBadge')
+    expect(line).not.toContain('<UiStatusBadge')
+    expect(detail).toContain('<StockBadge')
+    expect(catalog).toContain('<StockBadge')
+    expect(detail).not.toContain('<UiStatusBadge')
+    expect(catalog).not.toContain('<UiStatusBadge')
+  })
 })

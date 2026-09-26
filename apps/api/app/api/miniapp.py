@@ -8,7 +8,7 @@ POST /api/m/v1/auth/telegram ``{"init_data": str, "link_code": str = ""}``:
 2. Пользователь ищется по ``telegram_id`` из initData:
    - найден и активен → сессия (2FA не запрашивается: подписанные Telegram
      initData — фактор владения аккаунтом Telegram, §16 п.27);
-   - не найден + передан ``link_code`` (6 цифр из веб-профиля) → разовая
+   - не найден + передан ``link_code`` (8 цифр из веб-профиля) → разовая
      привязка ``telegram_id`` к этому аккаунту и сессия;
    - иначе 401 (регистрация — только через менеджера).
 
@@ -23,7 +23,7 @@ import urllib.parse
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth import _client_ip, _set_auth_cookies
@@ -35,7 +35,7 @@ from app.models.user import User
 from app.repositories import users as users_repo
 from app.schemas.auth import TokenPair
 from app.services.auth import AuthService
-from app.services.telegram_auth import consume_link_code
+from app.services.telegram_auth import LinkCodeRateLimited, consume_link_code
 
 log = get_logger("app.api.miniapp")
 
@@ -48,7 +48,10 @@ class MiniAppAuthIn(BaseModel):
     """Тело входа из Mini App: initData из Telegram.WebApp + код связки."""
 
     init_data: str = ""
-    link_code: str = ""
+    # Пусто — вход без привязки (Telegram уже привязан). Иначе ровно 8 цифр:
+    # формат зафиксирован сервисом (LINK_CODE_LENGTH), и длина 6..7 сузила бы
+    # перебор обратно до 10**6 комбинаций.
+    link_code: str = Field(default="", pattern=r"^$|^\d{8}$")
 
 
 def _parse_init_data(raw: str) -> dict[str, str]:
@@ -119,7 +122,14 @@ async def telegram_auth(
 
     user = await users_repo.get_by_telegram_id(db, tg_user_id)
     if user is None and body.link_code.strip():
-        user_id = consume_link_code(body.link_code)
+        try:
+            # throttle_scope = id Telegram-аккаунта: пять неудачных вводов на
+            # аккаунт за окно TTL, дальше — 429 независимо от частоты запросов.
+            user_id = consume_link_code(body.link_code, throttle_scope=f"tg:{tg_user_id}")
+        except LinkCodeRateLimited as exc:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS, str(exc)
+            ) from exc
         if user_id is None:
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED,
@@ -132,6 +142,16 @@ async def telegram_auth(
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED,
                 "Аккаунт уже привязан к другому Telegram. Сначала отвяжите его в профиле.",
+            )
+        # Обратная проверка: поиск выше уже отсеял занятый chat_id, но между
+        # ним и flush'ем другой запрос мог успеть занять этот же telegram_id.
+        # Повторная сверка под коммитом не даёт двум аккаунтам считаться
+        # владельцами одного чата.
+        owner = await users_repo.get_by_telegram_id(db, tg_user_id)
+        if owner is not None and owner.id != linked.id:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "Этот Telegram уже привязан к другому аккаунту портала.",
             )
         linked.telegram_id = tg_user_id
         await db.flush()

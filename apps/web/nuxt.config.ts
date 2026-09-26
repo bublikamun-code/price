@@ -1,8 +1,17 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 // См. ARCHITECTURE_PLAN.md §3 (дизайн), SITEMAP.md §1 (роутинг/layouts).
+
+// Номер счётчика Метрики: только цифры. Значение попадает в innerHTML тела
+// скрипта, поэтому всё, что не цифры, стало бы исполняемым JS.
+const rawMetrikaId = process.env.NUXT_PUBLIC_METRIKA_ID?.trim() ?? ''
+const METRIKA_ID = /^\d{1,12}$/.test(rawMetrikaId) ? rawMetrikaId : ''
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
-  devtools: { enabled: true },
+  // Devtools не должны попадать в прод-бандл: значение запекается на этапе
+  // сборки, поэтому достаточно проверки NODE_ENV (nuxt build выставляет
+  // production). В dev включаем всегда.
+  devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
   // SSR включён (Nuxt SSR через Nitro); для Telegram Mini App можно добавить nitro preset.
   ssr: true,
@@ -47,6 +56,13 @@ export default defineNuxtConfig({
     public: {
       // '' => относительные запросы через nginx (единый вход, §14)
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost:8000',
+      // Хосты, с которых разрешено грузить внешние фото (useProductPhoto).
+      // Пусто = никакие: всё отдаётся через /api/v1/files/photo. Список нужен
+      // только если в каталоге появятся photo_key с чужим доменом.
+      imageAllowedHosts: (process.env.NUXT_PUBLIC_IMAGE_ALLOWED_HOSTS ?? '')
+        .split(',')
+        .map(host => host.trim().toLowerCase())
+        .filter(Boolean),
     },
   },
 
@@ -61,10 +77,13 @@ export default defineNuxtConfig({
         { name: 'description', content: 'B2B-портал «Свет в доме»: каталог светотехники и электромонтажа, персональные цены по договору, заявки онлайн для юридических лиц и ИП.' },
       ],
       link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
-        // Яндекс.Метрика: подключается только если задан NUXT_PUBLIC_METRIKA_ID
-        ...(process.env.NUXT_PUBLIC_METRIKA_ID
+        // Яндекс.Метрика: подключается только если задан NUXT_PUBLIC_METRIKA_ID.
+        // ID подставляется в innerHTML тела скрипта, поэтому проверяем, что это
+        // именно счётчик (только цифры) — иначе значение из окружения станет
+        // исполняемым JS на каждой странице. Нецифровой ID → счётчик не ставится.
+        ...(METRIKA_ID
           ? [{
-              innerHTML: `(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");ym(${process.env.NUXT_PUBLIC_METRIKA_ID},"init",{clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});`,
+              innerHTML: `(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");ym(${METRIKA_ID},"init",{clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});`,
               tagPosition: 'bodyClose' as const,
             }]
           : []),
