@@ -6,7 +6,7 @@ definePageMeta({ layout: 'miniapp', middleware: 'm-auth' })
 const route = useRoute()
 const router = useRouter()
 const { request } = useApi()
-const { photoOf } = useProductPhoto()
+const { photoOf, urlOf } = useProductPhoto()
 const cart = useCart()
 
 const sku = computed(() => String(route.params.sku))
@@ -28,11 +28,33 @@ const catalogMeta = computed(() => {
 
 useHead({ title: computed(() => product.value?.name || 'Товар') })
 
+// Галерея v1: photo_key — основной кадр (первое фото товара либо фото серии),
+// photos — полный список фото товара, где первое совпадает с photo_key; дубль
+// убираем, чтобы кадр не показывался в ленте дважды.
+const selectedPhotoIndex = ref(0)
+const galleryPhotos = computed(() => {
+  const p = product.value
+  if (!p) return []
+  const frames: { id: string; url: string }[] = []
+  const main = photoOf(p)
+  if (main) frames.push({ id: p.photo_key || 'main', url: main })
+  for (const key of p.photos ?? []) {
+    if (key === p.photo_key) continue
+    const url = urlOf(key)
+    if (url) frames.push({ id: key, url })
+  }
+  return frames
+})
+const activePhoto = computed(
+  () => galleryPhotos.value[selectedPhotoIndex.value] ?? galleryPhotos.value[0] ?? null,
+)
+
 async function load() {
   loading.value = true
   error.value = ''
   notFound.value = false
   product.value = null
+  selectedPhotoIndex.value = 0
   try {
     product.value = await request<ProductDetail>(
       `/api/v1/catalog/products/${encodeURIComponent(sku.value)}`,
@@ -101,12 +123,8 @@ const STOCK_META: Record<string, { label: string; tone: 'success' | 'warning' | 
     </div>
 
     <article v-else-if="product" class="border border-border bg-surface">
-      <header class="grid grid-cols-[96px_minmax(0,1fr)] gap-4 border-b border-border p-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-5">
-        <div class="flex size-24 items-center justify-center overflow-hidden border border-border bg-background sm:size-40">
-          <img v-if="photoOf(product)" :src="photoOf(product)!" :alt="product.name" class="size-full object-contain">
-          <Icon v-else name="heroicons:photo" class="size-10 text-ink-faint" aria-hidden="true" />
-        </div>
-        <div class="min-w-0 self-center">
+      <header class="border-b border-border p-4 sm:p-5">
+        <div class="min-w-0">
           <PageHeading
             class="mb-0"
             :eyebrow="product.sku"
@@ -119,6 +137,27 @@ const STOCK_META: Record<string, { label: string; tone: 'success' | 'warning' | 
           </PageHeading>
         </div>
       </header>
+
+      <div data-testid="m-product-media" class="border-b border-border p-4">
+        <template v-if="activePhoto">
+          <img :src="activePhoto.url" :alt="product.name" class="aspect-[4/3] w-full border border-border bg-background object-contain">
+          <div v-if="galleryPhotos.length > 1" class="mt-2 flex gap-2 overflow-x-auto scrollbar-none" role="group" aria-label="Фотографии товара">
+            <button
+              v-for="(frame, index) in galleryPhotos"
+              :key="frame.id"
+              type="button"
+              class="min-h-11 shrink-0 border bg-background p-0.5"
+              :class="frame.id === activePhoto.id ? 'border-action' : 'border-border'"
+              :aria-label="`Показать фото ${index + 1} из ${galleryPhotos.length}`"
+              :aria-pressed="frame.id === activePhoto.id"
+              @click="selectedPhotoIndex = index"
+            >
+              <img :src="frame.url" :alt="`${product.name} — фото ${index + 1}`" class="size-14 object-contain">
+            </button>
+          </div>
+        </template>
+        <p v-else class="text-xs leading-5 text-ink-muted">Фото товара пока недоступно</p>
+      </div>
 
       <div class="grid sm:grid-cols-[minmax(0,1fr)_18rem]">
         <section class="border-b border-border p-4 sm:border-b-0 sm:border-r">
