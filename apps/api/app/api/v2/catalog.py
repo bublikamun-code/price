@@ -203,6 +203,21 @@ def _product(row, prices: dict, resolved: ResolvedRate) -> CatalogProduct:
     )
 
 
+async def _gallery_media(db: AsyncSession, product_id: uuid.UUID) -> list[MediaResource]:
+    """Кадры галереи товара (ProductPhoto, порядок sort_order/created_at).
+
+    Оба detail-хендлера обязаны отдавать одинаковый набор: web-карточка
+    открывается по by-sku, и без этого блока там оставалось только титульное
+    фото, хотя by-productId показывал полную галерею.
+    """
+    gallery = await repo.list_product_photos(db, product_id)
+    return [
+        MediaResource.model_validate(ref)
+        for ref in (media_service.media_ref_for_key(key) for key in gallery)
+        if ref
+    ]
+
+
 @router.get(
     "/products",
     response_model=CursorResponse[CatalogProduct],
@@ -315,8 +330,10 @@ async def get_product_by_sku(
         resolved=resolved,
         organization_id=context.organization_id,
     )
+    detail = _product(row, prices[product.id], resolved)
+    detail.media = await _gallery_media(db, product.id)
     return SuccessResponse[CatalogProduct](
-        data=_product(row, prices[product.id], resolved),
+        data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),
     )
 
@@ -362,13 +379,8 @@ async def get_product(
         resolved=resolved,
         organization_id=context.organization_id,
     )
-    gallery = await repo.list_product_photos(db, product_id)
     detail = _product(row, prices[product.id], resolved)
-    detail.media = [
-        MediaResource.model_validate(ref)
-        for ref in (media_service.media_ref_for_key(key) for key in gallery)
-        if ref
-    ]
+    detail.media = await _gallery_media(db, product_id)
     return SuccessResponse[CatalogProduct](
         data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),

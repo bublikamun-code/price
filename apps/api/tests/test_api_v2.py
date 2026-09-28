@@ -1,8 +1,10 @@
 """Contract tests for the first API v2 vertical slice."""
 import uuid
 
+from app.models.catalog import ProductPhoto
 from app.models.enums import UserRole
 from app.schemas.v2.common import Money, money_amount, rate_value
+from app.services.media import media_id_for_key
 from tests.conftest import (
     create_brand,
     create_product,
@@ -246,6 +248,16 @@ async def test_v2_catalog_product_by_uuid_and_sku_are_read_only(
         name="Detail Product",
         base_price="55.50",
     )
+    # Галерея обязана приезжать из обоих detail-роутов: web-карточка товара
+    # открывается по SKU, и рассинхрон by-sku/by-uuid оставлял её пустой.
+    gallery_keys = [
+        f"photos-product/{product.id}/aaaaaaaa.webp",
+        f"photos-product/{product.id}/bbbbbbbb.webp",
+    ]
+    async with session_factory() as s:
+        for sort_order, key in enumerate(gallery_keys):
+            s.add(ProductPhoto(product_id=product.id, photo_key=key, sort_order=sort_order))
+        await s.commit()
     await create_user(
         session_factory,
         email=CLIENT_EMAIL,
@@ -263,6 +275,10 @@ async def test_v2_catalog_product_by_uuid_and_sku_are_read_only(
         "amount": "55.50",
         "currency": "BYN",
     }
+    media = by_sku.json()["data"]["media"]
+    assert [item["id"] for item in media] == [
+        str(media_id_for_key(key)) for key in gallery_keys
+    ]
 
     missing = await api_client.get(f"/api/v2/catalog/products/{uuid.uuid4()}")
     assert missing.status_code == 404
