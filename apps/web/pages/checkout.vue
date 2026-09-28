@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { OrderCreate, OrderDeliveryCreate } from '~/domain/api/v2/order.schema'
+import type { OrganizationAddress, OrganizationAddressCreate } from '~/domain/api/v2/organizations.schema'
 import { toAppProblem, AppProblem } from '~/domain/api/v2/problem'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
@@ -20,6 +21,50 @@ const deliveryDate = ref('')
 const deliveryComment = ref('')
 const contactError = ref('')
 const phoneError = ref('')
+
+// Адресная книга доставки (Этап 2): выбор сохранённого адреса организации или
+// сохранение нового перед отправкой. Пока адресов нет — прежнее поведение.
+const NEW_ADDRESS_CHOICE = 'new'
+const addressesV2 = useOrganizationAddresses()
+const savedAddresses = ref<OrganizationAddress[]>([])
+const addressesState = ref<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
+const addressChoice = ref<string>(NEW_ADDRESS_CHOICE)
+const showNewAddress = ref(false)
+const saveNewAddress = ref(false)
+const newAddressLine = ref('')
+const newAddressCity = ref('')
+const newAddressLabel = ref('')
+const newAddressRecipient = ref('')
+const newAddressPhone = ref('')
+const newAddressError = ref('')
+const addressSaveError = ref<AppProblem | null>(null)
+
+const newAddressFormVisible = computed(() =>
+  savedAddresses.value.length
+    ? addressChoice.value === NEW_ADDRESS_CHOICE
+    : showNewAddress.value,
+)
+
+async function loadAddresses() {
+  if (addressesState.value !== 'idle') return
+  addressesState.value = 'loading'
+  try {
+    savedAddresses.value = await addressesV2.listAddresses()
+    addressesState.value = 'ready'
+    // Адрес с isDefault=true предвыбран; иначе первый сохранённый.
+    const preferred = savedAddresses.value.find((address) => address.isDefault) ?? savedAddresses.value[0]
+    if (preferred) addressChoice.value = preferred.id
+  } catch {
+    // Адресная книга не блокирует оформление: адрес можно передать текстом.
+    addressesState.value = 'unavailable'
+  }
+}
+
+function openNewAddressForm() {
+  showNewAddress.value = true
+  if (!newAddressRecipient.value) newAddressRecipient.value = deliveryContact.value
+  if (!newAddressPhone.value) newAddressPhone.value = deliveryPhone.value
+}
 
 function problem(cause: unknown, fallback: string): AppProblem {
   return cause instanceof AppProblem ? cause : toAppProblem(cause, fallback)
@@ -53,26 +98,55 @@ async function loadCart() {
 function validateDelivery() {
   contactError.value = ''
   phoneError.value = ''
+  newAddressError.value = ''
   if (deliveryMethod.value === 'DELIVERY') {
     if (!deliveryContact.value.trim()) contactError.value = 'Укажите контактное лицо'
     if (!deliveryPhone.value.trim()) phoneError.value = 'Укажите телефон для доставки'
+    if (saveNewAddress.value && !newAddressLine.value.trim()) {
+      newAddressError.value = 'Укажите адрес, который нужно сохранить'
+    }
   }
-  return !contactError.value && !phoneError.value
+  return !contactError.value && !phoneError.value && !newAddressError.value
 }
 
-function buildPayload(): OrderCreate {
-  const delivery: OrderDeliveryCreate = deliveryMethod.value === 'PICKUP'
-    ? {
-        method: 'PICKUP',
-        comment: deliveryComment.value.trim() || null,
-      }
-    : {
-        method: 'DELIVERY',
-        contactName: deliveryContact.value.trim() || null,
-        phone: deliveryPhone.value.trim() || null,
-        preferredDate: deliveryDate.value || null,
-        comment: deliveryComment.value.trim() || null,
-      }
+function newAddressPayload(): OrganizationAddressCreate {
+  return {
+    kind: 'DELIVERY',
+    addressLine: newAddressLine.value.trim(),
+    label: newAddressLabel.value.trim() || null,
+    recipientName: newAddressRecipient.value.trim() || null,
+    phone: newAddressPhone.value.trim() || null,
+    city: newAddressCity.value.trim() || null,
+    isDefault: false,
+  }
+}
+
+function buildPayload(addressId: string | null): OrderCreate {
+  let delivery: OrderDeliveryCreate
+  if (deliveryMethod.value === 'PICKUP') {
+    delivery = { method: 'PICKUP', comment: deliveryComment.value.trim() || null }
+  } else {
+    // Новый адрес без галочки «сохранить» не имеет addressId — свободный текст
+    // уходит в комментарий, как до адресной книги (FEATURES_ROADMAP, Этап 2).
+    const inlineAddress = [newAddressLine.value.trim(), newAddressCity.value.trim()]
+      .filter(Boolean)
+      .join(', ')
+    const comment = [
+      deliveryComment.value.trim(),
+      addressId ? null : inlineAddress && `Адрес доставки: ${inlineAddress}`,
+    ]
+      .filter(Boolean)
+      .join('. ')
+      .slice(0, 2000)
+    delivery = {
+      method: 'DELIVERY',
+      addressId,
+      contactName: deliveryContact.value.trim() || null,
+      phone: deliveryPhone.value.trim() || null,
+      preferredDate: deliveryDate.value || null,
+      comment: comment || null,
+    }
+  }
 
   return {
     // v2 order lines are keyed by productId; SKU is a display field only.
@@ -88,12 +162,40 @@ function buildPayload(): OrderCreate {
 async function submit() {
   if (!cart.value?.items.length || submitting.value || ordersV2.store.loading) return
   submitError.value = null
+  addressSaveError.value = null
   if (!validateDelivery()) return
 
   submitting.value = true
   try {
+    let addressId: string | null = null
+    if (
+      deliveryMethod.value === 'DELIVERY' &&
+      saveNewAddress.value &&
+      newAddressLine.value.trim()
+    ) {
+      // Адрес сохраняется до отправки заявки: 409 ADDRESS_DUPLICATE отменяет
+      // создание заказа, повторная отправка уйдёт уже с существующим адресом.
+      try {
+        const created = await addressesV2.createAddress(newAddressPayload())
+        savedAddresses.value = [...savedAddresses.value, created]
+        addressChoice.value = created.id
+        saveNewAddress.value = false
+        newAddressLine.value = ''
+        newAddressCity.value = ''
+        newAddressLabel.value = ''
+        addressId = created.id
+      } catch (cause) {
+        const appProblem = problem(cause, 'Не удалось сохранить адрес доставки')
+        if (appProblem.code === 'ADDRESS_DUPLICATE') {
+          addressSaveError.value = appProblem
+          return
+        }
+        throw appProblem
+      }
+    }
+
     // The orders store owns the v2 Idempotency-Key and serializes retries.
-    const result = await ordersV2.submit(buildPayload())
+    const result = await ordersV2.submit(buildPayload(addressId))
     await navigateTo(`/orders/${encodeURIComponent(result.order.id)}`)
   } catch (cause) {
     submitError.value = problem(cause, 'Не удалось оформить заявку')
@@ -104,6 +206,11 @@ async function submit() {
 
 onMounted(() => {
   void loadCart()
+  if (deliveryMethod.value === 'DELIVERY') void loadAddresses()
+})
+
+watch(deliveryMethod, (method) => {
+  if (method === 'DELIVERY') void loadAddresses()
 })
 </script>
 
@@ -184,6 +291,59 @@ onMounted(() => {
               <UiField for="delivery-date" label="Желаемая дата" description="Необязательно">
                 <UiInput id="delivery-date" v-model="deliveryDate" type="date" :disabled="submitting" />
               </UiField>
+            </div>
+
+            <div v-if="deliveryMethod === 'DELIVERY'" class="mt-6" data-testid="checkout-address-book">
+              <p class="text-sm font-semibold text-ink">Адрес доставки</p>
+              <p v-if="addressesState === 'unavailable'" class="mt-2 text-xs leading-5 text-ink-muted" data-testid="checkout-addresses-unavailable">
+                Не удалось загрузить адресную книгу — адрес можно передать текстом в комментарии.
+              </p>
+
+              <div v-if="savedAddresses.length" class="mt-3 grid gap-3" role="radiogroup" aria-label="Сохранённые адреса доставки">
+                <label v-for="address in savedAddresses" :key="address.id" class="flex min-h-16 cursor-pointer items-start gap-3 border p-4 transition-colors" :class="addressChoice === address.id ? 'border-action bg-action-soft' : 'border-border bg-surface hover:border-border-strong'" data-testid="checkout-address-option">
+                  <input v-model="addressChoice" type="radio" name="delivery-address" :value="address.id" class="mt-1 size-4 shrink-0 accent-action">
+                  <span class="min-w-0">
+                    <span class="flex flex-wrap items-center gap-2">
+                      <span class="text-sm font-semibold text-ink">{{ address.label || address.recipientName || 'Адрес' }}</span>
+                      <span v-if="address.isDefault" class="border border-border-strong px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-ink-muted" data-testid="checkout-address-default-badge">По умолчанию</span>
+                    </span>
+                    <span class="mt-1 block text-sm text-ink-muted">{{ address.addressLine }}<template v-if="address.city">, {{ address.city }}</template></span>
+                    <span v-if="address.recipientName || address.phone" class="mt-1 block text-xs leading-5 text-ink-muted">{{ [address.recipientName, address.phone].filter(Boolean).join(' · ') }}</span>
+                  </span>
+                </label>
+                <label class="flex min-h-16 cursor-pointer items-start gap-3 border p-4 transition-colors" :class="addressChoice === NEW_ADDRESS_CHOICE ? 'border-action bg-action-soft' : 'border-border bg-surface hover:border-border-strong'" data-testid="checkout-address-option-new">
+                  <input v-model="addressChoice" type="radio" name="delivery-address" :value="NEW_ADDRESS_CHOICE" class="mt-1 size-4 shrink-0 accent-action">
+                  <span><span class="block text-sm font-semibold text-ink">Новый адрес</span><span class="mt-1 block text-xs leading-5 text-ink-muted">Указать другой адрес и при необходимости сохранить его в адресной книге.</span></span>
+                </label>
+              </div>
+
+              <button v-else type="button" class="mt-3 inline-flex min-h-11 items-center border border-border bg-surface px-4 text-sm font-semibold text-ink transition-colors hover:border-border-strong" data-testid="checkout-address-new-toggle" @click="openNewAddressForm">
+                {{ showNewAddress ? 'Скрыть форму адреса' : 'Указать новый адрес' }}
+              </button>
+
+              <div v-if="newAddressFormVisible" class="mt-4 grid gap-4 border border-border bg-surface p-4 sm:grid-cols-2" data-testid="checkout-new-address-form">
+                <UiField for="new-address-line" label="Адрес" required :error="newAddressError" class="sm:col-span-2">
+                  <UiInput id="new-address-line" v-model="newAddressLine" :error="newAddressError" :disabled="submitting" placeholder="ул. Притыцкого, 12, офис 305" data-testid="checkout-new-address-line" />
+                </UiField>
+                <UiField for="new-address-city" label="Город" description="Необязательно">
+                  <UiInput id="new-address-city" v-model="newAddressCity" :disabled="submitting" placeholder="Минск" />
+                </UiField>
+                <UiField for="new-address-label" label="Название" description="Необязательно, до 120 символов">
+                  <UiInput id="new-address-label" v-model="newAddressLabel" :disabled="submitting" placeholder="Склад, офис…" />
+                </UiField>
+                <UiField for="new-address-recipient" label="Получатель" description="По умолчанию — контактное лицо">
+                  <UiInput id="new-address-recipient" v-model="newAddressRecipient" :disabled="submitting" placeholder="Иван Иванов" />
+                </UiField>
+                <UiField for="new-address-phone" label="Телефон получателя" description="По умолчанию — телефон доставки">
+                  <UiInput id="new-address-phone" v-model="newAddressPhone" type="tel" :disabled="submitting" placeholder="+375 29 000-00-00" />
+                </UiField>
+                <div class="sm:col-span-2">
+                  <UiCheckbox v-model="saveNewAddress" label="Сохранить в адресную книгу" name="checkout-save-address" description="Адрес появится в списке сохранённых при следующем оформлении." data-testid="checkout-save-address" />
+                </div>
+                <p v-if="addressSaveError" class="border border-danger/50 bg-danger-soft p-3 text-sm leading-5 text-danger-text sm:col-span-2" role="alert" data-testid="checkout-address-save-error">
+                  {{ addressSaveError.code === 'ADDRESS_DUPLICATE' ? 'Такой адрес уже сохранён в адресной книге. Выберите его из списка выше или измените данные.' : problemMessage(addressSaveError) }}
+                </p>
+              </div>
             </div>
           </fieldset>
 

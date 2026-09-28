@@ -32,6 +32,34 @@ class StorageError(RuntimeError):
     """Ошибка хранилища S3 (network / доступ / отстутствие объекта)."""
 
 
+class ObjectNotFound(StorageError):
+    """Объекта нет в бакете — в отличие от недоступного хранилища.
+
+    Наследует :class:`StorageError`, поэтому существующие ``except
+    StorageError`` продолжают ловить оба случая; различать их нужно только там,
+    где эндпоинту важен код ответа (404 против 502).
+    """
+
+
+# Коды, которыми S3/MinIO сообщают об отсутствии объекта или бакета.
+_MISSING_CODES = frozenset({"NoSuchKey", "NoSuchBucket", "NotFound", "404"})
+
+# Content-Type для фото, когда расширение известно. Явная карта вместо
+# ``mimetypes``: последний на Windows дописывает типы из реестра, и один и тот
+# же ключ отдавался бы с разным Content-Type на разных хостах.
+PHOTO_MEDIA_TYPES = {
+    ".webp": "image/webp",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+}
+
+
+def photo_media_type(key: str) -> str:
+    """Content-Type фото по его S3-ключу; неизвестное расширение → octet-stream."""
+    return PHOTO_MEDIA_TYPES.get(key[key.rfind(".") :].lower(), "application/octet-stream")
+
+
 @lru_cache(maxsize=1)
 def get_s3_client() -> BaseClient:
     """Синглтон S3-клиента (endpoint — внутреннее имя MinIO в compose).
@@ -112,13 +140,19 @@ def upload_fileobj(
 
 
 def get_bytes(bucket: str, key: str) -> bytes:
-    """Прочитать объект целиком как bytes. Отсутствие → :class:`StorageError`."""
+    """Прочитать объект целиком как bytes.
+
+    Отсутствие объекта → :class:`ObjectNotFound` (подтип :class:`StorageError`),
+    недоступное хранилище → :class:`StorageError`.
+    """
     client = get_s3_client()
     try:
         resp = client.get_object(Bucket=bucket, Key=key)
     except (BotoCoreError, ClientError) as exc:
         code = getattr(exc, "response", {}).get("Error", {}).get("Code")
         log.warning("s3.get_failed", bucket=bucket, key=key, code=code, error=str(exc))
+        if code in _MISSING_CODES:
+            raise ObjectNotFound(f"Объект {bucket}/{key} не найден") from exc
         raise StorageError(f"Не удалось прочитать объект {bucket}/{key}") from exc
     return resp["Body"].read()
 

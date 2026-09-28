@@ -1,0 +1,37 @@
+{
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fixture-access",
+    "accessTokenExpiresAt": "2026-09-27T12:15:00Z",
+    "refreshToken": "fixture-refresh-token-0001",
+    "refreshTokenExpiresAt": "2026-10-04T11:00:00Z",
+    "forcePasswordChange": false,
+    "session": {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "createdAt": "2026-09-27T11:00:00Z",
+      "expiresAt": "2026-10-04T11:00:00Z",
+      "deviceName": "iPhone 15 Pro",
+      "os": "iOS 18.2",
+      "appVersion": "1.0.0",
+      "clientType": "NATIVE",
+      "current": true
+    },
+    "user": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "email": "client@example.by",
+      "fullName": "Иван Клиент",
+      "role": "CLIENT",
+      "isActive": true,
+      "displayCurrency": "BYN",
+      "consentAccepted": true,
+      "totpEnabled": false,
+      "priceDigestEnabled": false,
+      "priceDigestSources": ["cart", "favorite", "orders"],
+      "forcePasswordChange": false,
+      "phone": "+375291112233",
+      "legacyCompany": "СтройТрейд"
+    }
+  },
+  "meta": {
+    "requestId": "v2-fixture-auth-grant-001"
+  }
+}

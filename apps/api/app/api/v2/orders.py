@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,11 +53,27 @@ _ORDER_SORT = "createdAt,id"
 _ORDER_CURSOR_RESOURCE = "orders"
 
 
-def _order_filter_signature(user: User, context, status: OrderStatus | None) -> str:
+def _order_filter_signature(
+    user: User,
+    context,
+    status: OrderStatus | None,
+    *,
+    q: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    min_total: Decimal | None,
+    max_total: Decimal | None,
+) -> str:
+    """Bind the cursor to the full filter set (Этап 1: поиск, даты, сумма)."""
     return filter_signature(
         str(user.id),
         str(context.organization_id) if context.organization_id else None,
         status.value if status is not None else None,
+        q,
+        date_from.isoformat() if date_from is not None else None,
+        date_to.isoformat() if date_to is not None else None,
+        str(min_total) if min_total is not None else None,
+        str(max_total) if max_total is not None else None,
     )
 
 
@@ -66,6 +83,11 @@ def _decode_order_cursor(
     user: User,
     context,
     status: OrderStatus | None,
+    q: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    min_total: Decimal | None,
+    max_total: Decimal | None,
 ) -> dict[str, str] | None:
     if cursor is None:
         return None
@@ -74,7 +96,16 @@ def _decode_order_cursor(
             cursor,
             resource=_ORDER_CURSOR_RESOURCE,
             sort=_ORDER_SORT,
-            filter_sig=_order_filter_signature(user, context, status),
+            filter_sig=_order_filter_signature(
+                user,
+                context,
+                status,
+                q=q,
+                date_from=date_from,
+                date_to=date_to,
+                min_total=min_total,
+                max_total=max_total,
+            ),
         )
         # Authenticate the complete payload first, then validate its key value.
         datetime.fromisoformat(decoded["value"])
@@ -151,27 +182,57 @@ def _notify_manager_order_created(
 async def list_orders(
     request: Request,
     status: OrderStatus | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=255),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    min_total: Decimal | None = Query(default=None, ge=0),
+    max_total: Decimal | None = Query(default=None, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     cursor: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CursorResponse[OrderSummary]:
     context = await OrganizationContextService(db).resolve(user)
-    after = _decode_order_cursor(cursor, user=user, context=context, status=status)
+    after = _decode_order_cursor(
+        cursor,
+        user=user,
+        context=context,
+        status=status,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        min_total=min_total,
+        max_total=max_total,
+    )
     rows = await OrderService(db).list_for_client_v2(
         user,
         context=context,
         status=status,
         limit=limit + 1,
         after=after,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        min_total=min_total,
+        max_total=max_total,
     )
     has_more = len(rows) > limit
     rows = rows[:limit]
+    filter_sig = _order_filter_signature(
+        user,
+        context,
+        status,
+        q=q,
+        date_from=date_from,
+        date_to=date_to,
+        min_total=min_total,
+        max_total=max_total,
+    )
     next_cursor = (
         encode_cursor(
             resource=_ORDER_CURSOR_RESOURCE,
             sort=_ORDER_SORT,
-            filter_sig=_order_filter_signature(user, context, status),
+            filter_sig=filter_sig,
             value=rows[-1].created_at.isoformat(),
             item_id=rows[-1].id,
         )

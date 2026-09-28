@@ -1,8 +1,8 @@
 """Read-only API v2 catalog projections.
 
 Prices are resolved by the existing pricing service and exposed as Money/Rate
-objects.  Media is intentionally omitted until the v2 media-resource contract
-is implemented; internal storage keys must not enter this transport.
+objects. Media is exposed as stable media resources (§16 п.37) — internal S3
+keys never enter this transport.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.schemas.v2.common import Money, Rate, V2Model
+from app.schemas.v2.media import MediaResource
 
 StockVisibility = Literal["IN_STOCK", "PREORDER"]
 
@@ -41,6 +42,10 @@ class CatalogProduct(V2Model):
     client_price: Money
     exchange_rate: Rate
     has_discount: bool
+    # Плитка каталога: одно изображение (фото товара, иначе фото серии).
+    # Галерея в detail-проекции — в `media`.
+    thumbnail: MediaResource | None = None
+    media: list[MediaResource] = Field(default_factory=list)
 
 
 class CatalogFacets(V2Model):

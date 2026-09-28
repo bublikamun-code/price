@@ -366,8 +366,9 @@ async def test_organization_cart_repeat_mismatch_and_create_scope_isolation(
                 {"productId": str(product.id), "quantity": "1", "note": None}
             ],
             "delivery": {
+                # Без addressId: тест про scope корзины, а с этапа 2 адресной
+                # книги несуществующий addressId — это 404 ADDRESS_NOT_FOUND.
                 "method": "DELIVERY",
-                "addressId": "99999999-9999-4999-8999-999999999999",
                 "contactName": "Иван",
                 "phone": "+375291234567",
                 "preferredDate": "2026-10-02",

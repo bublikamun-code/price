@@ -1,0 +1,11 @@
+# Артефакты сборки Gradle
+.gradle/
+build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+xcuserdata/
+.DS_Store

@@ -52,6 +52,23 @@ export const catalogSeriesRefSchema = z
   })
   .strict()
 
+/**
+ * Изображение каталога (§16 п.37, docs/NATIVE_API_CONTRACT.md §6.1).
+ * `url` — стабильный v2-путь `/api/v2/media/{id}`, а не presigned-S3: тот
+ * протухает за 5 минут и в качестве ключа кэша каждый раз создавал бы новую
+ * запись. Внутренние S3-ключи наружу не отдаются, поэтому `photoKey` в
+ * контракте нет и не появится.
+ */
+export const catalogMediaResourceSchema = z
+  .object({
+    id: uuidSchema,
+    url: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    mimeType: z.string().min(1),
+  })
+  .strict()
+
 export const catalogProductSchema = z
   .object({
     id: catalogProductIdSchema,
@@ -67,6 +84,15 @@ export const catalogProductSchema = z
     clientPrice: moneySchema,
     exchangeRate: rateSchema,
     hasDiscount: z.boolean(),
+    // Репрезентативный кадр для плитки каталога; полная галерея — в `media`.
+    // Оба поля опциональны на клиенте: ответы v1 и старые выкладки v2 фото
+    // не несут, и это штатное состояние, а не ошибка контракта.
+    // ВНИМАНИЕ: несмотря на имя, сейчас это large-кадр (1200×1200), а не
+    // миниатюра — сервер отдаёт photo_key из БД, где лежит только large-ключ
+    // (docs/NATIVE_API_CONTRACT.md §6.1). Рендерить надо по фактическим
+    // width/height, а не подгонять под 400×400.
+    thumbnail: catalogMediaResourceSchema.nullable().optional(),
+    media: z.array(catalogMediaResourceSchema).optional(),
   })
   .strict()
 
@@ -108,6 +134,7 @@ export type CatalogPriceCalcMode = z.infer<typeof catalogPriceCalcModeSchema>
 export type CatalogListQuery = z.infer<typeof catalogListQuerySchema>
 export type CatalogBrandRef = z.infer<typeof catalogBrandRefSchema>
 export type CatalogSeriesRef = z.infer<typeof catalogSeriesRefSchema>
+export type CatalogMediaResource = z.infer<typeof catalogMediaResourceSchema>
 export type CatalogProduct = z.infer<typeof catalogProductSchema>
 export type CatalogProductResponse = z.infer<typeof catalogProductResponseSchema>
 export type CatalogProductsResponse = z.infer<typeof catalogProductsResponseSchema>

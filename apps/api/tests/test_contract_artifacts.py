@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from app.api.v2.errors import PROBLEM_MEDIA_TYPE
+from app.schemas.v2.auth import SessionGrant, SessionSummary, TwoFaChallenge
 from app.schemas.v2.catalog import CatalogFacets, CatalogProduct
 from app.schemas.v2.common import (
     CursorResponse,
@@ -32,6 +33,11 @@ def test_v2_openapi_snapshot_matches_generated_v2_surface():
 
     assert snapshot == v2_openapi_document()
     assert list(snapshot["paths"]) == [
+        "/api/v2/auth/2fa/challenges/verify",
+        "/api/v2/auth/sessions",
+        "/api/v2/auth/sessions/current",
+        "/api/v2/auth/sessions/refresh",
+        "/api/v2/auth/sessions/{sessionId}",
         "/api/v2/cart",
         "/api/v2/cart/items",
         "/api/v2/cart/items/{productId}",
@@ -39,6 +45,9 @@ def test_v2_openapi_snapshot_matches_generated_v2_surface():
         "/api/v2/catalog/products",
         "/api/v2/catalog/products/by-sku/{sku}",
         "/api/v2/catalog/products/{productId}",
+        "/api/v2/me/organization/addresses",
+        "/api/v2/me/organization/addresses/{addressId}",
+        "/api/v2/media/{mediaId}",
         "/api/v2/orders",
         "/api/v2/orders/{orderId}",
         "/api/v2/orders/{orderId}/cancel",
@@ -58,6 +67,7 @@ def test_v2_openapi_snapshot_matches_generated_v2_surface():
                 continue
             if path.startswith(
                 (
+                    "/api/v2/auth",
                     "/api/v2/cart",
                     "/api/v2/organizations",
                     "/api/v2/session",
@@ -134,8 +144,26 @@ def test_shared_v2_json_fixtures_match_pydantic_contract():
     catalog_page = CursorResponse[CatalogProduct].model_validate(
         _load("v2/catalog_products_page.json")
     )
+    catalog_detail = SuccessResponse[CatalogProduct].model_validate(
+        _load("v2/catalog_product_detail.json")
+    )
     facets = SuccessResponse[CatalogFacets].model_validate(
         _load("v2/catalog_facets.json")
+    )
+    # Нативная аутентификация (§16 п.36). Эти фикстуры — единственный источник
+    # правды для core/ (KMP): SwiftUI и Compose декодируют те же файлы, пока
+    # нет кодогенератора из api-v2.openapi.json.
+    grant = SuccessResponse[SessionGrant].model_validate(
+        _load("v2/auth_session_grant.json")
+    )
+    challenge = SuccessResponse[TwoFaChallenge].model_validate(
+        _load("v2/auth_two_fa_challenge.json")
+    )
+    journal = SuccessResponse[list[SessionSummary]].model_validate(
+        _load("v2/auth_sessions_journal.json")
+    )
+    invalid_credentials = ProblemDetails.model_validate(
+        _load("v2/problem_invalid_credentials.json")
     )
 
     assert money.amount == "294.90"
@@ -173,6 +201,38 @@ def test_shared_v2_json_fixtures_match_pydantic_contract():
     assert catalog_page.data[0].client_price == Money(amount="90.00", currency="BYN")
     assert catalog_page.meta.has_more is False
     assert facets.data.models == ["Аксессуары"]
+
+    # Media (§16 п.37): стабильный id + стабильный URL. Клиент кэширует по id,
+    # поэтому presigned-подпись в контракт вообще не попадает.
+    assert catalog_page.data[0].thumbnail is not None
+    assert catalog_page.data[0].thumbnail.id == "44444444-4444-4444-8444-444444444444"
+    assert catalog_page.data[0].thumbnail.url == (
+        "/api/v2/media/44444444-4444-4444-8444-444444444444"
+    )
+    assert catalog_page.data[0].thumbnail.mime_type == "image/webp"
+    # Список несёт только плитку — галерея пуста до детальной выборки.
+    assert catalog_page.data[0].media == []
+    assert len(catalog_detail.data.media) == 2
+    assert catalog_detail.data.media[0].width == 1200
+    # Галерея не обязана повторять thumbnail.
+    assert catalog_detail.data.media[0].id != catalog_detail.data.thumbnail.id
+
+    # Нативный grant: токены в теле, а не в cookie — это и есть отличие NATIVE от WEB.
+    assert grant.meta.request_id == "v2-fixture-auth-grant-001"
+    assert grant.data.refresh_token == "fixture-refresh-token-0001"
+    assert grant.data.session.client_type == "NATIVE"
+    assert grant.data.session.device_name == "iPhone 15 Pro"
+    assert grant.data.session.os_name == "iOS 18.2"
+    assert grant.data.session.current is True
+    assert grant.data.user.email == "client@example.by"
+    # Web-сессия в том же журнале не выдумывает устройство.
+    assert journal.data[1].device_name is None
+    assert journal.data[1].client_type == "WEB"
+    assert [s.current for s in journal.data] == [True, False]
+    assert challenge.data.two_fa_required is True
+    assert not hasattr(challenge.data, "access_token")
+    assert invalid_credentials.code == "INVALID_CREDENTIALS"
+    assert invalid_credentials.status == 401
 
 
 def test_legacy_migration_fixture_is_deterministic_and_representative():

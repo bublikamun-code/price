@@ -92,6 +92,11 @@ function listPath(params: OrderListQuery = {}): string {
   const search = new URLSearchParams();
 
   if (query.status) search.set("status", query.status);
+  if (query.q !== undefined) search.set("q", query.q);
+  if (query.dateFrom !== undefined) search.set("date_from", query.dateFrom);
+  if (query.dateTo !== undefined) search.set("date_to", query.dateTo);
+  if (query.minTotal !== undefined) search.set("min_total", query.minTotal);
+  if (query.maxTotal !== undefined) search.set("max_total", query.maxTotal);
   if (query.limit !== undefined) search.set("limit", String(query.limit));
   if (query.cursor !== undefined) search.set("cursor", query.cursor);
 

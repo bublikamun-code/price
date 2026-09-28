@@ -133,7 +133,10 @@ class SuccessResponse(V2Model, Generic[T]):
 class CursorMeta(ResponseMeta):
     next_cursor: str | None = None
     has_more: bool = False
-    limit: int = Field(ge=1, le=200)
+    # Потолок совпадает с le=100 на query-параметре limit всех v2-списков:
+    # раньше схема разрешала 200, и DTO мог пройти валидацию со значением,
+    # которое эндпоинт отверг бы.
+    limit: int = Field(ge=1, le=100)
     sort: str = Field(min_length=1, max_length=32)
 
 

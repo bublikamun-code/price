@@ -1,0 +1,67 @@
+name: PriceWebApp
+options:
+  bundleIdPrefix: by.priceweb
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+# Проект генерируется XcodeGen'ом: `xcodegen generate` в каталоге ios/.
+# Почему не готовый .xcodeproj в репозитории: он не Merge-friendly — любая
+# правка структуры даёт бинарный diff на сотни строк и регулярные конфликты.
+# Декларация ниже читается как обычный код, а Xcode собирает проект из неё.
+targets:
+  PriceWebApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: PriceWebApp
+    # Фреймворк общего KMP-ядра. Собирается Gradle'ом:
+    #   cd core && ./gradlew -PenableIos=true :shared:linkDebugFrameworkIosSimulatorArm64
+    #   (для устройства — :shared:linkReleaseFrameworkIosArm64)
+    # Каталог вывода задаёт сам Gradle, и он НЕ равен `xcode-frameworks/DEBUG`
+    # из старой сборки KGP: путь ниже — единственный верный.
+    dependencies:
+      - framework: ../core/shared/build/bin/iosSimulatorArm64/debugFramework/shared.framework
+        embed: false
+      - sdk: SwiftUI.framework
+      - sdk: Security.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: by.priceweb.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # Подстановка в Info.plist (NSAllowsArbitraryLoads). Разрешаем
+        # plain-текстовый HTTP только в Debug — там единственный адрес, который
+        # вообще бывает http, это локальный стенд на адресе Mac. В Release
+        # значение NO, и ATS работает по умолчанию.
+        configs:
+          Debug:
+            ATS_ALLOWS_ARBITRARY_LOADS: "YES"
+          Release:
+            ATS_ALLOWS_ARBITRARY_LOADS: "NO"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: PriceWebApp/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
+        # Gradle собирает KMP-фреймворк по одному таргету за раз: под симулятор
+        # на Apple Silicon это iosSimulatorArm64, а для устройства — iosArm64.
+        # Это ДВА РАЗНЫХ ФАЙЛА, и их нельзя смешивать в одном списке поиска:
+        # линковщик берёт первый найденный, то есть при сборке под iPhone
+        # подхватил бы simulator-срез и упал с
+        #   ld: building for 'iOS', but linking in object file ... built for 'iOS-simulator'
+        # Поэтому пути условны по SDK, а не перечислены общим списком.
+        "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": >-
+          $(SRCROOT)/../core/shared/build/bin/iosSimulatorArm64/debugFramework
+        "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": >-
+          $(SRCROOT)/../core/shared/build/bin/iosArm64/debugFramework
+          $(SRCROOT)/../core/shared/build/bin/iosArm64/releaseFramework
+        # Та же история с x86_64: он нужен исключить только у симулятора, и
+        # только на Apple Silicon, где Gradle не строит этот срез. На Intel-Mac
+        # поддержка симулятора убирается; лечится сборкой XCFramework через
+        # `:shared:assembleIosSimulatorReleaseXCFramework` (в проекте не настроено).
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": "$(inherited) x86_64"
+        # Статический KMP-фреймворк линкуется в приложение, поэтому в Bundle
+        # его класть не нужно (embed: false выше). Подставить $(CONFIGURATION)
+        # в путь нельзя: Gradle пишет `debugFramework`/`releaseFramework`,
+        # а Xcode ждёт своё `Debug` — отсюда оба варианта в списке.

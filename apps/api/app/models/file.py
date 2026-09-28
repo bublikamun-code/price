@@ -1,7 +1,7 @@
 """Файловые активы (S3). См. ARCHITECTURE_PLAN.md §5, §10."""
 import uuid
 
-from sqlalchemy import BigInteger, ForeignKey, String
+from sqlalchemy import BigInteger, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,4 +27,27 @@ class FileAsset(Base, TimestampMixin, UUIDPrimaryKey):
         pg_enum(FileVisibility, "file_visibility"),
         nullable=False,
         default=FileVisibility.AUTHED,
+    )
+
+
+class MediaAsset(Base, TimestampMixin, UUIDPrimaryKey):
+    """Реестр изображений каталога: стабильный id ↔ S3-ключ (§16 п.37).
+
+    v2 отдаёт нативным клиентам `/api/v2/media/{mediaId}`, а не presigned-URL:
+    presigned живёт 5 минут и не может быть ключом кэша ImageCache, поэтому
+    нужен идентификатор, который не меняется. Он детерминирован —
+    ``uuid5`` от S3-ключа, — и потому переживает перезапуск, повторный импорт и
+    любой деплой, а сам S3-ключ остаётся на сервере и клиенту не отдаётся.
+
+    Реестр нужен именно ради обратного перехода ``id → ключ``: ``uuid5``
+    необратим, а эндпоинту media без ключа не выдать 307.
+    """
+
+    __tablename__ = "media_assets"
+
+    s3_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    width: Mapped[int] = mapped_column(Integer, nullable=False, default=1200)
+    height: Mapped[int] = mapped_column(Integer, nullable=False, default=1200)
+    mime_type: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="image/webp"
     )

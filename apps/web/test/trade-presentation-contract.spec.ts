@@ -301,22 +301,25 @@ describe('Client cabinet contract', () => {
     expect(line).toContain('<img')
     expect(line).toContain('@error="photoFailed = true"')
     // Иконка остаётся только как фолбэк, а не вместо фото.
-    expect(line).toContain('<Icon v-else name="heroicons:package"')
-    expect(line).not.toMatch(/<Icon name="heroicons:package"/)
+    expect(line).toContain('<Icon v-else name="heroicons:cube"')
+    expect(line).not.toMatch(/<Icon name="heroicons:cube"/)
   })
 
-  it('renders the in-stock badge as adjacent-button segments everywhere it appears', () => {
+  it('renders the availability badge as a single status segment everywhere it appears', () => {
     const badge = read('components/commerce/StockBadge.vue')
     const line = read('components/commerce/OrderLineRecord.vue')
     const detail = read('pages/catalog/[sku].vue')
     const catalog = read('pages/catalog/index.vue')
-    // Соседние сегменты в одной рамке с разделителями, без скруглений.
-    expect(badge).toContain('border-l border-border')
     expect(badge).toContain('overflow-hidden border border-border-strong')
     expect(badge).toContain('role="img"')
     expect(badge).toContain('В наличии')
     expect(badge).toContain('Под заказ')
-    // Строка заявки и обе точки каталога используют сегментированный бейдж,
+    // Наличие — одно состояние, а не переключатель: оба сегмента одновременно
+    // больше не рисуются, статус выбирается вычисляемым statusLabel.
+    expect(badge).toContain("inStock.value ? 'В наличии' : 'Под заказ'")
+    expect(badge).toContain('{{ statusLabel }}')
+    expect(badge.match(/<span/g) ?? []).toHaveLength(4)
+    // Строка заявки и обе точки каталога используют этот бейдж,
     // а не одиночный UiStatusBadge-пилюлю.
     expect(line).toContain('<StockBadge')
     expect(line).not.toContain('<UiStatusBadge')
@@ -324,5 +327,26 @@ describe('Client cabinet contract', () => {
     expect(catalog).toContain('<StockBadge')
     expect(detail).not.toContain('<UiStatusBadge')
     expect(catalog).not.toContain('<UiStatusBadge')
+  })
+
+  it('renders a real product photo from the v2 media contract with an icon fallback', () => {
+    const photo = read('components/commerce/ProductPhoto.vue')
+    const row = read('components/commerce/ProductRecordRow.vue')
+    const detail = read('pages/catalog/[sku].vue')
+    const catalog = read('pages/catalog/index.vue')
+    // Фото приходит стабильным v2-ресурсом, а не S3-ключом.
+    expect(photo).toContain('props.media?.url')
+    expect(photo).toContain('<img')
+    expect(photo).toContain('@error="failed = true"')
+    // Иконка остаётся только как фолбэк, а не вместо фото.
+    expect(photo).toContain('<Icon v-else name="heroicons:photo"')
+    expect(photo).not.toMatch(/<Icon name="heroicons:photo"/)
+    // Карточка, таблица каталога и страница товара берут thumbnail товара.
+    expect(row).toContain('<ProductPhoto')
+    expect(row).toContain(':media="product.thumbnail"')
+    expect(catalog).toContain(':media="product.thumbnail"')
+    expect(detail).toContain(':media="activeMedia"')
+    // Заглушка «фото недоступно» остаётся только когда кадра действительно нет.
+    expect(detail).toContain('v-if="!activeMedia"')
   })
 })

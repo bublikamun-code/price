@@ -40,9 +40,12 @@ describe('browser client catalog and cart writers', () => {
       expect(page).not.toContain('useProductPhoto')
     }
 
+    // Кадр приходит из v2-контракта как стабильный media-ресурс; разбирает его
+    // ProductPhoto, сама строка только передаёт thumbnail, а S3-ключи не видит.
     expect(catalogList).toContain('<ProductRecordRow')
-    expect(productRecord).toContain('heroicons:photo')
-    expect(productRecord).not.toContain('<img')
+    expect(productRecord).toContain('<ProductPhoto')
+    expect(productRecord).toContain(':media="product.thumbnail"')
+    expect(productRecord).not.toContain('heroicons:photo')
     expect(catalogDetail).toContain('catalog-product-media')
     expect(favorites).toContain('<ProductRecordRow')
     expect(favorites).toContain('test-id-prefix="favorite"')

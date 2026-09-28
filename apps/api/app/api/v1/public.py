@@ -48,13 +48,9 @@ _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 
 # Whitelist расширений публичных фото (пайплайн пишет webp; jpg/png — на всякий
 # случай для legacy-ключей). Всё остальное (pdf, svg, без расширения) — 400.
+# Карта расширение → Content-Type живёт в storage.photo_media_type, чтобы оба
+# фото-эндпоинта (публичный и авторизованный) отдавали одинаковый тип.
 _ALLOWED_PHOTO_EXTENSIONS = (".webp", ".jpg", ".jpeg", ".png")
-_PHOTO_MEDIA_TYPES = {
-    ".webp": "image/webp",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-}
 
 
 # Ключи галерей товаров (наш пайплайн): photos-product/<uuid>/<8hex>[/_thumb].webp
@@ -147,12 +143,15 @@ async def get_photo(
         data = await run_in_threadpool(
             storage.get_bytes, settings.s3_bucket_photos, valid_key
         )
-    except storage.StorageError as exc:
+    except storage.ObjectNotFound as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено"
         ) from exc
-    ext = next((e for e in _ALLOWED_PHOTO_EXTENSIONS if valid_key.endswith(e)), "")
-    media_type = _PHOTO_MEDIA_TYPES.get(ext, "application/octet-stream")
+    except storage.StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="Хранилище недоступно"
+        ) from exc
+    media_type = storage.photo_media_type(valid_key)
     return Response(
         content=data,
         media_type=media_type,

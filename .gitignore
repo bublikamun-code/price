@@ -80,3 +80,16 @@ apps/api/alembic/versions/__pycache__/
 # --- Celery beat runtime state (shelve-файл пишет контейнер beat) ---
 apps/api/celerybeat-schedule
 test-results/
+
+# --- Mobile (этап 13): только исходники, сборка мимо git ---
+core/.gradle/
+core/.kotlin/
+core/build/
+core/shared/build/
+android/.gradle/
+android/build/
+android/app/build/
+ios/build/
+ios/DerivedData/
+ios/PriceWebApp/build/
+ios/build-device/

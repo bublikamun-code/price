@@ -11,6 +11,7 @@ FSM переходов и инициаторов — см. таблицу в §9
 import hashlib
 import json
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.exc import IntegrityError
@@ -30,6 +31,7 @@ from app.schemas.v2.orders import OrderCreate as OrderCreateV2
 from app.services.cart import CartService
 from app.services.cart_v2 import CartQuantityOverflowError, CartV2Service
 from app.services.organizations import OrganizationContextService
+from app.repositories import organizations as organizations_repo
 from app.services.pricing import PricingService
 
 # Допустимые переходы статусов (см. §9 — таблица инициаторов).
@@ -58,6 +60,14 @@ class OrderNotFoundError(OrderError):
     code = "ORDER_NOT_FOUND"
     status_code = 404
     title = "Заявка не найдена"
+
+
+class OrderAddressNotFoundError(OrderError):
+    """DELIVERY с address_id, которого нет в организации клиента (Этап 2)."""
+
+    code = "ADDRESS_NOT_FOUND"
+    status_code = 404
+    title = "Адрес не найден"
 
 
 class ProductNotFoundError(OrderError):
@@ -310,6 +320,25 @@ class OrderService:
             )
 
         delivery = payload.delivery
+        delivery_address_id = delivery.address_id
+        delivery_address_text = None
+        if delivery.method == "DELIVERY" and delivery_address_id is not None:
+            # Этап 2: адрес обязан принадлежать организации клиента; в заявку
+            # пишется id и снапшот-строка (текст живёт в заявке, а не по FK).
+            address = await organizations_repo.get_address(
+                self.db,
+                organization_id=organization_id,
+                address_id=delivery_address_id,
+            )
+            if address is None:
+                raise OrderAddressNotFoundError(
+                    "Адрес доставки не найден в текущей организации"
+                )
+            delivery_address_text = ", ".join(
+                part
+                for part in (address.address_line, address.city, address.postal_code)
+                if part
+            )
         order = Order(
             client_id=user.id,
             organization_id=organization_id,
@@ -322,8 +351,8 @@ class OrderService:
             total_amount=total.quantize(Decimal("0.01")),
             delivery_method=delivery.method.lower(),
             delivery_point=None,
-            delivery_address=None,
-            delivery_address_id=delivery.address_id,
+            delivery_address=delivery_address_text,
+            delivery_address_id=delivery_address_id,
             delivery_contact_name=delivery.contact_name,
             delivery_phone=delivery.phone,
             delivery_preferred_date=delivery.preferred_date,
@@ -477,6 +506,11 @@ class OrderService:
         status: OrderStatus | None,
         limit: int,
         after: dict[str, str] | None,
+        q: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        min_total: Decimal | None = None,
+        max_total: Decimal | None = None,
     ) -> list[Order]:
         """Read-only v2 collection use-case with explicit commercial scope."""
         return await orders_repo.fetch_orders_v2_page(
@@ -486,6 +520,11 @@ class OrderService:
             status=status,
             limit=limit,
             after=after,
+            q=q,
+            date_from=date_from,
+            date_to=date_to,
+            min_total=min_total,
+            max_total=max_total,
         )
 
     async def list_for_manager(

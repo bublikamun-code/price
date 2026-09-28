@@ -106,7 +106,24 @@ def _qr_png_data_url(otpauth_uri: str) -> str:
 
 
 class AuthError(Exception):
-    """Унифицированная ошибка аутентификации (→ 401 в роутере)."""
+    """Унифицированная ошибка аутентификации (→ 401 в роутере).
+
+    `code`/`status_code` нужны v2-адаптеру: нативный клиент различает
+    «неверный пароль» и «аккаунт заблокирован» по problem code, а не по тексту.
+    V1-роутер по-прежнему ловит AuthError и всегда отвечает 401.
+    """
+
+    code = "INVALID_CREDENTIALS"
+    status_code = 401
+    title = "Ошибка аутентификации"
+
+
+class AuthLockedError(AuthError):
+    """Брутфорс: email+IP исчерпал login_max_attempts."""
+
+    code = "RATE_LIMITED"
+    status_code = 429
+    title = "Вход временно заблокирован"
 
 
 class AuthService:
@@ -122,12 +139,31 @@ class AuthService:
         tokens=None → включена 2FA: сессия НЕ создаётся, роутер вместо токенов
         выдаёт короткоживущий ticket (§16 п.22).
         """
+        user, tokens, _session = await self.login_session(
+            email, password, user_agent, ip
+        )
+        return user, tokens
+
+    async def login_session(
+        self,
+        email: str,
+        password: str,
+        user_agent: str | None,
+        ip: str | None,
+        **session_metadata: str | None,
+    ) -> tuple[User, TokenPair | None, SessionModel | None]:
+        """Как login, но возвращает и созданную сессию — нужно v2-адаптеру
+        нативного grant (§16 п.36), который обязан отдать `session.id` в теле.
+
+        Сессия создаётся ровно одна: metadata передаётся в _issue_session, а не
+        добавляется вторым вызовом поверх уже выданных токенов.
+        """
         # Блокировка после N неудачных входов с пары email+IP (H4, P2 §3.1):
         # проверяем до проверки кредов, чтобы брутфорс упирался в lockout,
         # а не в rate-limit. Ключ с IP — чтобы атакующий не лочил чужие аккаунты.
         if await is_account_locked(email, settings.login_max_attempts, ip):
             log.warning("auth.login_locked", email=email, ip=ip)
-            raise AuthError("Слишком много неудачных попыток. Попробуйте позже.")
+            raise AuthLockedError("Слишком много неудачных попыток. Попробуйте позже.")
 
         user = await self.db.scalar(select(User).where(User.email == email))
         if user is None or not user.is_active:
@@ -148,16 +184,26 @@ class AuthService:
 
         if user.totp_secret is not None:
             log.info("auth.login_2fa_required", user_id=str(user.id), ip=ip)
-            return user, None
+            return user, None, None
 
-        token_pair = await self._issue_session(user, _generate_refresh(), user_agent, ip)
+        token_pair, session = await self._issue_session(
+            user, _generate_refresh(), user_agent, ip, **session_metadata
+        )
         log.info("auth.login", user_id=str(user.id), ip=ip)
-        return user, token_pair
+        return user, token_pair, session
 
     # ---------- refresh (rotation + grace-окно) ----------
     async def refresh(
         self, refresh_token_plain: str, user_agent: str | None, ip: str | None
     ) -> TokenPair:
+        token_pair, _session = await self.refresh_session(
+            refresh_token_plain, user_agent, ip
+        )
+        return token_pair
+
+    async def refresh_session(
+        self, refresh_token_plain: str, user_agent: str | None, ip: str | None
+    ) -> tuple[TokenPair, SessionModel]:
         token_hash = _hash_token(refresh_token_plain)
         session = await self.db.scalar(
             select(SessionModel).where(SessionModel.refresh_token_hash == token_hash)
@@ -205,10 +251,12 @@ class AuthService:
         new_refresh_plain = _generate_refresh()
         session.superseded_by_hash = _hash_token(new_refresh_plain)
         await self.db.commit()
-        token_pair = await self._issue_session(user, new_refresh_plain, user_agent, ip)
+        token_pair, new_session = await self._issue_session(
+            user, new_refresh_plain, user_agent, ip
+        )
         await invalidate_session(old_sid)
         log.info("auth.refresh", user_id=str(user.id), old_sid=str(old_sid))
-        return token_pair
+        return token_pair, new_session
 
     async def _resolve_rotation_grace(self, session: SessionModel, *, ip: str | None) -> SessionModel:
         """Если сессия отозвана ротацией в пределах grace-окна — идём по цепочке
@@ -387,12 +435,29 @@ class AuthService:
         self, ticket: str, code: str, user_agent: str | None, ip: str | None
     ) -> TokenPair:
         """Второй шаг логина: ticket + TOTP/recovery → обычные токены+сессия."""
+        token_pair, _session = await self.verify_2fa_session(
+            ticket, code, user_agent, ip
+        )
+        return token_pair
+
+    async def verify_2fa_session(
+        self,
+        ticket: str,
+        code: str,
+        user_agent: str | None,
+        ip: str | None,
+        **session_metadata: str | None,
+    ) -> tuple[TokenPair, SessionModel]:
+        """Как verify_2fa, но возвращает и созданную сессию — нужно v2-адаптеру
+        нативного второго шага (POST /api/v2/auth/2fa/challenges/verify)."""
         user = await self._decode_2fa_ticket(ticket)
         if not self._check_totp(user, code) and not await self._try_use_recovery(user, code):
             raise AuthError("Неверный код")
-        token_pair = await self._issue_session(user, _generate_refresh(), user_agent, ip)
+        token_pair, session = await self._issue_session(
+            user, _generate_refresh(), user_agent, ip, **session_metadata
+        )
         log.info("auth.login_2fa_completed", user_id=str(user.id), ip=ip)
-        return token_pair
+        return token_pair, session
 
     async def disable_2fa(self, user: User, code: str | None, password: str | None) -> None:
         """Отключение 2FA: подтверждение TOTP/recovery-кодом ИЛИ паролем."""
@@ -471,6 +536,28 @@ class AuthService:
         return False
 
     # ---------- Журнал сессий (фича I, §16 п.22; обе роли) ----------
+    async def list_session_models(
+        self, user: User, current_session_id: uuid.UUID | None
+    ) -> list[SessionModel]:
+        """Активные сессии пользователя + флаг «эта текущая».
+
+        Нативному клиенту нужен не только факт входа, но и устройство
+        (`deviceName`/`os`/`appVersion`, §16 п.36), поэтому отдаём модели, а не
+        v1-проекцию SessionOut. «Текущая» определяется по `sid` из access-JWT:
+        у Bearer-клиента нет refresh-куки, по которой считал бы v1.
+        """
+        now = datetime.now(timezone.utc)
+        sessions = await self.db.scalars(
+            select(SessionModel)
+            .where(
+                SessionModel.user_id == user.id,
+                SessionModel.revoked.is_(False),
+                SessionModel.expires_at > now,
+            )
+            .order_by(SessionModel.created_at.desc())
+        )
+        return list(sessions)
+
     async def list_sessions(self, user: User, current_refresh_plain: str | None) -> list[SessionOut]:
         """Активные (не revoked, не истёкшие) сессии пользователя, новые сверху."""
         now = datetime.now(timezone.utc)
@@ -549,16 +636,32 @@ class AuthService:
         2FA не запрашивается — подписанные Telegram initData являются фактором
         владения аккаунтом (§16 п.27).
         """
-        token_pair = await self._issue_session(user, _generate_refresh(), user_agent, ip)
+        token_pair, _session = await self._issue_session(
+            user, _generate_refresh(), user_agent, ip
+        )
         log.info("auth.login_miniapp", user_id=str(user.id), ip=ip)
         return token_pair
 
     async def _issue_session(
-        self, user: User, refresh_plain: str, user_agent: str | None, ip: str | None
-    ) -> TokenPair:
+        self,
+        user: User,
+        refresh_plain: str,
+        user_agent: str | None,
+        ip: str | None,
+        *,
+        client_type: str | None = None,
+        device_name: str | None = None,
+        os_name: str | None = None,
+        app_version: str | None = None,
+    ) -> tuple[TokenPair, SessionModel]:
         """Создаёт сессию по уже сгенерированному refresh-токену (plain) и
-        возвращает пару токенов. refresh() генерирует токен заранее — hash
-        преемника записывается в старую сессию атомарно (см. grace-окно)."""
+        возвращает пару токенов вместе с созданной сессией. refresh() генерирует
+        токен заранее — hash преемника записывается в старую сессию атомарно
+        (см. grace-окно).
+
+        Native-метаданные (§16 п.36) пишутся только когда они переданы: web-входы
+        оставляют их NULL, поэтому в журнале сессий не появляется «пустых» строк.
+        """
         session = SessionModel(
             user_id=user.id,
             refresh_token_hash=_hash_token(refresh_plain),
@@ -567,6 +670,10 @@ class AuthService:
             expires_at=datetime.now(timezone.utc)
             + timedelta(days=settings.refresh_token_ttl_days),
             revoked=False,
+            client_type=client_type,
+            device_name=(device_name or "")[:128] or None,
+            os_name=(os_name or "")[:64] or None,
+            app_version=(app_version or "")[:32] or None,
         )
         self.db.add(session)
         await self.db.commit()
@@ -576,11 +683,31 @@ class AuthService:
             subject=str(user.id),
             extra={"role": user.role.value, "sid": str(session.id)},
         )
-        return TokenPair(
-            access_token=access,
-            refresh_token=refresh_plain,
-            expires_in=settings.access_token_ttl_min * 60,
-            force_password_change=bool(user.must_change_password),
+        return (
+            TokenPair(
+                access_token=access,
+                refresh_token=refresh_plain,
+                expires_in=settings.access_token_ttl_min * 60,
+                force_password_change=bool(user.must_change_password),
+            ),
+            session,
+        )
+
+    async def issue_session(
+        self,
+        user: User,
+        refresh_plain: str,
+        user_agent: str | None,
+        ip: str | None,
+        **session_metadata: str | None,
+    ) -> tuple[TokenPair, SessionModel]:
+        """Публичная обёртка над _issue_session для нативных клиентов.
+
+        Нужна v2-адаптеру: ответ POST /api/v2/auth/sessions обязан вернуть id и
+        createdAt созданной сессии, а v1-контракт этого не требует.
+        """
+        return await self._issue_session(
+            user, refresh_plain, user_agent, ip, **session_metadata
         )
 
     # ---------- Сброс пароля по email (forgot/reset) ----------

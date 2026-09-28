@@ -8,7 +8,7 @@
      заливаются, счётчики, статусы QUEUED → RUNNING → DONE, инвалидация кэша.
   3. Zip-bomb guard (лимиты §16 п.17): файл >50 МБ / >2000 файлов → FAILED,
      никаких upload.
-  4. GET /files/photo: 307 на presigned; ключ с ``..``/URL → 400; без ключа → 422.
+  4. GET /files/photo: байты изображения; ключ с ``..``/URL → 400; без ключа → 422.
 """
 import asyncio
 import io
@@ -448,7 +448,7 @@ class TestZipLimits:
 # ===========================================================================
 @pytest.mark.asyncio
 class TestFilesPhotoEndpoint:
-    async def test_redirect_307_to_presigned(
+    async def test_returns_image_bytes(
         self, api_client, session_factory, monkeypatch
     ):
         await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
@@ -457,15 +457,53 @@ class TestFilesPhotoEndpoint:
 
         monkeypatch.setattr(
             files_api.storage,
-            "presigned_get",
-            lambda bucket, key, **kw: f"http://minio.local/{key}",
+            "get_bytes",
+            lambda bucket, key, **kw: b"\x00fake-webp-bytes",
         )
 
         r = await api_client.get(
             "/api/v1/files/photo", params={"key": "photos-series/serie-x.webp"}
         )
-        assert r.status_code == 307, r.text
-        assert r.headers["location"] == "http://minio.local/photos-series/serie-x.webp"
+        assert r.status_code == 200, r.text
+        # Не редирект: внешний S3-хост живёт по http, а портал по https, и
+        # браузер резал бы такой переход как mixed content.
+        assert "location" not in r.headers
+        assert r.content == b"\x00fake-webp-bytes"
+        assert r.headers["content-type"].startswith("image/webp")
+
+    async def test_missing_object_is_404(
+        self, api_client, session_factory, monkeypatch
+    ):
+        await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
+        await _login(api_client, CLIENT_EMAIL)
+        import app.api.v1.files as files_api
+
+        def _missing(bucket, key, **kw):
+            raise files_api.storage.ObjectNotFound("нет объекта")
+
+        monkeypatch.setattr(files_api.storage, "get_bytes", _missing)
+
+        r = await api_client.get(
+            "/api/v1/files/photo", params={"key": "photos-series/gone.webp"}
+        )
+        assert r.status_code == 404, r.text
+
+    async def test_storage_failure_is_502(
+        self, api_client, session_factory, monkeypatch
+    ):
+        await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
+        await _login(api_client, CLIENT_EMAIL)
+        import app.api.v1.files as files_api
+
+        def _boom(bucket, key, **kw):
+            raise files_api.storage.StorageError("minio недоступен")
+
+        monkeypatch.setattr(files_api.storage, "get_bytes", _boom)
+
+        r = await api_client.get(
+            "/api/v1/files/photo", params={"key": "photos-series/serie-x.webp"}
+        )
+        assert r.status_code == 502, r.text
 
     async def test_traversal_and_url_keys_400(self, api_client, session_factory):
         await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)

@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import OrganizationRole, UserRole
-from app.models.organization import OrganizationMembership
+from app.models.organization import OrganizationAddress, OrganizationMembership
 from app.models.user import User
 from app.repositories import audit as audit_repo
 from app.repositories import organizations as organizations_repo
@@ -353,6 +353,196 @@ class OrganizationManagementService:
         return await OrganizationContextService(self.db).resolve(user)
 
 
+# --- Адресная книга доставки (Этап 2 дорожной карты) ------------------------
+
+
+class OrganizationAddressError(Exception):
+    """Доменная ошибка адресной книги; роутер мапит её в Problem Details."""
+
+    def __init__(
+        self,
+        code: str,
+        status_code: int,
+        title: str,
+        detail: str,
+    ) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.status_code = status_code
+        self.title = title
+        self.detail = detail
+
+
+class OrganizationAddressService:
+    """CRUD адресов организации от имени члена организации.
+
+    Запись — OWNER/BUYER (CONTACT/VIEWER читают). Повторный POST с тем же
+    (kind, address_line) возвращает существующий адрес — идемпотентность без
+    отдельного key→result-хранилища: конвергентное поведение даёт сам
+    уникальный ключ (org, kind, address_line) из миграции 0013.
+    """
+
+    _WRITER_ROLES = {OrganizationRole.OWNER, OrganizationRole.BUYER}
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def _resolve_scope(self, user: User) -> tuple[uuid.UUID, str] | None:
+        """(organization_id, role) активной организации; None у legacy-одиночки."""
+        context = await OrganizationContextService(self.db).resolve(user)
+        if context.organization_id is None:
+            return None
+        role = next(
+            (
+                membership.role
+                for membership in context.memberships
+                if membership.organization_id == context.organization_id
+            ),
+            None,
+        )
+        return context.organization_id, role or OrganizationRole.VIEWER.value
+
+    @staticmethod
+    def _require_writer(role: str) -> None:
+        if role not in {item.value for item in OrganizationAddressService._WRITER_ROLES}:
+            raise OrganizationAddressError(
+                code="ADDRESS_FORBIDDEN",
+                status_code=403,
+                title="Недостаточно прав",
+                detail="Управлять адресами организации могут только OWNER и BUYER",
+            )
+
+    async def list_addresses(self, user: User) -> list[OrganizationAddress]:
+        scope = await self._resolve_scope(user)
+        if scope is None:
+            return []
+        return await organizations_repo.list_addresses(
+            self.db, organization_id=scope[0]
+        )
+
+    async def create_address(
+        self, user: User, *, kind: str, address_line: str, **fields
+    ) -> OrganizationAddress:
+        scope = await self._resolve_scope(user)
+        if scope is None:
+            raise OrganizationAddressError(
+                code="NO_ORGANIZATION",
+                status_code=409,
+                title="Нет организации",
+                detail="Адресная книга доступна только членам организации",
+            )
+        organization_id, role = scope
+        self._require_writer(role)
+        existing = await organizations_repo.find_same_address(
+            self.db,
+            organization_id=organization_id,
+            kind=kind,
+            address_line=address_line,
+        )
+        if existing is not None:
+            return existing
+        if fields.get("is_default"):
+            await organizations_repo.clear_address_default(
+                self.db, organization_id=organization_id, kind=kind
+            )
+        address = OrganizationAddress(
+            organization_id=organization_id,
+            kind=kind,
+            address_line=address_line,
+            **fields,
+        )
+        self.db.add(address)
+        await self.db.commit()
+        await self.db.refresh(address)
+        return address
+
+    async def update_address(
+        self,
+        user: User,
+        *,
+        address_id: uuid.UUID,
+        changes: dict[str, object],
+    ) -> OrganizationAddress:
+        """Частичное обновление. `changes` содержит только явно переданные поля.
+
+        Различение absent/null делает роутер (pydantic model_fields_set):
+        null у nullable-колонок очищает значение, absent сохраняет прежнее.
+        """
+        scope = await self._resolve_scope(user)
+        if scope is None:
+            raise OrganizationAddressError(
+                code="ADDRESS_NOT_FOUND",
+                status_code=404,
+                title="Адрес не найден",
+                detail="Адрес не найден в текущей организации",
+            )
+        organization_id, role = scope
+        self._require_writer(role)
+        address = await organizations_repo.get_address(
+            self.db, organization_id=organization_id, address_id=address_id
+        )
+        if address is None:
+            raise OrganizationAddressError(
+                code="ADDRESS_NOT_FOUND",
+                status_code=404,
+                title="Адрес не найден",
+                detail="Адрес не найден в текущей организации",
+            )
+        new_kind = str(changes.get("kind", address.kind))
+        new_line = str(changes.get("address_line", address.address_line))
+        if new_kind != address.kind or new_line != address.address_line:
+            duplicate = await organizations_repo.find_same_address(
+                self.db,
+                organization_id=organization_id,
+                kind=new_kind,
+                address_line=new_line,
+                exclude_id=address.id,
+            )
+            if duplicate is not None:
+                raise OrganizationAddressError(
+                    code="ADDRESS_DUPLICATE",
+                    status_code=409,
+                    title="Адрес уже существует",
+                    detail="Адрес с таким типом и строкой уже есть в адресной книге",
+                )
+        if changes.get("is_default"):
+            await organizations_repo.clear_address_default(
+                self.db,
+                organization_id=organization_id,
+                kind=new_kind,
+                exclude_id=address.id,
+            )
+        for name, value in changes.items():
+            setattr(address, name, value)
+        await self.db.commit()
+        await self.db.refresh(address)
+        return address
+
+    async def delete_address(self, user: User, *, address_id: uuid.UUID) -> None:
+        scope = await self._resolve_scope(user)
+        if scope is None:
+            raise OrganizationAddressError(
+                code="ADDRESS_NOT_FOUND",
+                status_code=404,
+                title="Адрес не найден",
+                detail="Адрес не найден в текущей организации",
+            )
+        organization_id, role = scope
+        self._require_writer(role)
+        address = await organizations_repo.get_address(
+            self.db, organization_id=organization_id, address_id=address_id
+        )
+        if address is None:
+            raise OrganizationAddressError(
+                code="ADDRESS_NOT_FOUND",
+                status_code=404,
+                title="Адрес не найден",
+                detail="Адрес не найден в текущей организации",
+            )
+        await self.db.delete(address)
+        await self.db.commit()
+
+
 __all__ = [
     "InvalidMembershipTargetError",
     "InvalidOrganizationSelectionError",
@@ -360,6 +550,8 @@ __all__ = [
     "MembershipConflictError",
     "MembershipNotFoundError",
     "MembershipTargetNotFoundError",
+    "OrganizationAddressError",
+    "OrganizationAddressService",
     "OrganizationContext",
     "OrganizationContextService",
     "OrganizationManagementError",

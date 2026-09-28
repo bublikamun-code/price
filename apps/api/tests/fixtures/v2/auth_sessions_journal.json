@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "createdAt": "2026-09-27T11:00:00Z",
+      "expiresAt": "2026-10-04T11:00:00Z",
+      "deviceName": "iPhone 15 Pro",
+      "os": "iOS 18.2",
+      "appVersion": "1.0.0",
+      "clientType": "NATIVE",
+      "current": true
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "createdAt": "2026-09-20T09:30:00Z",
+      "expiresAt": "2026-09-27T09:30:00Z",
+      "deviceName": null,
+      "os": null,
+      "appVersion": null,
+      "clientType": "WEB",
+      "current": false
+    }
+  ],
+  "meta": {
+    "requestId": "v2-fixture-auth-sessions-001"
+  }
+}

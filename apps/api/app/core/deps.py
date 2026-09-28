@@ -138,6 +138,29 @@ async def get_current_user(
     return user
 
 
+async def get_current_session_id(request: Request) -> uuid.UUID | None:
+    """Возвращает sid активной сессии из access-JWT, если он там есть.
+
+    Нужен нативному logout: DELETE /api/v2/auth/sessions/current не несёт refresh
+    в теле, а «текущая» сессия однозначно определяется claim'ом, по которому
+    сервер и проверяет живость сессии в get_current_user.
+    """
+    token = _extract_access_token(request)
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except jwt.PyJWTError:
+        return None
+    raw = payload.get("sid")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (ValueError, TypeError):
+        return None
+
+
 def require_role(*roles: UserRole):
     """Зависимость: пускает только пользователей с указанными ролями.
 

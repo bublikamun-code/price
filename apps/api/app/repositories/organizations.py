@@ -9,7 +9,11 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import OrganizationRole
-from app.models.organization import Organization, OrganizationMembership
+from app.models.organization import (
+    Organization,
+    OrganizationAddress,
+    OrganizationMembership,
+)
 from app.models.user import User
 
 
@@ -295,19 +299,89 @@ async def clear_active_organization_for_user(
     return result.rowcount == 1
 
 
+# --- Адресная книга доставки (Этап 2 дорожной карты) -----------------------
+
+
+async def list_addresses(
+    db: AsyncSession, *, organization_id: uuid.UUID
+) -> list[OrganizationAddress]:
+    stmt = (
+        select(OrganizationAddress)
+        .where(OrganizationAddress.organization_id == organization_id)
+        .order_by(OrganizationAddress.is_default.desc(), OrganizationAddress.created_at)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def get_address(
+    db: AsyncSession, *, organization_id: uuid.UUID, address_id: uuid.UUID
+) -> OrganizationAddress | None:
+    """Адрес строго в рамках организации — чужой id неотличим от несуществующего."""
+    stmt = select(OrganizationAddress).where(
+        OrganizationAddress.id == address_id,
+        OrganizationAddress.organization_id == organization_id,
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def find_same_address(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    kind: str,
+    address_line: str,
+    exclude_id: uuid.UUID | None = None,
+) -> OrganizationAddress | None:
+    """Совпадение по уникальному ключу (org, kind, address_line) из миграции 0013."""
+    stmt = select(OrganizationAddress).where(
+        OrganizationAddress.organization_id == organization_id,
+        OrganizationAddress.kind == kind,
+        OrganizationAddress.address_line == address_line,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(OrganizationAddress.id != exclude_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def clear_address_default(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    kind: str,
+    exclude_id: uuid.UUID | None = None,
+) -> None:
+    """Единственный is_default на (org, kind): сбросить чужие флаги."""
+    stmt = (
+        update(OrganizationAddress)
+        .where(
+            OrganizationAddress.organization_id == organization_id,
+            OrganizationAddress.kind == kind,
+            OrganizationAddress.is_default.is_(True),
+        )
+        .values(is_default=False)
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(OrganizationAddress.id != exclude_id)
+    await db.execute(stmt)
+
+
 __all__ = [
     "MemberRecord",
     "MembershipRecord",
     "add_membership",
     "clear_active_organization_for_user",
+    "clear_address_default",
     "count_active_owners",
     "fetch_members_page",
     "fetch_memberships",
     "fetch_organizations_page",
+    "find_same_address",
+    "get_address",
     "get_membership",
     "get_organization",
     "get_user",
     "has_active_membership",
+    "list_addresses",
     "list_members",
     "list_organizations",
     "update_membership_atomic",

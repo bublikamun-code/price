@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.models.catalog import Product
 from app.models.enums import StockStatus
 from app.models.system import Notification
-from app.services.storage import StorageError
+from app.services.storage import ObjectNotFound, StorageError
 from tests.conftest import create_brand, create_product, create_series
 
 
@@ -160,13 +160,27 @@ async def test_photo_rejects_keys_outside_whitelist(api_client, _storage_stub, k
 
 async def test_photo_missing_object_404(api_client, monkeypatch):
     def _raise_sync(bucket, key):  # noqa: ANN001
-        raise StorageError(f"Не удалось прочитать объект {bucket}/{key}")
+        raise ObjectNotFound(f"Объект {bucket}/{key} не найден")
 
     monkeypatch.setattr("app.services.storage.get_bytes", _raise_sync)
     r = await api_client.get(
         "/api/v1/public/photo", params={"key": "photos-series/ghost.webp"}
     )
     assert r.status_code == 404, r.text
+
+
+async def test_photo_storage_down_is_502(api_client, monkeypatch):
+    """Легла вся MinIO — это не «фото не найдено»: витрина не должна отдавать
+    404, если исчезло хранилище целиком."""
+
+    def _raise_sync(bucket, key):  # noqa: ANN001
+        raise StorageError("сеть отвалилась")
+
+    monkeypatch.setattr("app.services.storage.get_bytes", _raise_sync)
+    r = await api_client.get(
+        "/api/v1/public/photo", params={"key": "photos-series/alpha.webp"}
+    )
+    assert r.status_code == 502, r.text
 
 
 async def test_lead_creates_manager_notification(api_client, session_factory):

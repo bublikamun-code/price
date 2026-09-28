@@ -46,6 +46,27 @@ describe('API v2 catalog contract', () => {
     expect(facets.meta.requestId).toBe('v2-fixture-facets-001')
   })
 
+  it('carries the stable media resource instead of an S3 key', () => {
+    const page = catalogProductsResponseSchema.parse(apiFixture('catalog_products_page.json'))
+
+    // Плитка каталога отдаёт thumbnail: URL стабильный, ключ кэша — id.
+    expect(page.data[0]?.thumbnail?.url).toBe(`/api/v2/media/${seriesId}`)
+    expect(page.data[0]?.thumbnail?.width).toBe(400)
+    expect(page.data[0]?.thumbnail?.mimeType).toBe('image/webp')
+    expect(page.data[0]?.media).toEqual([])
+  })
+
+  it('accepts a product without any photo and rejects a malformed media resource', () => {
+    const noPhoto = apiFixture('catalog_products_page.json')
+    noPhoto.data[0].thumbnail = null
+    expect(catalogProductsResponseSchema.safeParse(noPhoto).success).toBe(true)
+
+    const malformed = apiFixture('catalog_products_page.json')
+    // Внутренний S3-ключ наружу не отдаётся (§6.1), даже внутри media.
+    malformed.data[0].thumbnail.s3Key = 'photos-product/private/product.jpg'
+    expect(catalogProductsResponseSchema.safeParse(malformed).success).toBe(false)
+  })
+
   it('rejects snake_case, legacy fields, internal media keys, and unknown fields', () => {
     const snakeCase = apiFixture('catalog_products_page.json')
     snakeCase.data[0].stock_status = snakeCase.data[0].stockStatus

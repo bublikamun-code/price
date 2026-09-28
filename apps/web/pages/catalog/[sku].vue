@@ -53,6 +53,25 @@ const attrEntries = computed(() => {
     .filter((row) => row.value && row.value !== '—')
 })
 
+// Галерея детальной проекции: thumbnail (фото товара, иначе серии) плюс
+// собственные фото товара из `media`. Выбранный кадр сбрасывается на
+// репрезентативный при смене товара — иначе id прошлого кадра остался бы
+// выбранным, а новый список не содержал бы его.
+const selectedMediaId = ref<string | null>(null)
+const galleryFrames = computed(() => {
+  const frames = [product.value?.thumbnail ?? null, ...(product.value?.media ?? [])]
+  const seen = new Set<string>()
+  return frames.filter((frame): frame is NonNullable<typeof frame> => {
+    if (!frame || seen.has(frame.id)) return false
+    seen.add(frame.id)
+    return true
+  })
+})
+const activeMedia = computed(() => {
+  const frames = galleryFrames.value
+  return frames.find((frame) => frame.id === selectedMediaId.value) ?? frames[0] ?? null
+})
+
 const qty = ref(1)
 const qtyHint = ref('')
 const adding = ref(false)
@@ -138,6 +157,7 @@ async function load() {
   notFound.value = false
   product.value = null
   siblings.value = []
+  selectedMediaId.value = null
   qty.value = 1
   qtyHint.value = ''
   added.value = false
@@ -222,10 +242,30 @@ onUnmounted(() => {
             </template>
           </PageHeading>
         </div>
-        <div class="flex aspect-[4/3] items-center justify-center border border-border bg-surface-2 text-ink-muted" data-testid="catalog-product-media">
-          <div class="px-6 text-center" data-testid="catalog-media-placeholder">
-            <Icon name="heroicons:photo" class="mx-auto size-14" aria-hidden="true" />
-            <p class="mt-3 text-xs leading-5">Фото товара пока недоступно</p>
+        <div data-testid="catalog-product-media">
+          <ProductPhoto
+            :media="activeMedia"
+            :alt="product.name"
+            fit="contain"
+            eager
+            class="aspect-[4/3] w-full border border-border"
+          />
+          <p v-if="!activeMedia" class="mt-2 text-center text-xs leading-5 text-ink-muted" data-testid="catalog-media-placeholder">
+            Фото товара пока недоступно
+          </p>
+          <div v-if="galleryFrames.length" class="mt-2 flex gap-2 overflow-x-auto scrollbar-none" role="group" aria-label="Фотографии товара">
+            <button
+              v-for="(frame, index) in galleryFrames"
+              :key="frame.id"
+              type="button"
+              class="min-h-11 shrink-0 border p-0.5"
+              :class="frame.id === activeMedia?.id ? 'border-action' : 'border-border'"
+              :aria-label="`Показать фото ${index + 1} из ${galleryFrames.length}`"
+              :aria-pressed="frame.id === activeMedia?.id"
+              @click="selectedMediaId = frame.id"
+            >
+              <ProductPhoto :media="frame" :alt="`${product.name} — фото ${index + 1}`" class="size-14" />
+            </button>
           </div>
         </div>
       </header>

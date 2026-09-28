@@ -7,9 +7,6 @@ provisional until their dedicated contracts are available.
 """
 from __future__ import annotations
 
-import base64
-import binascii
-import json
 import uuid
 from decimal import Decimal
 from typing import Literal
@@ -18,6 +15,12 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v2.errors import V2ProblemError, problem_responses, request_id_for
+from app.api.v2.pagination import (
+    InvalidCursorError,
+    decode_cursor,
+    encode_cursor,
+    filter_signature,
+)
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.enums import StockStatus
@@ -39,6 +42,8 @@ from app.schemas.v2.common import (
     SuccessResponse,
     rate_value,
 )
+from app.schemas.v2.media import MediaResource
+from app.services import media as media_service
 from app.services.organizations import OrganizationContextService
 from app.services.pricing import PricingService, ResolvedRate
 
@@ -52,49 +57,89 @@ def _problem(status: int, *, code: str, title: str, detail: str) -> V2ProblemErr
     return V2ProblemError(code=code, status=status, title=title, detail=detail)
 
 
-def _encode_cursor(sort: str, product, *, organization_id: uuid.UUID | None) -> str:
+_CATALOG_CURSOR_RESOURCE = "catalog.products"
+
+
+def _catalog_filter_signature(
+    user: User,
+    context,
+    *,
+    q: str | None,
+    brands: list[uuid.UUID] | None,
+    series: list[uuid.UUID] | None,
+    stock: str | None,
+    model: str | None,
+) -> str:
+    """Подпись набора фильтров страницы.
+
+    Курсор выдан для конкретного списка: продолжить его с другими фильтрами
+    нельзя, иначе клиент получит страницу, выпадающую из своей выборки
+    (API_V2_CONTRACT § «pagination»). Списки id приводим к канонической строке,
+    чтобы порядок повторений в query-параметрах не ломал подпись.
+    """
+    def _ids(values: list[uuid.UUID] | None) -> str | None:
+        if not values:
+            return None
+        return ",".join(sorted({str(value) for value in values}))
+
+    return filter_signature(
+        str(user.id),
+        str(context.organization_id) if context.organization_id else None,
+        q.strip() if q is not None else None,
+        _ids(brands),
+        _ids(series),
+        stock,
+        model.strip() if model is not None else None,
+    )
+
+
+def _encode_catalog_cursor(
+    sort: str,
+    product,
+    *,
+    filter_sig: str,
+) -> str:
     value = {
         "name": product.name,
         "sku": product.sku,
         "price": format(Decimal(str(product.base_price)), "f"),
     }[sort.lstrip("-")]
-    payload = json.dumps(
-        {
-            "sort": sort,
-            "scope": str(organization_id) if organization_id else "USER",
-            "value": value,
-            "id": str(product.id),
-        },
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    return encode_cursor(
+        resource=_CATALOG_CURSOR_RESOURCE,
+        sort=sort,
+        filter_sig=filter_sig,
+        value=value,
+        item_id=product.id,
+    )
 
 
-def _decode_cursor(
-    value: str, sort: str, *, organization_id: uuid.UUID | None
-) -> dict[str, str]:
+def _decode_catalog_cursor(
+    cursor: str | None,
+    *,
+    sort: str,
+    filter_sig: str,
+) -> dict[str, str] | None:
+    if cursor is None:
+        return None
     try:
-        padded = value + "=" * (-len(value) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-        if (
-            not isinstance(payload, dict)
-            or payload.get("sort") != sort
-            or payload.get("scope")
-            != (str(organization_id) if organization_id else "USER")
-            or not isinstance(payload.get("value"), str)
-            or not isinstance(payload.get("id"), str)
-        ):
-            raise ValueError
-        uuid.UUID(payload["id"])
-        return {"sort": sort, "value": payload["value"], "id": payload["id"]}
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError, binascii.Error):
+        decoded = decode_cursor(
+            cursor,
+            resource=_CATALOG_CURSOR_RESOURCE,
+            sort=sort,
+            filter_sig=filter_sig,
+        )
+        # Подпись проверена целиком; дальше валидируем только ключ сортировки,
+        # который репозиторий будет разбирать в SQL-условие.
+        if sort.lstrip("-") == "price":
+            Decimal(decoded["value"])
+        return decoded
+    except (InvalidCursorError, ValueError, TypeError, ArithmeticError) as exc:
         raise _problem(
             422,
             code="VALIDATION_ERROR",
             title="Ошибка валидации",
             detail="Курсор пагинации недействителен",
-        ) from None
+        ) from exc
 
 
 def _filters(
@@ -124,6 +169,14 @@ def _rate(resolved: ResolvedRate) -> Rate:
 
 def _product(row, prices: dict, resolved: ResolvedRate) -> CatalogProduct:
     product = row[0]
+    # Репозиторий уже отдаёт photo_key (фото товара, иначе фото серии) — v2
+    # превращает его в стабильный media-ресурс, S3-ключ наружу не уходит.
+    # Внимание: в БД лежит large-ключ, поэтому thumbnail — это кадр 1200×1200,
+    # а не миниатюра 400×400, хотя бы thumb лежит в бакете под ключом с суффиксом
+    # `_thumb` (docs/NATIVE_API_CONTRACT.md §6.1). Плитка каталога тянет втрое
+    # больше нужного; переход на настоящий thumb — открытое решение по контракту,
+    # а не молчаливая правка здесь.
+    thumbnail = media_service.media_ref_for_key(row.photo_key)
     return CatalogProduct(
         id=product.id,
         sku=product.sku,
@@ -146,6 +199,7 @@ def _product(row, prices: dict, resolved: ResolvedRate) -> CatalogProduct:
         client_price=Money.from_value(prices["client_price"], currency=resolved.currency),
         exchange_rate=_rate(resolved),
         has_discount=prices["has_discount"],
+        thumbnail=MediaResource.model_validate(thumbnail) if thumbnail else None,
     )
 
 
@@ -176,11 +230,10 @@ async def list_products(
     db: AsyncSession = Depends(get_db),
 ) -> CursorResponse[CatalogProduct]:
     context = await OrganizationContextService(db).resolve(user)
-    after = (
-        _decode_cursor(cursor, sort, organization_id=context.organization_id)
-        if cursor
-        else None
+    filter_sig = _catalog_filter_signature(
+        user, context, q=q, brands=brands, series=series, stock=stock, model=model
     )
+    after = _decode_catalog_cursor(cursor, sort=sort, filter_sig=filter_sig)
     rows = await repo.fetch_catalog_page(
         db,
         user_id=user.id,
@@ -205,10 +258,10 @@ async def list_products(
     )
     data = [_product(row, prices[row[0].id], resolved) for row in rows]
     next_cursor = (
-        _encode_cursor(
+        _encode_catalog_cursor(
             sort,
             rows[-1][0],
-            organization_id=context.organization_id,
+            filter_sig=filter_sig,
         )
         if has_more and rows
         else None
@@ -290,14 +343,12 @@ async def get_product(
     product = await repo.get_visible_by_id(db, product_id)
     if product is None:
         raise _problem(404, code="RESOURCE_NOT_FOUND", title="Товар не найден", detail="Товар не найден")
-    row = await repo.fetch_catalog_page(
-        db,
-        user_id=user.id,
-        filters=repo.CatalogFilters(q=product.sku),
-        sort="sku",
-        limit=1,
-    )
-    if not row:
+    # Раньше строка искалась через fetch_catalog_page(q=sku, sort="sku", limit=1):
+    # это пересекалось с другими товарами по подстроке и молча возвращало чужую
+    # строку, если limit=1 выпадал не на запрошенный SKU. get_catalog_row берёт
+    # товар по точному PK — тот же путь, что у by-sku.
+    row = await repo.get_catalog_row(db, user_id=user.id, product_id=product_id)
+    if row is None:
         raise _problem(404, code="RESOURCE_NOT_FOUND", title="Товар не найден", detail="Товар не найден")
     pricing = PricingService(db)
     context = await OrganizationContextService(db).resolve(user)
@@ -311,8 +362,15 @@ async def get_product(
         resolved=resolved,
         organization_id=context.organization_id,
     )
+    gallery = await repo.list_product_photos(db, product_id)
+    detail = _product(row, prices[product.id], resolved)
+    detail.media = [
+        MediaResource.model_validate(ref)
+        for ref in (media_service.media_ref_for_key(key) for key in gallery)
+        if ref
+    ]
     return SuccessResponse[CatalogProduct](
-        data=_product(row[0], prices[product.id], resolved),
+        data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),
     )
 

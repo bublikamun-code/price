@@ -15,7 +15,7 @@ from app.models.catalog import (
     ProductPhoto,
     Series,
 )
-from app.models.file import FileAsset
+from app.models.file import FileAsset, MediaAsset
 from app.models.news import News
 from app.models.order import Cart, CartItem, Order, OrderIdempotency, OrderItem
 from app.models.organization import (
@@ -68,6 +68,7 @@ __all__ = [
     "OrderIdempotency",
     # file
     "FileAsset",
+    "MediaAsset",
     # system
     "AuditLog",
     "Notification",

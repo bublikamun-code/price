@@ -154,7 +154,7 @@ onMounted(() => {
         <p v-if="store.conflict" class="mt-2 text-xs font-medium text-warning-text" role="status">Состав заявки изменился в другой вкладке. Показаны актуальные позиции.</p>
         <div class="mt-5 flex items-center justify-between gap-4 border-y border-border py-3 text-xs">
           <span class="text-ink-muted">Изменения сохраняются на сервере автоматически</span>
-          <span class="inline-flex items-center gap-1.5 font-semibold text-success-text"><Icon name="heroicons:cloud-check" class="size-4" aria-hidden="true" />Синхронизировано</span>
+          <span class="inline-flex items-center gap-1.5 font-semibold text-success-text"><Icon name="heroicons:check-circle" class="size-4" aria-hidden="true" />Синхронизировано</span>
         </div>
       </UiPanel>
 

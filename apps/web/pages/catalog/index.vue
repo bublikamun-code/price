@@ -76,6 +76,15 @@ const firstLoadDone = ref(false)
 const loadError = ref('')
 const mutationError = ref('')
 const drawerOpen = ref(false)
+// Свёрнутая панель фильтров на десктопе: освобождает колонке «Товар» место,
+// занятое рейлом w-72. Выбор сохраняем — решение пользователя персистентно.
+const railCollapsed = ref(false)
+onMounted(() => {
+  if (localStorage.getItem('catalog:filters-collapsed') === '1') railCollapsed.value = true
+})
+watch(railCollapsed, (value) => {
+  localStorage.setItem('catalog:filters-collapsed', value ? '1' : '0')
+})
 const qtyMap = reactive<Record<string, number>>({})
 const addingProductId = ref<string | null>(null)
 const addedProductId = ref<string | null>(null)
@@ -359,6 +368,8 @@ onUnmounted(() => {
 
     <div class="mt-5 flex items-start gap-5">
       <aside
+        v-show="!railCollapsed"
+        id="catalog-filters"
         class="hidden w-72 shrink-0 self-start border border-border bg-surface lg:sticky lg:top-24 lg:block"
         aria-label="Фильтры каталога"
         data-testid="catalog-filters"
@@ -416,6 +427,19 @@ onUnmounted(() => {
             <Icon name="heroicons:funnel" class="size-4" aria-hidden="true" /> Фильтры
             <span v-if="activeFilterCount" class="numeric border border-action bg-action-soft px-1.5 py-0.5 text-xs text-action">{{ activeFilterCount }}</span>
           </button>
+          <button
+            type="button"
+            class="hidden min-h-11 items-center gap-2 border border-border px-3 text-sm font-semibold text-ink lg:inline-flex"
+            :aria-expanded="!railCollapsed"
+            aria-controls="catalog-filters"
+            data-testid="catalog-filters-toggle"
+            @click="railCollapsed = !railCollapsed"
+          >
+            <Icon name="heroicons:funnel" class="size-4" aria-hidden="true" />
+            {{ railCollapsed ? 'Показать фильтры' : 'Скрыть фильтры' }}
+            <span v-if="activeFilterCount" class="numeric border border-action bg-action-soft px-1.5 py-0.5 text-xs text-action">{{ activeFilterCount }}</span>
+            <Icon :name="railCollapsed ? 'heroicons:chevron-right' : 'heroicons:chevron-left'" class="size-4 text-ink-muted" aria-hidden="true" />
+          </button>
           <p class="hidden text-xs text-ink-muted sm:block">Сортировка применяется на сервере</p>
           <UiField for="catalog-sort" label="Сортировка" class="ml-auto w-56">
             <UiSelect v-model="sortModel" :options="sortOptions" @update:model-value="applyFilters" />
@@ -435,7 +459,7 @@ onUnmounted(() => {
         </UiEmptyState>
 
         <template v-else>
-          <div class="lg:hidden" :class="loading ? 'pointer-events-none opacity-60' : ''" data-testid="catalog-records">
+          <div class="xl:hidden" :class="loading ? 'pointer-events-none opacity-60' : ''" data-testid="catalog-records">
             <ProductRecordRow
               v-for="product in products"
               :key="product.id"
@@ -451,16 +475,18 @@ onUnmounted(() => {
             />
           </div>
 
-          <div class="hidden border-t border-border bg-surface lg:block" :class="loading ? 'pointer-events-none opacity-60' : ''" data-testid="catalog-table">
+          <div class="hidden border-t border-border bg-surface xl:block" :class="loading ? 'pointer-events-none opacity-60' : ''" data-testid="catalog-table">
             <UiTableFrame caption="Каталог товаров" overflow-label="Каталог товаров">
               <template #header>
                 <tr class="border-b border-border bg-surface-2 text-xs font-semibold text-ink-muted">
-                  <th scope="col" class="w-36 px-3 py-2">Артикул</th>
+                  <th scope="col" class="w-28 px-3 py-2">Артикул</th>
                   <th scope="col" class="px-3 py-2">Товар</th>
-                  <th scope="col" class="w-32 px-3 py-2">Наличие</th>
+                  <th scope="col" class="w-16 px-3 py-2">
+                    <span class="sr-only">Фото</span>
+                  </th>
                   <th scope="col" class="w-32 px-3 py-2 text-right">Цена</th>
                   <th scope="col" class="w-32 px-3 py-2 text-center">Количество</th>
-                  <th scope="col" class="w-32 px-3 py-2 text-right">Действие</th>
+                  <th scope="col" class="w-28 px-3 py-2 text-right">Действие</th>
                 </tr>
               </template>
               <template v-for="product in products" :key="product.id">
@@ -469,12 +495,14 @@ onUnmounted(() => {
                   <td class="max-w-0 px-3 py-2">
                     <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="block truncate text-sm font-semibold text-ink hover:text-action" :title="product.name">{{ product.name }}</NuxtLink>
                     <span class="block truncate text-xs text-ink-muted">{{ product.brand?.name || 'Без бренда' }}<template v-if="product.series"> · {{ product.series.name }}</template></span>
-                  </td>
-                  <td class="px-3 py-2">
                     <StockBadge
+                      class="mt-1"
                       :status="product.stockStatus"
                       :quantity="product.stockStatus === 'IN_STOCK' ? product.stockQuantity : null"
                     />
+                  </td>
+                  <td class="px-3 py-2">
+                    <ProductPhoto :media="product.thumbnail" :alt="product.name" class="size-12 border border-border" />
                   </td>
                   <td class="numeric whitespace-nowrap px-3 py-2 text-right">
                     <template v-if="hasPositivePrice(product)">

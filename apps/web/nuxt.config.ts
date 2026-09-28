@@ -21,8 +21,29 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
     '@nuxtjs/color-mode',
-    'nuxt-icon',
+    '@nuxt/icon',
   ],
+
+  // Иконки собираются на этапе сборки из локальных коллекций
+  // @iconify-json/* (см. dependencies), а не догружаются в рантайме с
+  // api.iconify.design: прод-CSP (infra/nginx/nginx.prod.conf) режет
+  // connect-src до 'self', и <Icon> без данных отдавал бы наружу имя иконки
+  // текстом. serverBundle: 'local' кладёт нужные иконки в серверный бандл,
+  // scan:true — в клиентский, так что SSR и гидрация рисуют одно и то же.
+  icon: {
+    serverBundle: 'local',
+    clientBundle: {
+      // globInclude по умолчанию накрывает только .vue/.jsx/.tsx/.md, а у нас
+      // есть иконки, названные только в .ts (массивы меню, composables). Без
+      // их в глобе модуль собрал бы неполный набор, и эти иконки ушли бы в
+      // api.iconify.design — то есть на прод вернулись бы иконки-имена.
+      scan: {
+        globInclude: ['**/*.{vue,ts,tsx,js,jsx,md,mdc,mdx}'],
+        globExclude: ['node_modules', 'dist', 'build', 'coverage', 'test', 'tests', '.*'],
+      },
+      includeCustomCollections: true,
+    },
+  },
 
   // Tailwind подключается через модуль; конфиг в tailwind.config.ts
   css: [

@@ -31,7 +31,15 @@
         "scale": 4,
         "source": "BYN"
       },
-      "hasDiscount": true
+      "hasDiscount": true,
+      "thumbnail": {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "url": "/api/v2/media/44444444-4444-4444-8444-444444444444",
+        "width": 400,
+        "height": 400,
+        "mimeType": "image/webp"
+      },
+      "media": []
     }
   ],
   "meta": {

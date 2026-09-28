@@ -108,7 +108,7 @@ make test          # тесты
 
 Реализация идёт по этапам из [`ARCHITECTURE_PLAN.md` §15/§19](./ARCHITECTURE_PLAN.md).
 
-Текущий статус: **Этапы 0–11.5 + PDF-экспорт + SSE-уведомления** ✅ — продуктовый backlog MVP пуст (все фичи §16.1 реализованы); из крупного остаётся Этап 12 (TG Mini App, post-MVP) и пост-MVP-инфра (Loki/Tempo/Uptime Kuma, WAL-G, registry). Фактический выезд на VPS — по RUNBOOK.
+Текущий статус: **Этапы 0–11.5 + PDF-экспорт + SSE-уведомления** ✅ — продуктовый backlog MVP пуст (все фичи §16.1 реализованы); в работе Этап 13 (нативные клиенты iOS + Android), из крупного также остаётся Этап 12 (TG Mini App, post-MVP) и пост-MVP-инфра (Loki/Tempo/Uptime Kuma, WAL-G, registry). Фактический выезд на VPS — по RUNBOOK.
 
 | Этап | Статус | Примечание |
 |---|---|---|
@@ -124,6 +124,7 @@ make test          # тесты
 | 11 — Деплой в prod | ✅ (комплект) | `nginx.prod.conf` (TLS1.3+HSTS, :80→301, /metrics allow приватные сети), prod-overlay харднинг (порты db/redis/minio закрыты, фиксы merge-багов), `make prod-up/prod-down/prod-logs/prod-migrate`, `make backup` (pg_dump -Fc, retention 30 д.) + `backup-list`, `make gen-self-signed-certs`, `docs/RUNBOOK.md`, CI `.github/workflows/ci.yml` (lint→test→security→build; registry/WAL-G — пост-MVP, §16 п.24) |
 | 11.5 — 1С-заглушки | ✅ | subroute `/api/integrations/1c` (§18): 4 эндпоинта → 501; `X-Integration-Token` (401) + IP-allowlist CIDR (403), пустой токен → 503; DTO `schemas/commerceml/`; 27 тестов |
 | 12 | ⬜ | TG Mini App (post-MVP) |
+| 13 | 🚧 | Нативные клиенты iOS + Android (§16 п.36): общее KMP-ядро `core/` ✅ (26 тестов на общих фикстурах, `make mobile-test`), native auth в v2 (`clientType=NATIVE`, refresh в теле, ротация + reuse detection) ✅, v2 media resources (§16 п.37) ✅, UI первой версии (вход/прайс/каталог): iOS **собирается и линкуется** против настоящего KMP-фреймворка (`xcodebuild` → `BUILD SUCCEEDED`), но ещё ни разу не запускался — на машине нет iOS Simulator runtime; Android написан и выверен по сигнатурам ядра, но **не компилировался** (нет Android SDK). Подробности и список непроверенного — `ios/PriceWebApp/README.md` и `android/README.md`. Контракт — `docs/NATIVE_API_CONTRACT.md` |
 
 **Ближайшие задачи / остаток:**
 - **Hardening и поиск** — CSRF double-submit ✅, pg_trgm-индексы поиска ✅, RS256 + PEM-ключи для prod (§16 п.15) ✅, edge со стейл-куками при логине закрыт (§16 п.21), 2FA TOTP (фича H) ✅ и журнал сессий с отзывом (фича I) ✅ (§16 п.22); остаток — production TLS (проверяется при деплое, Этап 11);

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
     false,
@@ -108,6 +109,20 @@ class Session(Base, UUIDPrimaryKey):
     # актуальной сессии, после — обычный 401 (reuse-detection сохранён).
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     superseded_by_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Native-метаданные клиента (§16 п.36, docs/API_V2_CONTRACT.md §6.2).
+    # Заполняются только нативными входами (clientType=NATIVE); для web
+    # остаются NULL, чтобы журнал сессий не различал старых и новых записей.
+    client_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    device_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    os_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    __table_args__ = (
+        # Журнал сессий читает активные сессии пользователя: без revoked в
+        # индексе PostgreSQL тянет в выборку и уже отозванные, а их там быть
+        # не должно.
+        Index("ix_sessions_user_id_revoked", "user_id", "revoked"),
+    )
 
 
 class TotpRecoveryCode(Base, UUIDPrimaryKey):

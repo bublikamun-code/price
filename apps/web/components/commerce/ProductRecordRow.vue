@@ -57,12 +57,12 @@ const actionLabel = computed(() => {
 
 <template>
   <article class="flex gap-3 border-b border-border py-4 last:border-b-0" :data-testid="`product-record-${product.id}`">
-    <div
-      class="flex size-20 shrink-0 items-center justify-center border border-border bg-surface-2 text-ink-faint"
+    <ProductPhoto
+      :media="product.thumbnail"
+      :alt="product.name"
+      class="size-20 shrink-0 border border-border"
       :data-testid="testIdPrefix ? `${testIdPrefix}-media` : undefined"
-    >
-      <Icon name="heroicons:photo" class="size-7" aria-hidden="true" />
-    </div>
+    />
     <div class="min-w-0 flex-1">
       <div class="flex items-center justify-between gap-2">
         <span class="flex min-w-0 items-center gap-2 text-xs">

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ru</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<!-- Обязательные ключи пакета: с GENERATE_INFOPLIST_FILE=NO их больше
+	     некому подставить, и без CFBundleIdentifier установка на симулятор
+	     падает с «Missing bundle ID». -->
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Price Web</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>NSAllowsLocalNetworking</key>
+	<true/>
+	<!-- Локальный стенд на реальном iPhone живёт по адресу Mac в локальной
+	     сети (http://192.168.x.x:8000), а NSAllowsLocalNetworking ниже прикрывает
+	     только бездоменные имена, .local и link-local (169.254/fe80): приватные
+	     192.168.0.0/16 под него не попадают, и ATS рвёт такой запрос. Поэтому
+	     для Debug здесь явное разрешение. Значение приходит из настройки
+	     сборки — в Release подставляется NO, и релизный бинарь не умеет
+	     plain-текстовый HTTP ни к одному адресу. -->
+	<key>NSAllowsArbitraryLoads</key>
+	<string>$(ATS_ALLOWS_ARBITRARY_LOADS)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>

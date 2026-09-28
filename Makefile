@@ -121,6 +121,30 @@ test-load-import: ## нагрузочный k6: импорт 50k строк (г�
 	cd infra/k6 && k6 run import_50k.js
 
 # ============================================================
+#  НАТИВНЫЕ КЛИЕНТЫ (Этап 13, §16 п.36/п.37). См. core/README.md
+# ============================================================
+# JAVA_HOME: JDK 21 нужен и Gradle, и Kotlin/Native. На macOS с Homebrew это
+# $(brew --prefix openjdk@21) — /opt/homebrew/... на Apple Silicon.
+
+mobile-test: ## тесты общего KMP-ядра (нужен только JDK 21, без Xcode и Android SDK)
+	@cd core && JAVA_HOME="$${JAVA_HOME:-$$(brew --prefix openjdk@21)}" ./gradlew :shared:jvmTest
+
+mobile-ios: ## сборка iOS-таргетов общего ядра (нужен установленный Xcode)
+	@cd core && JAVA_HOME="$${JAVA_HOME:-$$(brew --prefix openjdk@21)}" ./gradlew -PenableIos=true :shared:compileKotlinIosSimulatorArm64
+
+mobile-android: ## сборка Android-таргетов общего ядра (нужен Android SDK)
+	@cd core && JAVA_HOME="$${JAVA_HOME:-$$(brew --prefix openjdk@21)}" ./gradlew -PenableAndroid=true :shared:compileKotlinAndroid
+
+mobile-ios-app: ## сборка iOS-приложения (нужны Xcode и xcodegen; см. ios/PriceWebApp/README.md)
+	@command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen не установлен: brew install xcodegen"; exit 1; }
+	@cd core && JAVA_HOME="$${JAVA_HOME:-$$(brew --prefix openjdk@21)}" ./gradlew -PenableIos=true :shared:linkDebugFrameworkIosSimulatorArm64
+	@cd ios && xcodegen generate
+
+mobile-android-app: ## сборка Android-приложения (нужен Android SDK; см. android/README.md)
+	@cd android && JAVA_HOME="$${JAVA_HOME:-$$(brew --prefix openjdk@21)}" ./gradlew :app:assembleDebug
+
+
+# ============================================================
 #  PROD (Этап 11, §14/§16 п.24). См. docs/RUNBOOK.md
 # ============================================================
 

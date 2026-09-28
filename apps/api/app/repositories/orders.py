@@ -1,8 +1,9 @@
 """Репозиторий заявок. См. ARCHITECTURE_PLAN.md §9."""
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time, timezone
+from decimal import Decimal
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import String, and_, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
@@ -113,6 +114,48 @@ def _v2_scope_filter(*, client_id: uuid.UUID, organization_id: uuid.UUID | None)
     )
 
 
+def _like_escape(value: str) -> str:
+    """Экранирует спецсимволы LIKE (\\, %, _), чтобы ввод искался буквально (M7)."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _v2_search_filter(query: str):
+    """OR-поиск по номеру заявки, комментарию и позициям (Этап 1 дорожной карты).
+
+    Позиции проверяются коррелированным EXISTS по order_items: join размножил бы
+    строки (несколько совпавших позиций на заявку) и сломал keyset-пагинацию,
+    EXISTS оставляет ровно одну строку Order. `seq` сравнивается как текст,
+    SKU/название берутся из снапшота product_snapshot (§9 — снапшот, не FK).
+    """
+    pattern = f"%{_like_escape(query)}%"
+    item_matches = (
+        select(OrderItem.id)
+        .where(
+            OrderItem.order_id == Order.id,
+            or_(
+                OrderItem.product_snapshot["sku"].astext.ilike(pattern),
+                OrderItem.product_snapshot["name"].astext.ilike(pattern),
+            ),
+        )
+        .exists()
+    )
+    return or_(
+        cast(Order.seq, String).ilike(pattern),
+        Order.notes.ilike(pattern),
+        item_matches,
+    )
+
+
+def _day_start(value: date) -> datetime:
+    """Начало суток в UTC (created_at — timestamptz, хранится в UTC)."""
+    return datetime.combine(value, time.min, tzinfo=timezone.utc)
+
+
+def _day_end(value: date) -> datetime:
+    """Конец суток в UTC — date_to включительно до конца дня."""
+    return datetime.combine(value, time.max, tzinfo=timezone.utc)
+
+
 async def fetch_orders_v2_page(
     db: AsyncSession,
     *,
@@ -121,8 +164,20 @@ async def fetch_orders_v2_page(
     status: OrderStatus | None = None,
     limit: int,
     after: dict[str, str] | None = None,
+    q: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    min_total: Decimal | None = None,
+    max_total: Decimal | None = None,
 ) -> list[Order]:
-    """Fetch a bounded, stable keyset page without loading order items."""
+    """Fetch a bounded, stable keyset page without loading order items.
+
+    Необязательные фильтры (Этап 1): `q` — ILIKE по seq-как-тексту, комментарию
+    (`notes`) и SKU/названию позиций; `date_from`/`date_to` — включительно по
+    created_at (границы суток в UTC); `min_total`/`max_total` — включительно по
+    total_amount. Фильтры применяются ДО keyset-условия, поэтому не влияют на
+    порядок и стабильность курсора.
+    """
     stmt = select(Order).options(
         load_only(
             Order.id,
@@ -142,6 +197,16 @@ async def fetch_orders_v2_page(
     stmt = stmt.where(_v2_scope_filter(client_id=client_id, organization_id=organization_id))
     if status is not None:
         stmt = stmt.where(Order.status == status)
+    if q is not None and q.strip():
+        stmt = stmt.where(_v2_search_filter(q.strip()))
+    if date_from is not None:
+        stmt = stmt.where(Order.created_at >= _day_start(date_from))
+    if date_to is not None:
+        stmt = stmt.where(Order.created_at <= _day_end(date_to))
+    if min_total is not None:
+        stmt = stmt.where(Order.total_amount >= min_total)
+    if max_total is not None:
+        stmt = stmt.where(Order.total_amount <= max_total)
     if after is not None:
         after_created_at = datetime.fromisoformat(after["value"])
         after_id = uuid.UUID(after["id"])

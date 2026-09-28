@@ -78,6 +78,8 @@ Server не обязан возвращать `total`, если cursor count д�
 - `INVALID_CREDENTIALS`;
 - `PERMISSION_DENIED`;
 - `RESOURCE_NOT_FOUND`;
+- `ADDRESS_NOT_FOUND`;
+- `ADDRESS_DUPLICATE`;
 - `ORDER_NOT_FOUND`;
 - `PRODUCT_NOT_FOUND`;
 - `PRODUCT_UNAVAILABLE`;
@@ -195,6 +197,47 @@ UUID tie-breaker. Невалидный, изменённый или исполь
 Публичные DTO содержат UUID, camelCase, `version` и timestamps, но не содержат `password_hash`,
 `fixed_rate` или другие внутренние pricing/credential поля.
 
+### Address book (`/me/organization/addresses`)
+
+Адресная книга доставки организации (Этап 2 дорожной карты). Таблица `organization_addresses`
+существует с миграции 0013; уникальность `(organization_id, kind, address_line)` гарантирует БД.
+
+| Method | Path | Назначение |
+|---|---|---|
+| GET | `/me/organization/addresses` | Адреса активной organization текущего пользователя. |
+| POST | `/me/organization/addresses` | Создать адрес; обязателен `Idempotency-Key`. |
+| PATCH | `/me/organization/addresses/{addressId}` | Частичное обновление адреса. |
+| DELETE | `/me/organization/addresses/{addressId}` | Удалить адрес (204). |
+
+Правила:
+
+- scope вычисляется только через `OrganizationContextService.resolve(user)`: чтение — любой
+  активный участник (OWNER/BUYER/CONTACT/VIEWER); без активной organization `GET` возвращает
+  `data: []`, `POST` — `409 NO_ORGANIZATION`, PATCH/DELETE — `404 ADDRESS_NOT_FOUND`;
+- записывают только OWNER/BUYER; CONTACT/VIEWER на POST/PATCH/DELETE получают
+  `403 ADDRESS_FORBIDDEN`;
+- `POST` требует заголовок `Idempotency-Key` (1..255 видимых символов, иначе 422
+  `VALIDATION_ERROR`). Идемпотентность повторов даёт natural key без отдельного
+  key→result-хранилища: повтор с тем же `(kind, addressLine)` в той же организации
+  возвращает уже существующий адрес с `201`. Жёсткая гарантия от дублей — unique
+  constraint БД `(organization_id, kind, address_line)` (миграция 0013);
+- `409 ADDRESS_DUPLICATE` возникает на `PATCH` — при смене `kind`/`addressLine` на пару,
+  уже занятую другим адресом организации;
+- поля DTO: `id`, `kind` (`LEGAL|DELIVERY|PICKUP`, default `DELIVERY`), `label` (≤120),
+  `recipientName` (≤255), `phone` (≤50), `addressLine` (1..500, обязательный), `city` (≤120),
+  `postalCode` (≤32), `countryCode` (2 символа, default `BY`), `isDefault`, `createdAt`;
+- `PATCH` принимает те же поля опционально; absent — оставляет прежнее значение, явный
+  `null` у `label`/`recipientName`/`phone`/`city`/`postalCode` — очищает поле; `null` у
+  `kind`/`addressLine`/`countryCode` — `422 VALIDATION_ERROR`; ответ —
+  `SuccessResponse[OrganizationAddressOut]`;
+- чужой (не из активной organization) или несуществующий адрес → `404 ADDRESS_NOT_FOUND`
+  (PATCH/DELETE);
+- `isDefault` уникален в рамках `kind`: установка `isDefault: true` транзакционно снимает
+  default у остальных адресов того же `kind`;
+- `DELETE` возвращает `204` без тела. Заказы не ломаются: `orders.delivery_address_id` —
+  opaque UUID без FK-констрейнта (миграция 0015), а человекочитаемый снапшот уже сохранён
+  в `orders.delivery_address`.
+
 ## 8. Catalog
 
 | Method | Path | Назначение |
@@ -206,7 +249,7 @@ UUID tie-breaker. Невалидный, изменённый или исполь
 | POST | `/catalog/bulk-resolve` | SKU lines → product ids + validation. |
 | POST | `/catalog/exports` | Catalog export job. |
 
-Текущий read-only slice реализует list/detail/by-sku/facets с `CursorResponse`, `Money` и `Rate`. Цены рассчитываются в том же validated commercial scope, что и cart: USER pricing используется только без активной organization, organization agreement/fixed rate/brand terms — внутри organization scope. Cursor привязан к actor, organization scope и filter signature. Facets пока возвращают доступные brand/series/stock/model values без counts/selected state. Bulk resolve, exports и media-resource projection ещё не входят в v2.
+Текущий read-only slice реализует list/detail/by-sku/facets с `CursorResponse`, `Money`, `Rate` и media-resource projection (§9). Цены рассчитываются в том же validated commercial scope, что и cart: USER pricing используется только без активной organization, organization agreement/fixed rate/brand terms — внутри organization scope. Cursor привязан к actor, organization scope и filter signature. Facets пока возвращают доступные brand/series/stock/model values без counts/selected state. Bulk resolve и exports ещё не входят в v2.
 
 Supported sort values задаются enum/OpenAPI, не произвольными строками. Неизвестный sort → `VALIDATION_ERROR`.
 
@@ -217,18 +260,18 @@ Supported sort values задаются enum/OpenAPI, не произвольны
 ```json
 {
   "id": "uuid",
-  "kind": "PRODUCT_IMAGE",
-  "url": "https://...",
-  "thumbnailUrl": "https://...",
-  "width": 1200,
-  "height": 1200,
-  "mimeType": "image/jpeg",
-  "alt": "Лампа LED E27 12W",
-  "sortOrder": 0
+  "url": "/api/v2/media/2b0f...-uuid",
+  "width": 400,
+  "height": 400,
+  "mimeType": "image/webp"
 }
 ```
 
-S3 key хранится только server-side. Presigned URL имеет понятный expiry и не считается стабильным media id.
+S3 key хранится только server-side. `url` — стабильный v2-путь, а не presigned:
+`GET /api/v2/media/{mediaId}` отвечает 200 байтами изображения и никогда не
+редиректит на внешний S3. Ключом кеша изображений служит `id`; `url` тоже постоянен,
+поэтому годится и как ключ кеша. Отсутствующий объект → 404, недоступное хранилище → 502.
+Полное описание ресурса и перечень снятых полей — `NATIVE_API_CONTRACT.md` §6.1.
 
 ## 10. Cart и favorites
 
@@ -291,6 +334,12 @@ Body:
 - price/rate/agreement version фиксируются в snapshots;
 - тот же idempotency key + та же fingerprint возвращает исходный order;
 - тот же key + другая fingerprint → `IDEMPOTENCY_KEY_REUSED`;
+- `delivery.addressId` при `method=DELIVERY` должен ссылаться на адрес активной organization
+  адресной книги (§7 Address book): принадлежность проверяется на create, order сохраняет
+  `addressId` и человекочитаемый снапшот `delivery.address` = `label, addressLine, city`
+  (пустые части пропускаются, обрезка до 500 символов). Неизвестный/чужой addressId → `404
+  ADDRESS_NOT_FOUND`; `DELIVERY` без `addressId` сохраняет прежнее поведение
+  (`address = null`);
 - storage idempotency key остаётся actor-bound: текущая v1 unique схема `(user_id, idempotency_key)` не изменяется; поэтому повтор того же ключа в другой organization scope для того же пользователя возвращает `IDEMPOTENCY_KEY_REUSED`, а не создаёт новый order.
 
 Реализованный create slice добавляет `POST /api/v2/orders` с обязательным `Idempotency-Key`. Успешное создание и replay возвращают `201 Created`; replay помечается `X-Idempotency-Replayed: true`. Fingerprint включает canonical payload, endpoint, authenticated user и resolved `organization_id`. Ответ — `SuccessResponse[OrderDetail]` с UUID `productId`, snapshot цены/курса, `Money`/`Rate`, `organizationId`, `initiatedByUserId` и structured delivery (`addressId` сохраняется как nullable UUID). Internal media/S3 keys не возвращаются. Product rows и цены разрешаются batch-запросами; stock проверяется под row lock без уменьшения или reservation. После успешного v2 create очищается только active scoped cart; v1 create очищает только legacy USER cart.
@@ -313,17 +362,33 @@ Fingerprint включает canonicalized payload, organization, authenticated 
 Manager transitions используют UUID, `If-Match`/version и stable transition codes. Устаревшая версия → `STALE_RESOURCE_VERSION`.
 
 Текущий v2 order slice реализует `POST /api/v2/orders`, `GET /api/v2/orders` для authenticated client и
-`GET /api/v2/orders/{orderId}`. Collection принимает только explicit `status` из
-`OrderStatus`, `limit` (default 50, максимум 100) и opaque signed `cursor`; `total` не
-считается. Сортировка фиксирована как `createdAt,id` (оба значения DESC) и meta всегда
+`GET /api/v2/orders/{orderId}`. Collection принимает explicit `status` из
+`OrderStatus`, `limit` (default 50, максимум 100), opaque signed `cursor` и
+необязательные фильтры поиска `q`, `date_from`, `date_to`, `min_total`, `max_total`
+(см. ниже); `total` не считается. Сортировка фиксирована как `createdAt,id` (оба значения DESC) и meta всегда
 возвращает `requestId`, `hasMore`, `nextCursor`, `limit` и `sort`. Cursor подписан и связан
-с actor, выбранной organization scope и status; недействительный, изменённый или cursor
+с actor, выбранной organization scope, status и набором фильтров; недействительный, изменённый или cursor
 из другого контекста возвращает `VALIDATION_ERROR` в `application/problem+json`.
+
+Фильтры коллекции (Этап 1 дорожной карты): `q`, `date_from`, `date_to`, `min_total`,
+`max_total` — все необязательные и комбинируются через AND с scope и `status`. `q` (до 255 символов) —
+регистронезависимый substring-поиск (ILIKE; спецсимволы LIKE `\`, `%`, `_` экранируются,
+ввод ищется буквально) по номеру заявки (`seq` как текст), комментарию заявки (`notes`)
+и SKU/названию позиций (коррелированный EXISTS по `order_items.product_snapshot`; join
+не используется, чтобы не размножать строки keyset-пагинации). `date_from`/`date_to` —
+календарные дни (`YYYY-MM-DD`) по `createdAt`, обе границы включительно; `date_to`
+покрывает весь день (границы суток — UTC). `min_total`/`max_total` — включительно по
+сумме заявки (`total`). Фильтры не меняют состав `OrderSummary` и не включают `total`
+в meta; при пустом результате возвращается `data: []` с `hasMore: false` и
+`nextCursor: null`.
 
 Create принимает `items[].productId`, `quantity` и optional `note`, запрещает duplicate
 `productId` на validation layer, разрешает products одним batch lookup и применяет pricing
 выбранной organization. Неизвестный product возвращает `PRODUCT_NOT_FOUND`, archived/
 unavailable — `PRODUCT_UNAVAILABLE`, а превышение stock — `INSUFFICIENT_STOCK` с HTTP 409.
+`delivery.addressId` валидируется по адресной книге активной organization после проверки
+позиций: чужой/несуществующий адрес → `404 ADDRESS_NOT_FOUND`, валидный адрес фиксируется
+в order как `addressId` + текстовый снапшот `label, addressLine, city`.
 Все ошибки имеют Problem Details code и `requestId`. Созданный order и replay имеют HTTP 201;
 replay возвращает исходный `OrderDetail` и `X-Idempotency-Replayed: true`. Structured
 delivery сохраняется в order snapshot, включая nullable `addressId`; stock не резервируется

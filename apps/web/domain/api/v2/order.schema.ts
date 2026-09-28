@@ -67,11 +67,22 @@ export const orderCreateSchema = z
     });
   });
 
+const orderSearchQuerySchema = z.string().trim().min(1).max(255);
+
+const orderTotalBoundSchema = z
+  .string()
+  .regex(/^\d{1,12}(\.\d{1,2})?$/, "Total bound must be a decimal amount string");
+
 export const orderListQuerySchema = z
   .object({
     status: z
       .enum(["NEW", "IN_PROGRESS", "SHIPPED", "COMPLETED", "CANCELLED"])
       .optional(),
+    q: orderSearchQuerySchema.optional(),
+    dateFrom: orderDateSchema.optional(),
+    dateTo: orderDateSchema.optional(),
+    minTotal: orderTotalBoundSchema.optional(),
+    maxTotal: orderTotalBoundSchema.optional(),
     limit: z.number().int().min(1).max(100).optional(),
     cursor: z.string().max(4096).optional(),
   })

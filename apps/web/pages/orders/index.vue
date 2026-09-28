@@ -6,11 +6,17 @@ import { ORDER_STATUS_META, ORDER_STATUS_TABS } from '~/utils/order-status'
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Мои заявки' })
 
+const route = useRoute()
+const router = useRouter()
+
 const { list, repeat } = useOrdersV2()
 const PER_PAGE = 10
 
 const STATUS_TABS = ORDER_STATUS_TABS
 const STATUS_META = ORDER_STATUS_META
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const TOTAL_RE = /^\d{1,12}(\.\d{1,2})?$/
 
 const loading = ref(true)
 const error = ref('')
@@ -22,8 +28,43 @@ const nextCursor = ref<string | null>(null)
 const repeatingId = ref<string | null>(null)
 let cursorHistory: Array<string | null> = [null]
 
+// Фильтры живут в URL так же, как в каталоге: читаем query при загрузке
+// страницы (восстановление на F5) и заменяем его при каждом запросе списка.
+function queryString(key: string): string {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+function queryDate(key: string): string {
+  const value = queryString(key)
+  return DATE_RE.test(value) ? value : ''
+}
+function queryTotal(key: string): string {
+  const value = queryString(key)
+  return TOTAL_RE.test(value) ? value : ''
+}
+
+const q = ref(queryString('q'))
+const filters = reactive({
+  dateFrom: queryDate('date_from'),
+  dateTo: queryDate('date_to'),
+  minTotal: queryTotal('min_total'),
+  maxTotal: queryTotal('max_total'),
+})
+// В запрос и URL уходят только полные значения: промежуточный ввод суммы
+// («12.») не должен ни ломать контракт API, ни портить ссылку.
+const appliedFilters = computed(() => ({
+  q: q.value.trim() || undefined,
+  dateFrom: filters.dateFrom || undefined,
+  dateTo: filters.dateTo || undefined,
+  minTotal: TOTAL_RE.test(filters.minTotal) ? filters.minTotal : undefined,
+  maxTotal: TOTAL_RE.test(filters.maxTotal) ? filters.maxTotal : undefined,
+}))
+const activeFilterCount = computed(() => Object.values(appliedFilters.value).filter(Boolean).length)
+const hasActiveFilters = computed(() => activeFilterCount.value > 0)
+
 let loadSeq = 0
 let isUnmounted = false
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 function problemMessage(cause: unknown, fallback: string): string {
   return cause instanceof AppProblem ? cause.message : getErrorMessage(cause, fallback)
@@ -33,11 +74,17 @@ async function load() {
   const seq = ++loadSeq
   const requestedStatus = statusFilter.value
   const requestedCursor = cursorHistory[page.value - 1] ?? undefined
+  const applied = appliedFilters.value
   loading.value = true
   error.value = ''
   try {
     const result = await list({
       status: requestedStatus || undefined,
+      q: applied.q,
+      dateFrom: applied.dateFrom,
+      dateTo: applied.dateTo,
+      minTotal: applied.minTotal,
+      maxTotal: applied.maxTotal,
       limit: PER_PAGE,
       cursor: requestedCursor,
     })
@@ -51,13 +98,55 @@ async function load() {
   } finally {
     if (seq === loadSeq && !isUnmounted) loading.value = false
   }
+
+  const urlQuery: Record<string, string> = {}
+  if (applied.q) urlQuery.q = applied.q
+  if (applied.dateFrom) urlQuery.date_from = applied.dateFrom
+  if (applied.dateTo) urlQuery.date_to = applied.dateTo
+  if (applied.minTotal) urlQuery.min_total = applied.minTotal
+  if (applied.maxTotal) urlQuery.max_total = applied.maxTotal
+  void router.replace({ query: urlQuery }).catch(() => {})
+}
+
+function resetPosition() {
+  page.value = 1
+  cursorHistory = [null]
+}
+
+function applyFilters() {
+  resetPosition()
+  void load()
+}
+
+// Debounce ~300 мс, как поиск в каталоге: печатаем — запрос уходит после паузы.
+function queueApply() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(applyFilters, 300)
+}
+function onSearchInput(value: string) {
+  q.value = value
+  queueApply()
+}
+function onFilterInput(key: 'dateFrom' | 'dateTo' | 'minTotal' | 'maxTotal', value: string) {
+  filters[key] = value
+  queueApply()
+}
+
+function resetFilters() {
+  q.value = ''
+  filters.dateFrom = ''
+  filters.dateTo = ''
+  filters.minTotal = ''
+  filters.maxTotal = ''
+  statusFilter.value = ''
+  resetPosition()
+  void load()
 }
 
 function applyStatus(status: '' | OrderStatus) {
   if (statusFilter.value === status) return
   statusFilter.value = status
-  page.value = 1
-  cursorHistory = [null]
+  resetPosition()
   void load()
 }
 
@@ -94,6 +183,7 @@ const { activeId: pdfActiveId, error: pdfError, exportOrderPdf } = usePdfExport(
 onUnmounted(() => {
   isUnmounted = true
   loadSeq += 1
+  if (searchTimer) clearTimeout(searchTimer)
 })
 
 onMounted(load)
@@ -120,6 +210,80 @@ onMounted(load)
       </div>
     </div>
 
+    <section class="mb-5 border border-border bg-surface" data-testid="orders-filter-panel" aria-label="Фильтры заявок">
+      <div class="flex items-center gap-2 border-b border-border px-4 py-3">
+        <h2 class="text-sm font-bold text-ink">Фильтры</h2>
+        <span v-if="activeFilterCount" class="numeric border border-action bg-action-soft px-1.5 py-0.5 text-xs font-semibold text-action" data-testid="orders-filter-count">{{ activeFilterCount }}</span>
+        <p class="ml-auto hidden text-xs text-ink-muted sm:block">Номер, SKU и комментарий — в поиске</p>
+        <button type="button" class="inline-flex min-h-11 items-center gap-2 px-3 text-sm font-semibold text-ink hover:bg-surface-2" data-testid="orders-filter-reset" @click="resetFilters">
+          <Icon name="heroicons:x-mark" class="size-4" aria-hidden="true" />Сбросить
+        </button>
+      </div>
+      <div class="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-6">
+        <div class="sm:col-span-2 lg:col-span-2">
+          <UiField for="orders-filter-q" label="Поиск">
+            <input
+              id="orders-filter-q"
+              :value="q"
+              type="search"
+              placeholder="Номер заявки, SKU, комментарий"
+              class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+              data-testid="orders-filter-q"
+              @input="onSearchInput(($event.target as HTMLInputElement).value)"
+            >
+          </UiField>
+        </div>
+        <UiField for="orders-filter-date-from" label="Дата с">
+          <input
+            id="orders-filter-date-from"
+            :value="filters.dateFrom"
+            type="date"
+            class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            data-testid="orders-filter-date-from"
+            @input="onFilterInput('dateFrom', ($event.target as HTMLInputElement).value)"
+          >
+        </UiField>
+        <UiField for="orders-filter-date-to" label="Дата по">
+          <input
+            id="orders-filter-date-to"
+            :value="filters.dateTo"
+            type="date"
+            class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            data-testid="orders-filter-date-to"
+            @input="onFilterInput('dateTo', ($event.target as HTMLInputElement).value)"
+          >
+        </UiField>
+        <UiField for="orders-filter-min-total" label="Сумма от">
+          <input
+            id="orders-filter-min-total"
+            :value="filters.minTotal"
+            type="number"
+            min="0"
+            step="0.01"
+            inputmode="decimal"
+            placeholder="0.00"
+            class="numeric block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            data-testid="orders-filter-min-total"
+            @input="onFilterInput('minTotal', ($event.target as HTMLInputElement).value)"
+          >
+        </UiField>
+        <UiField for="orders-filter-max-total" label="Сумма до">
+          <input
+            id="orders-filter-max-total"
+            :value="filters.maxTotal"
+            type="number"
+            min="0"
+            step="0.01"
+            inputmode="decimal"
+            placeholder="0.00"
+            class="numeric block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            data-testid="orders-filter-max-total"
+            @input="onFilterInput('maxTotal', ($event.target as HTMLInputElement).value)"
+          >
+        </UiField>
+      </div>
+    </section>
+
     <UiErrorState v-if="error && orders.length" class="mb-4" title="Не удалось обновить список" :description="error" data-testid="orders-error" @retry="load" />
     <UiErrorState v-if="pdfError" class="mb-4" title="PDF недоступен" :description="pdfError" data-testid="orders-pdf-error" />
 
@@ -127,6 +291,10 @@ onMounted(load)
       <UiSkeleton v-for="i in 4" :key="i" class="h-16 w-full border-b border-border last:border-b-0" />
       <span class="sr-only">Загрузка заявок</span>
     </div>
+
+    <UiEmptyState v-else-if="!orders.length && !error && hasActiveFilters" title="Ничего не найдено" description="По заданным фильтрам заявок нет. Измените условия поиска или сбросьте фильтры." icon="heroicons:magnifying-glass" data-testid="orders-empty-filtered">
+      <template #action><button type="button" class="inline-flex min-h-11 items-center border border-border px-4 text-sm font-semibold" data-testid="orders-empty-reset" @click="resetFilters">Сбросить фильтры</button></template>
+    </UiEmptyState>
 
     <UiEmptyState v-else-if="!orders.length && !error" title="Заявок пока нет" description="Выберите товары в каталоге, чтобы создать первую заявку." icon="heroicons:clipboard-document-list" data-testid="orders-empty">
       <template #action><NuxtLink to="/catalog" class="inline-flex min-h-11 items-center justify-center border border-action bg-action px-4 text-sm font-semibold text-action-on hover:bg-action-hover">Перейти в каталог</NuxtLink></template>

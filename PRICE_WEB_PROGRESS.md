@@ -110,7 +110,7 @@
 ## Resources и concurrency
 
 - [x] Использовать UUID для client write resources в реализованных v2 order/cart/organization surfaces; SKU остаётся business identifier для показа, поиска и импорта.
-- [ ] Вернуть media resource `{id, kind, url, dimensions, alt, sortOrder}` без внутреннего S3 key; cart уже скрывает `photoKey`, полный media resource ещё не реализован.
+- [x] Вернуть media resource `{id, url, width, height, mimeType}` без внутреннего S3 key; cart уже скрывает `photoKey`. Реализовано 2026-09-27: `GET /api/v2/media/{mediaId}` (200 байтами; сначала был 307 на presigned, но mixed content), реестр `media_assets` + backfill миграцией `0020_media_assets`, `thumbnail` в списке и полный `media[]` в карточке. `docs/NATIVE_API_CONTRACT.md` §6.1.
 - [x] Добавить `version` и `If-Match` для manager order, cart mutation и repeat writes; v1 без заголовка сохраняет совместимое поведение.
 - [x] Возвращать 409 `STALE_RESOURCE_VERSION` при конфликте manager order и cart writes; product/user/admin resources ещё не покрыты.
 
@@ -275,3 +275,62 @@
 Web-релиз полностью переведён на новую Trade presentation и browser API v2 commerce flow. Реализованы public landing/auth, desktop и mobile client shell, catalog, product detail, server-authoritative current request/cart, checkout, orders, profile, manager/admin surfaces и визуально harmonized `/m/**` Mini App. Browser cart изолирован по `userId + commercialScope + organizationId`, использует ETag/`If-Match`, serialized mutations и stale-version recovery. Checkout/order create используют UUID и `Idempotency-Key`; `/m/**` остаётся на отдельном API v1 канале.
 
 Frontend quality gates: typecheck passed; ESLint passed под Node 22; 12 Vitest files / 96 tests passed; production Nuxt build passed. Backend: full pytest passed; Ruff passed; Alembic на `0018_fix_constraint_drift`; `alembic check` passed. Локальный браузер подтвердил add/update cart, request review sheet, cart, checkout, dashboard, orders, profile и product detail, а также responsive/no-overflow на 390/430/768/1280. Главная страница очищена от повторяющейся витринной информации: удалена информационная полоса под header, сокращён hero, а блок «Бренды и номенклатура» теперь перечисляет каждый реальный бренд один раз без SKU и серийных товарных карточек. Каталог в БД не изменяется; детальная номенклатура остаётся на `/brands`. Финальные проверки landing: 1280 и 390 px без horizontal overflow. Временные QA-пользователь, product и brand удалены. Worktree задеплоен на `https://portal-87-232-64-23.nip.io`; production подтвердил 4 реальных бренда, 0 product links в секции, рабочий переход «Открыть весь каталог», `record-v2`, отсутствие горизонтального overflow на 390/1280 px, redirect приватного маршрута, API v2 401 Problem Details, `/healthz=ok`, PM2 online и Alembic head `0018_fix_constraint_drift`.
+
+---
+
+## 2026-09-28 — Этап 1 дорожной карты фич (`docs/FEATURES_ROADMAP.md`): фильтры и поиск в истории заявок
+
+`GET /api/v2/orders` принял опциональные `q`, `date_from`, `date_to`, `min_total`, `max_total` (AND с scope и `status`):
+`q` — ILIKE по seq-как-тексту, `notes` и SKU/названию позиций (коррелированный EXISTS по `order_items.product_snapshot`,
+спецсимволы LIKE экранируются); даты — включительно, границы суток UTC; суммы — включительно по `total_amount`.
+Фильтры входят в подпись cursor'а (`filter_signature`), keyset-пагинация не затронута. v1 не менялся (фронт уже на v2).
+
+Фронт: панель «Фильтры» на `/orders` (поиск с debounce 300 мс, даты, суммы), URL-sync с восстановлением на F5,
+счётчик активных фильтров, отдельная заглушка пустого результата, сброс возвращает дефолт вместе со статус-табом.
+Схема `orderListQuerySchema` расширена (money — строки до 2 знаков, дата `YYYY-MM-DD`), сериализация в snake_case.
+
+Доки: `docs/API_V2_CONTRACT.md` — секция фильтров коллекции; openapi-фикстура перегенерирована
+(`python -m app.scripts.export_v2_contract`); `q` выровнен на 255 символов (бэкенд = фронт).
+
+Проверки: pytest `test_api_v2_orders.py` 13 passed (включая новые: q по номеру/SKU/комментарию, буквальность
+wildcard, включительность диапазонов, привязка фильтров к курсору, 422 на мусорный формат); `test_contract_artifacts.py`
++ `test_api_v2.py` 14 passed. Web: vitest 18 файлов / 150 тестов passed, typecheck 0, ESLint 0 (Node 22).
+GUI-обход локального стенда (IAB, сессия куками): рендер панели, поиск по номеру и по SKU, заглушка пустого
+результата, `min_total=25` → только З-000262, F5 восстанавливает `q`+`min_total` со счётчиком «2», мобильная
+375px — поля в колонку без наложений. Кнопочные клики и очистка поля клавиатурой в IAB-автоматизации не
+проходят (известный кварк стенда, не страницы) — пути покрыты юнит-спекой `orders-filters.spec.ts`; снятие
+фильтра вводом проверено через пробел (trim → фильтр снят, URL очищен). Не закоммичено; деплой — по команде.
+
+---
+
+## 2026-09-28 — Этап 2 дорожной карты фич: адресная книга доставки
+
+Backend v2: новый роутер `/api/v2/me/organization/addresses` (GET/POST/PATCH/DELETE). Чтение — любой
+активный участник организации; запись — OWNER/BUYER (`403 ADDRESS_FORBIDDEN`). POST требует
+`Idempotency-Key` (422 без него) и идемпотентен по natural key: повтор того же `(kind, addressLine)`
+возвращает существующий адрес с 201 — без key→result-хранилища, конвергенцию даёт unique constraint
+0013. PATCH: absent сохраняет значение, явный null у nullable-полей очищает (model_fields_set), null
+у kind/addressLine/countryCode → 422; смена kind/addressLine на занятые → 409 ADDRESS_DUPLICATE.
+isDefault уникален в рамках kind (транзакционный сброс чужих флагов). Без организации: GET → [],
+POST → 409 NO_ORGANIZATION. Заказ: `delivery.addressId` валидируется на принадлежность организации
+(`404 ADDRESS_NOT_FOUND` через `OrderAddressNotFoundError`), в заявку пишутся id и снапшот-строка
+`delivery_address` (address_line, city, postal_code через «, »). Миграция не потребовалась.
+
+Frontend: zod-схемы (`organizations.schema.ts`), `domain/organization/organization.repository.ts`,
+composable `useOrganizationAddresses`; checkout получил адресную книгу: радио-карточки сохранённых
+адресов (default предвыбран, бейдж «По умолчанию»), форма нового адреса с чекбоксом «Сохранить в
+адресную книгу», деградация к тексту в комментарии, если книга недоступна; бейдж дефолта поднят с
+10px до text-xs по дизайн-контракту. Исправлены мутация общего fixture в спеке и типизация.
+
+Доки: §7 API_V2_CONTRACT «Address book» + NATIVE_API_CONTRACT «Address book (checkout delivery)» —
+сведены к фактической реализации; openapi-фикстура перегенерирована, paths добавлены в
+contract-артефакты.
+
+Проверки: pytest 29 passed (адреса ×9, включая null-очистку/403/404/идемпотентность/чужой адрес;
+создание заказа с реальным снапшотом адреса; контрактные артефакты; v2). Web: vitest 20 файлов /
+164 теста, typecheck OK, ESLint (Node 22) OK. Живой интеграционный прогон на стенде: адрес → заказ
+263 с delivery.addressId и снапшотом «ул. Притыцкого, 12, офис 305, Минск» в ответе и в БД.
+GUI-клики в IAB-стенде по-прежнему не проходят (радио-переключение Delivery недоступно автоматизации;
+логика UI покрыта checkout-address.spec.ts). Менеджерская read-only витрина адресов отложена: менеджер
+не член организации, по контракту адреса ему недоступны — нужен отдельный manager-эндпоинт (след. этап).
+Не закоммичено; деплой — по команде.

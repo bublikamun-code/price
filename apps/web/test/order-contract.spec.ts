@@ -141,6 +141,52 @@ describe("API v2 order contract", () => {
     expect(requests[0]?.options.headers).toBeUndefined();
   });
 
+  it("serializes search and range filters with stable snake_case query names", async () => {
+    const response = apiFixture("order_list_page.json");
+    const { requester, requests } = requestSequence([
+      { body: response },
+      { body: response },
+    ]);
+    const repository = createOrderRepository(createApiV2Client(requester));
+
+    await repository.list({
+      status: "COMPLETED",
+      q: "order-7",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-02-01",
+      minTotal: "100",
+      maxTotal: "1250.50",
+      limit: 20,
+    });
+
+    expect(requests[0]?.url).toBe(
+      "/api/v2/orders?status=COMPLETED&q=order-7&date_from=2026-01-01&date_to=2026-02-01&min_total=100&max_total=1250.50&limit=20",
+    );
+
+    // Без фильтров лишних параметров в URL нет.
+    await repository.list({ status: "NEW" });
+    expect(requests[1]?.url).toBe("/api/v2/orders?status=NEW");
+  });
+
+  it("rejects malformed filter values before issuing a request", () => {
+    expect(
+      orderListQuerySchema.safeParse({ dateFrom: "01.02.2026" }).success,
+    ).toBe(false);
+    expect(
+      orderListQuerySchema.safeParse({ dateTo: "2026-13-01" }).success,
+    ).toBe(false);
+    expect(orderListQuerySchema.safeParse({ minTotal: "-5" }).success).toBe(
+      false,
+    );
+    expect(orderListQuerySchema.safeParse({ maxTotal: "12.345" }).success).toBe(
+      false,
+    );
+    expect(
+      orderListQuerySchema.safeParse({ q: "x".repeat(256) }).success,
+    ).toBe(false);
+    expect(orderListQuerySchema.safeParse({ q: "   " }).success).toBe(false);
+  });
+
   it("reads order detail by UUID with GET and no request body", async () => {
     const response = apiFixture("order_detail_success.json");
     const { requester, requests } = requestSequence([{ body: response }]);

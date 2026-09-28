@@ -276,6 +276,13 @@
             "title": "Id",
             "type": "string"
           },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaResource"
+            },
+            "title": "Media",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -315,6 +322,16 @@
             ],
             "title": "Stockstatus",
             "type": "string"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaResource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -429,7 +446,7 @@
             "type": "boolean"
           },
           "limit": {
-            "maximum": 200.0,
+            "maximum": 100.0,
             "minimum": 1.0,
             "title": "Limit",
             "type": "integer"
@@ -648,6 +665,42 @@
           "comment"
         ],
         "title": "DeliverySummary",
+        "type": "object"
+      },
+      "MediaResource": {
+        "description": "Одно изображение каталога.\n\n`id` стабилен и пригоден как ключ кэша, `url` ведёт на стабильный v2-путь.\nГеометрия и MIME-тип — по конвенции загрузчика фото (см. services/media.py).",
+        "properties": {
+          "height": {
+            "minimum": 1.0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mimeType": {
+            "title": "Mimetype",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "width",
+          "height",
+          "mimeType"
+        ],
+        "title": "MediaResource",
         "type": "object"
       },
       "Money": {
@@ -1026,6 +1079,328 @@
           "version"
         ],
         "title": "OrderSummary",
+        "type": "object"
+      },
+      "OrganizationAddressCreate": {
+        "properties": {
+          "addressLine": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Addressline",
+            "type": "string"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "countryCode": {
+            "default": "BY",
+            "maxLength": 2,
+            "minLength": 2,
+            "title": "Countrycode",
+            "type": "string"
+          },
+          "isDefault": {
+            "default": false,
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "DELIVERY",
+            "enum": [
+              "LEGAL",
+              "DELIVERY",
+              "PICKUP"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "postalCode": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postalcode"
+          },
+          "recipientName": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipientname"
+          }
+        },
+        "required": [
+          "addressLine"
+        ],
+        "title": "OrganizationAddressCreate",
+        "type": "object"
+      },
+      "OrganizationAddressOut": {
+        "properties": {
+          "addressLine": {
+            "title": "Addressline",
+            "type": "string"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "countryCode": {
+            "title": "Countrycode",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "LEGAL",
+              "DELIVERY",
+              "PICKUP"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "postalCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postalcode"
+          },
+          "recipientName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipientname"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "addressLine",
+          "countryCode",
+          "isDefault",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "OrganizationAddressOut",
+        "type": "object"
+      },
+      "OrganizationAddressPatch": {
+        "properties": {
+          "addressLine": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addressline"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "countryCode": {
+            "anyOf": [
+              {
+                "maxLength": 2,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countrycode"
+          },
+          "isDefault": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isdefault"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "LEGAL",
+                  "DELIVERY",
+                  "PICKUP"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "postalCode": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postalcode"
+          },
+          "recipientName": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipientname"
+          }
+        },
+        "title": "OrganizationAddressPatch",
         "type": "object"
       },
       "OrganizationDetail": {
@@ -1607,6 +1982,207 @@
         "title": "SessionContext",
         "type": "object"
       },
+      "SessionGrant": {
+        "description": "Ответ на login/refresh: токены в теле + созданная сессия.",
+        "properties": {
+          "accessToken": {
+            "title": "Accesstoken",
+            "type": "string"
+          },
+          "accessTokenExpiresAt": {
+            "format": "date-time",
+            "title": "Accesstokenexpiresat",
+            "type": "string"
+          },
+          "forcePasswordChange": {
+            "default": false,
+            "title": "Forcepasswordchange",
+            "type": "boolean"
+          },
+          "refreshToken": {
+            "title": "Refreshtoken",
+            "type": "string"
+          },
+          "refreshTokenExpiresAt": {
+            "format": "date-time",
+            "title": "Refreshtokenexpiresat",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SessionSummary"
+          },
+          "user": {
+            "$ref": "#/components/schemas/CurrentUser"
+          }
+        },
+        "required": [
+          "accessToken",
+          "accessTokenExpiresAt",
+          "refreshToken",
+          "refreshTokenExpiresAt",
+          "session",
+          "user"
+        ],
+        "title": "SessionGrant",
+        "type": "object"
+      },
+      "SessionRefreshRequest": {
+        "description": "POST /api/v2/auth/sessions/refresh. Refresh приходит в теле, не в cookie.",
+        "properties": {
+          "refreshToken": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Refreshtoken",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ],
+        "title": "SessionRefreshRequest",
+        "type": "object"
+      },
+      "SessionRequest": {
+        "description": "POST /api/v2/auth/sessions. `clientType=NATIVE` возвращает токены в теле.",
+        "properties": {
+          "appVersion": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appversion"
+          },
+          "clientType": {
+            "default": "NATIVE",
+            "enum": [
+              "WEB",
+              "NATIVE"
+            ],
+            "title": "Clienttype",
+            "type": "string"
+          },
+          "deviceName": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devicename"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "SessionRequest",
+        "type": "object"
+      },
+      "SessionSummary": {
+        "properties": {
+          "appVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appversion"
+          },
+          "clientType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clienttype"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "current": {
+            "default": false,
+            "title": "Current",
+            "type": "boolean"
+          },
+          "deviceName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devicename"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "expiresAt"
+        ],
+        "title": "SessionSummary",
+        "type": "object"
+      },
       "SuccessResponse_CartSummary_": {
         "properties": {
           "data": {
@@ -1671,6 +2247,22 @@
         "title": "SuccessResponse[OrderDetail]",
         "type": "object"
       },
+      "SuccessResponse_OrganizationAddressOut_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrganizationAddressOut"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[OrganizationAddressOut]",
+        "type": "object"
+      },
       "SuccessResponse_OrganizationDetail_": {
         "properties": {
           "data": {
@@ -1717,6 +2309,178 @@
           "meta"
         ],
         "title": "SuccessResponse[SessionContext]",
+        "type": "object"
+      },
+      "SuccessResponse_SessionGrant_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SessionGrant"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[SessionGrant]",
+        "type": "object"
+      },
+      "SuccessResponse_Union_SessionGrant__TwoFaChallenge__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionGrant"
+              },
+              {
+                "$ref": "#/components/schemas/TwoFaChallenge"
+              }
+            ],
+            "title": "Data"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[Union[SessionGrant, TwoFaChallenge]]",
+        "type": "object"
+      },
+      "SuccessResponse_list_OrganizationAddressOut__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationAddressOut"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[list[OrganizationAddressOut]]",
+        "type": "object"
+      },
+      "SuccessResponse_list_SessionSummary__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[list[SessionSummary]]",
+        "type": "object"
+      },
+      "TwoFaChallenge": {
+        "description": "Ответ на login при включённой 2FA: токенов нет до verify.",
+        "properties": {
+          "forcePasswordChange": {
+            "default": false,
+            "title": "Forcepasswordchange",
+            "type": "boolean"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          },
+          "twoFaRequired": {
+            "default": true,
+            "title": "Twofarequired",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ticket"
+        ],
+        "title": "TwoFaChallenge",
+        "type": "object"
+      },
+      "TwoFaChallengeRequest": {
+        "description": "POST /api/v2/auth/2fa/challenges/verify.\n\nМетаданные устройства едут здесь же, а не отдельным объектом: сессия\nрождается именно на этом шаге, и клиенту не нужно слать их вторым запросом.",
+        "properties": {
+          "appVersion": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appversion"
+          },
+          "clientType": {
+            "default": "NATIVE",
+            "enum": [
+              "WEB",
+              "NATIVE"
+            ],
+            "title": "Clienttype",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 16,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          },
+          "deviceName": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devicename"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "ticket": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "code"
+        ],
+        "title": "TwoFaChallengeRequest",
         "type": "object"
       },
       "UserRole": {
@@ -1830,6 +2594,494 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v2/auth/2fa/challenges/verify": {
+      "post": {
+        "description": "Второй шаг входа: ticket + TOTP/recovery-код → grant с токенами в теле.",
+        "operationId": "verify_2fa_challenge_api_v2_auth_2fa_challenges_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TwoFaChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_SessionGrant_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid ticket or code"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Verify 2Fa Challenge",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions": {
+      "get": {
+        "description": "Журнал активных сессий устройств; текущая помечена `current`.",
+        "operationId": "list_sessions_api_v2_auth_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_list_SessionSummary__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "auth"
+        ]
+      },
+      "post": {
+        "description": "Вход по email+паролю. Возвращает токены в теле, а не в cookie.\n\nПри включённой 2FA токенов нет: ответ — challenge с короткоживущим ticket,\nсессия создаётся только после verify (§16 п.22).",
+        "operationId": "create_session_api_v2_auth_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_Union_SessionGrant__TwoFaChallenge__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid credentials"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Create Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions/current": {
+      "delete": {
+        "description": "Logout нативного клиента: отзыв сессии, по которой пришёл Bearer.\n\nRefresh в теле не нужен — «текущая» сессия однозначно определяется `sid` из\naccess-JWT, который сервер всё равно проверил в get_current_user.",
+        "operationId": "revoke_current_session_api_v2_auth_sessions_current_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Revoke Current Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions/refresh": {
+      "post": {
+        "description": "Ротация refresh-токена. Reuse detection и grace-окно те же, что в v1.\n\nRefresh приходит в теле запроса, поэтому `X-CSRF-Token` не требуется: CSRF\nзащищает от браузерного автозапроса с cookie, а не от Bearer-клиента.",
+        "operationId": "refresh_session_api_v2_auth_sessions_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_SessionGrant_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid refresh token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Refresh Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v2/auth/sessions/{sessionId}": {
+      "delete": {
+        "description": "Отзыв одной своей сессии (например, забытого устройства).",
+        "operationId": "revoke_session_api_v2_auth_sessions__sessionId__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Sessionid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Revoke Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v2/cart": {
       "delete": {
         "operationId": "clear_cart_api_v2_cart_delete",
@@ -2937,6 +4189,450 @@
         ]
       }
     },
+    "/api/v2/me/organization/addresses": {
+      "get": {
+        "operationId": "list_addresses_api_v2_me_organization_addresses_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_list_OrganizationAddressOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "summary": "List Addresses",
+        "tags": [
+          "organization-addresses"
+        ]
+      },
+      "post": {
+        "operationId": "create_address_api_v2_me_organization_addresses_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationAddressCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrganizationAddressOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Writer role required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No organization for address book"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Create Address",
+        "tags": [
+          "organization-addresses"
+        ]
+      }
+    },
+    "/api/v2/me/organization/addresses/{addressId}": {
+      "delete": {
+        "operationId": "delete_address_api_v2_me_organization_addresses__addressId__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "addressId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Addressid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Writer role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Address not found in current organization"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Delete Address",
+        "tags": [
+          "organization-addresses"
+        ]
+      },
+      "patch": {
+        "operationId": "update_address_api_v2_me_organization_addresses__addressId__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "addressId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Addressid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationAddressPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrganizationAddressOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Writer role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Address not found in current organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Duplicate address line"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          }
+        },
+        "summary": "Update Address",
+        "tags": [
+          "organization-addresses"
+        ]
+      }
+    },
+    "/api/v2/media/{mediaId}": {
+      "get": {
+        "description": "Отдаёт изображение каталога по стабильному mediaId.\n\nОбъекта нет в бакете (ключ остался в реестре, фото удалили) → 404, как и\nнеизвестный id; хранилище недоступно → 502.",
+        "operationId": "get_media_api_v2_media__mediaId__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mediaId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mediaid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Image bytes (image/webp)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Storage unavailable"
+          }
+        },
+        "summary": "Get Media",
+        "tags": [
+          "media"
+        ]
+      }
+    },
     "/api/v2/orders": {
       "get": {
         "operationId": "list_orders_api_v2_orders_get",
@@ -2955,6 +4651,97 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_total",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Total"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_total",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Total"
             }
           },
           {

@@ -1,0 +1,10 @@
+{
+  "data": {
+    "twoFaRequired": true,
+    "ticket": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fixture-2fa-ticket",
+    "forcePasswordChange": false
+  },
+  "meta": {
+    "requestId": "v2-fixture-auth-2fa-001"
+  }
+}

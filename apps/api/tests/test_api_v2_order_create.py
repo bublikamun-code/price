@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.models.catalog import Product
 from app.models.enums import OrganizationRole, StockStatus, UserRole
 from app.models.order import Order
+from app.models.organization import OrganizationAddress
 from tests.conftest import (
     add_organization_membership,
     create_brand,
@@ -26,7 +27,6 @@ from tests.conftest import (
 PASSWORD = "Passw0rd!"
 CLIENT_EMAIL = "v2-create-client@example.by"
 MANAGER_EMAIL = "v2-create-manager@example.by"
-ADDRESS_ID = "99999999-9999-4999-8999-999999999999"
 
 
 async def _login(api_client, email: str) -> None:
@@ -37,7 +37,17 @@ async def _login(api_client, email: str) -> None:
     assert response.status_code == 200, response.text
 
 
-def _payload(*products, quantity: str = "3", note: str | None = None) -> dict:
+def _payload(*products, quantity: str = "3", note: str | None = None, address_id: str | None = None) -> dict:
+    delivery: dict = {
+        "method": "DELIVERY",
+        "contactName": "Иван",
+        "phone": "+375291234567",
+        "preferredDate": "2026-10-02",
+        "comment": "После 14:00",
+    }
+    # addressId задаёт только тест снапшота адреса: DELIVERY без него валиден.
+    if address_id is not None:
+        delivery["addressId"] = address_id
     return {
         "draftId": None,
         "items": [
@@ -48,14 +58,7 @@ def _payload(*products, quantity: str = "3", note: str | None = None) -> dict:
             }
             for product in products
         ],
-        "delivery": {
-            "method": "DELIVERY",
-            "addressId": ADDRESS_ID,
-            "contactName": "Иван",
-            "phone": "+375291234567",
-            "preferredDate": "2026-10-02",
-            "comment": "После 14:00",
-        },
+        "delivery": delivery,
     }
 
 
@@ -116,11 +119,24 @@ async def test_create_order_by_product_id_uses_org_scope_and_delivery_snapshot(
         session_factory, currency="USD", rate=4, scale=1, source="LEGACY_FIXTURE"
     )
     await set_fixed_rate_for_user(session_factory, user=user, rate=legacy_rate)
+    async with session_factory() as session:
+        address = OrganizationAddress(
+            organization_id=organization.id,
+            kind="DELIVERY",
+            label="Склад",
+            address_line="ул. Тестовая, 1",
+            city="Минск",
+            postal_code="220000",
+            is_default=True,
+        )
+        session.add(address)
+        await session.commit()
+        address_id = str(address.id)
     await _login(api_client, CLIENT_EMAIL)
 
     response = await api_client.post(
         "/api/v2/orders",
-        json=_payload(product, note="Отдельной строкой"),
+        json=_payload(product, note="Отдельной строкой", address_id=address_id),
         headers={
             "Idempotency-Key": "v2-create-success-001",
             "X-Request-ID": "v2-create-request-001",
@@ -156,8 +172,8 @@ async def test_create_order_by_product_id_uses_org_scope_and_delivery_snapshot(
     assert order["delivery"] == {
         "method": "DELIVERY",
         "pickupPoint": None,
-        "addressId": ADDRESS_ID,
-        "address": None,
+        "addressId": address_id,
+        "address": "ул. Тестовая, 1, Минск, 220000",
         "contactName": "Иван",
         "phone": "+375291234567",
         "preferredDate": "2026-10-02",

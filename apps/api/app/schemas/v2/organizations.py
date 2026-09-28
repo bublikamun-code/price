@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StringConstraints, field_validator
 
 from app.models.enums import OrganizationRole
 from app.schemas.v2.common import V2Model
@@ -67,12 +68,59 @@ class OrganizationSelectionRequest(V2Model):
     organization_id: uuid.UUID | None = None
 
 
+# Адресная книга доставки (Этап 2 дорожной карты). Модель OrganizationAddress
+# хранит kind свободной строкой — на контрактной границе сужаем до трёх типов.
+AddressKind = Literal["LEGAL", "DELIVERY", "PICKUP"]
+
+
+class OrganizationAddressOut(V2Model):
+    id: uuid.UUID
+    kind: AddressKind
+    label: str | None = None
+    recipient_name: str | None = None
+    phone: str | None = None
+    address_line: str
+    city: str | None = None
+    postal_code: str | None = None
+    country_code: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class OrganizationAddressCreate(V2Model):
+    kind: AddressKind = "DELIVERY"
+    label: str | None = Field(default=None, max_length=120)
+    recipient_name: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
+    address_line: str = Field(min_length=1, max_length=500)
+    city: str | None = Field(default=None, max_length=120)
+    postal_code: str | None = Field(default=None, max_length=32)
+    country_code: str = Field(default="BY", min_length=2, max_length=2)
+    is_default: bool = False
+
+
+class OrganizationAddressPatch(V2Model):
+    kind: AddressKind | None = None
+    label: str | None = Field(default=None, max_length=120)
+    recipient_name: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
+    address_line: str | None = Field(default=None, min_length=1, max_length=500)
+    city: str | None = Field(default=None, max_length=120)
+    postal_code: str | None = Field(default=None, max_length=32)
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    is_default: bool | None = None
+
+
 # Descriptive aliases used by callers that prefer list/member terminology.
 OrganizationListItem = OrganizationSummary
 OrganizationMemberListItem = OrganizationMember
 OrganizationMemberAdd = OrganizationMemberCreate
 
 __all__ = [
+    "OrganizationAddressCreate",
+    "OrganizationAddressOut",
+    "OrganizationAddressPatch",
     "OrganizationDetail",
     "OrganizationListItem",
     "OrganizationMember",

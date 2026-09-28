@@ -60,7 +60,7 @@ watch(
           class="size-full object-contain"
           @error="photoFailed = true"
         >
-        <Icon v-else name="heroicons:package" class="size-6" />
+        <Icon v-else name="heroicons:cube" class="size-6" />
       </div>
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">

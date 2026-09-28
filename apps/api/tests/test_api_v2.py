@@ -297,3 +297,154 @@ async def test_v2_catalog_facets_are_authenticated_and_user_scoped(
     assert data["brands"] == [{"id": str(brand.id), "name": "V2 Facet Brand"}]
     assert data["models"] == ["Аксессуары"]
     assert data["stockStatuses"] == ["IN_STOCK"]
+
+
+async def test_v2_catalog_cursor_is_signed_and_bound_to_filters(
+    api_client, session_factory
+):
+    """Курсор каталога подписан и привязан к набору фильтров (§pagination).
+
+    Раньше курсор был подписанным base64-JSON без HMAC и без привязки к
+    фильтрам: его можно было склеить руками, а страницу можно было дочитать
+    с другими фильтрами и получить выпадающие из выборки строки.
+    """
+    import base64
+    import json
+
+    brand = await create_brand(session_factory, name="V2 Cursor Brand")
+    for index in range(3):
+        await create_product(
+            session_factory,
+            sku=f"V2-CUR-{index}",
+            name=f"Cursor {index}",
+            brand=brand,
+            base_price=100 + index,
+        )
+    await create_user(
+        session_factory,
+        email=CLIENT_EMAIL,
+        role=UserRole.CLIENT,
+        password=PASSWORD,
+    )
+    await _login(api_client)
+
+    first_page = await api_client.get(
+        "/api/v2/catalog/products",
+        params={"sort": "sku", "limit": 1},
+    )
+    assert first_page.status_code == 200, first_page.text
+    cursor = first_page.json()["meta"]["nextCursor"]
+    assert cursor, "курсор должен выдаваться, когда hasMore"
+
+    # Подпись — вторая часть после точки; сам payload читается, но не подделывается.
+    payload_b64, signature = cursor.split(".", 1)
+    payload = json.loads(
+        base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4))
+    )
+    assert payload["resource"] == "catalog.products"
+    assert payload["sort"] == "sku"
+    assert payload["id"] and payload["value"]
+    assert len(signature) == 64
+
+    # 1. Подделка значения в подписанном payload отвергается.
+    forged = dict(payload, value="zzz")
+    forged_b64 = (
+        base64.urlsafe_b64encode(
+            json.dumps(forged, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+                "utf-8"
+            )
+        )
+        .decode("ascii")
+        .rstrip("=")
+    )
+    tampered = await api_client.get(
+        "/api/v2/catalog/products",
+        params={"sort": "sku", "limit": 1, "cursor": f"{forged_b64}.{signature}"},
+    )
+    assert tampered.status_code == 422, tampered.text
+    assert tampered.json()["code"] == "VALIDATION_ERROR"
+
+    # 2. Без точки — тоже не курсор (раньше такой base64-JSON проходил).
+    legacy = base64.urlsafe_b64encode(
+        json.dumps(
+            {"sort": "sku", "scope": "USER", "value": "V2-CUR-0", "id": payload["id"]},
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    legacy_response = await api_client.get(
+        "/api/v2/catalog/products",
+        params={"sort": "sku", "limit": 1, "cursor": legacy},
+    )
+    assert legacy_response.status_code == 422, legacy_response.text
+
+    # 3. Тот же курсор с другим фильтром отвергается.
+    other_filters = await api_client.get(
+        "/api/v2/catalog/products",
+        params={"sort": "sku", "limit": 1, "q": "Cursor 1", "cursor": cursor},
+    )
+    assert other_filters.status_code == 422, other_filters.text
+    assert other_filters.json()["detail"] == "Курсор пагинации недействителен"
+
+    # 4. С другим sort — тоже (sort входит в подпись).
+    other_sort = await api_client.get(
+        "/api/v2/catalog/products",
+        params={"sort": "price", "limit": 1, "cursor": cursor},
+    )
+    assert other_sort.status_code == 422, other_sort.text
+
+    # 5. С теми же фильтрами курсор остаётся рабочим.
+    same = await api_client.get(
+        "/api/v2/catalog/products",
+        params={"sort": "sku", "limit": 1, "cursor": cursor},
+    )
+    assert same.status_code == 200, same.text
+    assert same.json()["data"][0]["sku"] == "V2-CUR-1"
+
+
+async def test_v2_catalog_cursor_survives_filter_order_reshuffling(
+    api_client, session_factory
+):
+    """Порядок id в query не влияет на подпись — фильтры нормализуются.
+
+    Клиент собирает query из набора выбранных фасетов; если порядок бейджей
+    менялся при перерисовке, подпись «поехала» бы и пагинация ломалась бы
+    без смены самих фильтров.
+    """
+    brand = await create_brand(session_factory, name="V2 Order Brand")
+    second = await create_brand(session_factory, name="V2 Order Brand 2")
+    for index in range(3):
+        await create_product(
+            session_factory,
+            sku=f"V2-ORD-{index}",
+            name=f"Ordered {index}",
+            brand=brand if index % 2 == 0 else second,
+            base_price=100 + index,
+        )
+    await create_user(
+        session_factory,
+        email=CLIENT_EMAIL,
+        role=UserRole.CLIENT,
+        password=PASSWORD,
+    )
+    await _login(api_client)
+
+    params_a = {
+        "sort": "sku",
+        "limit": 1,
+        "brands": [str(brand.id), str(second.id)],
+    }
+    params_b = {
+        "sort": "sku",
+        "limit": 1,
+        "brands": [str(second.id), str(brand.id)],
+    }
+    first = await api_client.get("/api/v2/catalog/products", params=params_a)
+    assert first.status_code == 200, first.text
+    cursor = first.json()["meta"]["nextCursor"]
+    assert cursor
+
+    second_page = await api_client.get(
+        "/api/v2/catalog/products", params={**params_b, "cursor": cursor}
+    )
+    assert second_page.status_code == 200, second_page.text
+    assert second_page.json()["data"][0]["sku"] == "V2-ORD-1"

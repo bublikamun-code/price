@@ -7,12 +7,10 @@
     ``type`` / ``brand_id`` + пагинация §6;
   * ``GET /files/{id}/download`` — presigned-URL (TTL 5 мин); нет файла
     или недоступен по visibility → 404;
-  * ``GET /files/photo?key=photos-series/...`` — фото серии/товара:
-    307-редирект на presigned URL (TTL ``s3_presign_ttl_seconds``, §16 п.18).
-    Прим.: для ПУБЛИЧНОЙ витрины брендов (``/public/photo``, api/v1/public.py)
-    редирект не подходит — TLS-сертификат внешнего S3-хоста не покрывает имя
-    хоста статики и браузер блокирует переход, поэтому там содержимое отдаёт
-    сам API. Здесь авторизованный клиент получает ссылку как на прочие файлы.
+  * ``GET /files/photo?key=photos-series/...`` — фото серии/товара: байтами
+    (§16 п.18). Редирект на presigned здесь не годится: внешний S3-хост
+    отдаётся по http, сайт — по https, и браузер блокирует такой переход.
+    Публичная витрина (``/public/photo``, api/v1/public.py) решает это так же.
 
 Ключ фото валидируется: обязательный «голый» путь без схемы и без ``..``
 (path traversal), иначе 400.
@@ -22,7 +20,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import RedirectResponse
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -123,20 +121,37 @@ async def download_file(
 async def get_photo(
     key: str = Query(description="S3-ключ фото (например photos-series/serie-a.webp)"),
     _user: User = Depends(get_current_user),
-) -> RedirectResponse:
-    """Фото серии/товара: 307 на presigned URL (TTL 5 мин, §16 п.18).
+) -> Response:
+    """Фото серии/товара — байтами (§16 п.18).
 
-    Ключ валидируется ДО генерации ссылки: «голый» путь без схемы и без
-    ``..`` — иначе 400. Хранилище недоступно → 502. Для публичной витрины
-    (``/public/photo``) — свой стриминг, см. docstring модуля.
+    Раньше был 307 на presigned, но внешний S3-хост отдаётся по http, а сайт
+    работает по https: браузер режет такой редирект как mixed content, и
+    ``<img>`` ловит ``error`` вместо картинки. Публичная витрина давно решает
+    это отдачей байтов из API (см. ``/public/photo``), здесь авторизованный
+    клиент получает то же самое.
+
+    Ключ валидируется ДО чтения: «голый» путь без схемы и без ``..`` — иначе
+    400. Объекта нет → 404, хранилище недоступно → 502.
     """
     valid_key = _validate_photo_key(key)
     try:
-        url = await run_in_threadpool(
-            storage.presigned_get, settings.s3_bucket_photos, valid_key
+        data = await run_in_threadpool(
+            storage.get_bytes, settings.s3_bucket_photos, valid_key
         )
+    except storage.ObjectNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено"
+        ) from exc
     except storage.StorageError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="Хранилище недоступно"
         ) from exc
-    return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    media_type = storage.photo_media_type(valid_key)
+    return Response(
+        content=data,
+        media_type=media_type,
+        # Эндпоинт авторизованный, поэтому ассет приватный: общий кэш не должен
+        # отдавать его гостю. Ключи неизменяемы (uuid/hash в пути), immutability
+        # исключает опрос на каждом касании фильтров.
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )

@@ -1,7 +1,8 @@
 // Хелпер URL фото товара (§10, §16 п.17). photo_key бывает двух видов:
 //  * http(s)-URL — отдаём как есть, но только для хостов из allowlist;
-//  * S3-ключ (photos-series/serie-a.webp) — через API-редирект
-//    /api/v1/files/photo?key=… (307 на presigned URL, TTL 5 мин).
+//  * S3-ключ (photos-series/serie-a.webp) — через /api/v1/files/photo?key=…,
+//    который отдаёт байты изображения (200). Раньше был 307 на presigned, но
+//    внешний S3-хост живёт по http, и https-браузер резал фото как mixed content.
 // Запасной вариант — attributes.photo_url. См. catalog/index.vue, [sku].vue.
 //
 // Про внешние URL: photo_key приходит из данных каталога, то есть из
@@ -48,7 +49,7 @@ export function useProductPhoto() {
   }
 
   /** Полный URL произвольного ключа (http-URL — только из allowlist, S3-ключ —
-   * через редирект). Для галереи доп. фото (ProductDetail.photos), где ключ
+   * через API с байтами). Для галереи доп. фото (ProductDetail.photos), где ключ
    * подаётся отдельно. */
   function urlOf(key: string | null | undefined): string | null {
     return key ? photoUrl(key) : null
