@@ -245,6 +245,7 @@ UUID tie-breaker. Невалидный, изменённый или исполь
 | GET | `/catalog/products` | Auth product list с cursor, q, brands, series, stock, sort. |
 | GET | `/catalog/products/{productId}` | Product by UUID. |
 | GET | `/catalog/products/by-sku/{sku}` | Resolve/read by visible SKU. |
+| GET | `/catalog/products/{productId}/documents/{documentId}/download` | Document bytes (PDF) для товара/его серии (§16 п.38). |
 | GET | `/catalog/facets` | Server facets с counts/selected state. |
 | POST | `/catalog/bulk-resolve` | SKU lines → product ids + validation. |
 | POST | `/catalog/exports` | Catalog export job. |
@@ -254,6 +255,38 @@ UUID tie-breaker. Невалидный, изменённый или исполь
 Supported sort values задаются enum/OpenAPI, не произвольными строками. Неизвестный sort → `VALIDATION_ERROR`.
 
 Публичная product projection либо не содержит цен/остатков, либо требует auth. Public brand aggregate не делает N+1 series/product calls.
+
+### Product documents (`documents[]`, §16 п.38)
+
+Product detail (`/catalog/products/{productId}` и `/by-sku/{sku}`) содержит блок `documents[]`: собственные документы товара и документы его серии.
+
+```json
+{
+  "documents": [
+    {
+      "id": "uuid",
+      "type": "CERTIFICATE",
+      "fileName": "certificate-2026.pdf",
+      "scope": "product",
+      "validUntil": "2027-03-31",
+      "isExpired": false
+    },
+    {
+      "id": "uuid",
+      "type": "DATASHEET",
+      "fileName": "datasheet.pdf",
+      "scope": "series",
+      "validUntil": null,
+      "isExpired": false
+    }
+  ]
+}
+```
+
+- `type` — `CERTIFICATE | DATASHEET`; `scope` — `product | series` (документ серии наследуется всеми товарами серии).
+- `validUntil` — `YYYY-MM-DD` или `null`; просроченный документ **помечается** `isExpired: true` (`validUntil < today`), а не скрывается.
+- Скачивание — байтами: `GET /api/v2/catalog/products/{productId}/documents/{documentId}/download` → 200 `application/pdf` (не presigned — правило §9 «Media»; документ должен принадлежать товару или его серии, иначе 404; хранилище недоступно → 502). S3-ключ наружу не выдаётся.
+- Чтение — любой авторизованный; загрузка/удаление — manager (§15).
 
 ## 9. Media
 
@@ -437,12 +470,23 @@ SSE event содержит `eventId`, `type`, `occurredAt` и resource payload. 
 - internal object key не выдаётся;
 - content type, magic bytes, size и access проверяются server-side.
 
+### Product documents (manager, §16 п.38)
+
+| Method | Path | Назначение |
+|---|---|---|
+| POST | `/manager/products/{productId}/documents` | Multipart upload PDF-документа товара: `file` (.pdf, magic-bytes `%PDF`, лимит `files_max_mb`), `type=CERTIFICATE\|DATASHEET` (required), `valid_until=YYYY-MM-DD` (optional). → 201 `SuccessResponse[ProductDocument]`. |
+| POST | `/manager/series/{seriesId}/documents` | То же для серии. → 201. |
+| DELETE | `/manager/documents/{documentId}` | 204: сначала S3-объект, затем запись; не найден → 404. |
+
+Загрузка/удаление требуют роль MANAGER (ADMIN проходит любую проверку роли). Не-PDF отклоняется `415`, пустой файл — `400`, превышение лимита — `413`, неизвестный товар/серия — `404`, невалидный `valid_until` — `422 VALIDATION_ERROR`. `Idempotency-Key` (опциональный, формат как у orders) принимается на POST. `valid_until` в прошлом не запрещён: документ останется видимым с `isExpired: true`.
+
 ## 15. Manager/admin
 
 Manager v2 resources:
 
 - organizations, contacts, memberships, pricing terms;
 - products, stock/pricing overrides;
+- product/series documents (PDF upload, delete — §8 «Product documents», §14);
 - brands and series aggregates;
 - orders/status transitions;
 - imports, price versions, rollback;

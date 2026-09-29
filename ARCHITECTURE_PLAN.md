@@ -538,6 +538,15 @@ Organization pricing terms и organization-brand discounts переносятс�
 | GET | `/api/v1/files/{id}/download` | Presigned URL (время жизни — 5 мин). |
 | GET | `/api/v1/files/photo` | Фото серии: `?key=photos-series/...` → 200 с байтами изображения, Content-Type по расширению (§16 п.17). Нет объекта → 404, хранилище недоступно → 502. |
 
+### Документы на товар (v2; сертификаты, datasheets — §16 п.38)
+| Method | Path | Описание |
+|---|---|---|
+| POST | `/api/v2/manager/products/{id}/documents` | (MANAGER) Загрузить PDF-документ товара: multipart `file` (.pdf, magic-bytes `%PDF`, лимит `files_max_mb`), `type=CERTIFICATE\|DATASHEET`, `valid_until?` (`YYYY-MM-DD`). S3: `pdf-catalogs/{type}/{uuid}.pdf`; `FileAsset.product_id` + `visibility=AUTHED`. → 201 `SuccessResponse[ProductDocumentOut]`. |
+| POST | `/api/v2/manager/series/{id}/documents` | То же для серии: `FileAsset.series_id`; документ наследуется всем товарам серии. → 201. |
+| DELETE | `/api/v2/manager/documents/{id}` | (MANAGER) Удалить документ (исправление ошибок): сначала S3-объект, затем запись (паттерн §16 п.18). → 204; не найден → 404. |
+| GET | `/api/v2/catalog/products/{productId}/documents/{documentId}/download` | Скачивание **байтами** (не presigned — урок mixed-content 27.09, §16 п.37): документ должен принадлежать товару или его серии; иначе 404. Хранилище недоступно → 502. |
+| — | `GET /api/v2/catalog/products/{productId}` (и `/by-sku/{sku}`) | Product detail дополняется блоком `documents[]`: `[{"id", "type": "CERTIFICATE\|DATASHEET", "fileName", "scope": "product\|series", "validUntil": "YYYY-MM-DD"?, "isExpired": bool}]` — свои документы + документы серии товара; `is_expired = valid_until < today`, просроченные **помечаются, не скрываются**. |
+
 ### Уведомления (in-app, pull)
 | Method | Path | Описание |
 |---|---|---|
@@ -770,6 +779,12 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 ### Загрузка файлов клиентом
 - Пресайнд-URL с TTL 5 мин (не отдаём файл напрямую через API — экономим bandwidth).
 
+### Документы на товар (сертификаты, datasheets — §16 п.38)
+- Типы `FileAssetType`: `CERTIFICATE`, `DATASHEET` (PDF-only: расширение `.pdf`, content-type `application/pdf|octet-stream`, magic-bytes `%PDF` — переиспользуется валидация файлового архива, §16 п.18).
+- `FileAsset.product_id` / `FileAsset.series_id` — nullable FK (SET NULL, как `brand_id`): товар удалён → документ остаётся в архиве без привязки; `valid_until DATE NULL` — срок действия (прошедшая дата допустима: документ помечается `is_expired`, не скрывается).
+- Ключ в бакете `pdf-catalogs/`: `{certificate|datasheet}/{uuid}.pdf`; `visibility=AUTHED` (чтение — любой авторизованный в рамках карточки товара; загрузка/удаление — MANAGER/ADMIN).
+- Выдача — **только байтами** через v2 (`GET /api/v2/catalog/products/{productId}/documents/{documentId}/download`), presigned не используется (урок mixed-content 27.09, §16 п.37).
+
 ---
 
 ## 11. Безопасность (Security Checklist)
@@ -977,6 +992,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 35 | Критические commerce-инварианты | **Request-not-reservation + idempotent submit + optimistic concurrency** | Availability проверяется при создании и manager confirmation, но stock не резервируется автоматически. Duplicate product lines запрещаются; `Idempotency-Key` возвращает исходный order или `IDEMPOTENCY_KEY_REUSED`; stale manager writes возвращают 409. Money публикуется decimal string + currency; errors используют stable codes. |
 | 36 | Нативные клиенты | **iOS (SwiftUI) + Android (Compose) поверх общего Kotlin Multiplatform-ядра в `core/`** (согласовано 2026-09-27) | Общими остаются контракт `/api/v2` и транспортный слой (DTO, ApiClient, репозитории, cursor-пагинация, маппинг Problem Details); UI нативный на каждой платформе. Платформенные зависимости (secure storage, файловый кеш) объявляются `expect/actual`. Оба приложения равны по функциям — расхождение считается дефектом. Первая версия: вход + прайс + каталог (read-only). Контракт — `docs/NATIVE_API_CONTRACT.md` (переименован из `IOS_API_CONTRACT.md` 2026-09-27). Android ранее в каноне не упоминался — §3 и §4 приведены в соответствие. |
 | 37 | v2 media resources | **Стабильный `mediaId` = `uuid5(namespace, photo_key)`; `url` = стабильный v2-эндпоинт, отдающий байты изображения** (согласовано 2026-09-27) | Закрывает пробел, из-за которого нативный каталог шёл бы без изображений: v2 DTO медиа не содержал, а единственный путь v1 `/api/v1/files/photo?key=` отдаёт presigned с TTL 5 минут, что непригодно как ключ кеша. `GET /api/v2/media/{mediaId}` — стабильный id, S3-ключ остаётся server-side. В списке каталога публикуется только `thumbnail`, в карточке — полный `media[]`. `width`/`height`/`mimeType` следуют конвенции импортёра (`_thumb` → 400×400, large → 1200×1200, webp) и дополнительно сохраняются в реестре `media_assets` (миграция `0020_media_assets`, модель `app/models/file.py`): `uuid5` необратим, поэтому обратный переход `id → S3-ключ` для чтения объекта возможен только по строке реестра. Backfill ключей каталога делает та же миграция — перезалив фото не требуется. **Уточнение 2026-09-27:** выдача переведена с 307 на presigned на байты — внешний S3-хост обслуживается по http, а портал по https, и браузер резал редирект как mixed content; presigned-выдача осталась только там, где файл качает сервер (экспорт CSV/PDF, §16 п.16). `docs/API_V2_CONTRACT.md` §9, `docs/NATIVE_API_CONTRACT.md` §6.1. |
+| 38 | Документы на товар: сертификаты, datasheets (этап 3 роадмапа) | **PDF-документы на товар/серию; загрузка менеджером, выдача клиенту байтами; просроченные помечаются** (согласовано 2026-09-29) | `FileAsset` + nullable FK `product_id`/`series_id` (SET NULL — как `brand_id`; товар удалён → документ остаётся в архиве) + `valid_until DATE NULL`; enum `file_asset_type` дополнен `CERTIFICATE`, `DATASHEET` (миграция `0021_product_documents`). Загрузка — только PDF (расширение + content-type + magic-bytes `%PDF`, лимит `files_max_mb` — переиспользование валидации файлового архива п.18), ключ `pdf-catalogs/{type}/{uuid}.pdf`, `visibility=AUTHED`. Загрузка/удаление — MANAGER/ADMIN; чтение — любой авторизованный в рамках карточки товара. Клиент видит `documents[]` в v2 product detail (свои + документы серии, `scope: product\|series`; `is_expired = valid_until < today` — просроченные **помечаются, не скрываются**). Скачивание — **байтами** через `GET /api/v2/catalog/products/{productId}/documents/{documentId}/download`, presigned не используется (урок mixed-content 27.09, п.37). `docs/API_V2_CONTRACT.md` §8/§15. |
 
 ### §16.1 Дополнительные фичи (approved для MVP, согласовано 2026-08-11)
 
