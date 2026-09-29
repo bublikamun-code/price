@@ -173,12 +173,10 @@ def _product(row, prices: dict, resolved: ResolvedRate) -> CatalogProduct:
     product = row[0]
     # Репозиторий уже отдаёт photo_key (фото товара, иначе фото серии) — v2
     # превращает его в стабильный media-ресурс, S3-ключ наружу не уходит.
-    # Внимание: в БД лежит large-ключ, поэтому thumbnail — это кадр 1200×1200,
-    # а не миниатюра 400×400, хотя бы thumb лежит в бакете под ключом с суффиксом
-    # `_thumb` (docs/NATIVE_API_CONTRACT.md §6.1). Плитка каталога тянет втрое
-    # больше нужного; переход на настоящий thumb — открытое решение по контракту,
-    # а не молчаливая правка здесь.
-    thumbnail = media_service.media_ref_for_key(row.photo_key)
+    # В БД лежит large-ключ, поэтому ссылка миниатюры несёт ``?size=thumb``:
+    # эндпоинт отдаёт лежащий рядом кадр 400×400 ({stem}_thumb.webp, §16 п.17),
+    # у старых загрузок без thumb — фолбэк на large (api/v2/media.py).
+    thumbnail = media_service.media_ref_for_key(row.photo_key, thumb=True)
     return CatalogProduct(
         id=product.id,
         sku=product.sku,

@@ -10,6 +10,7 @@ import uuid
 
 import pytest
 
+from app.models.catalog import Series
 from app.models.enums import UserRole
 from app.services import media as media_service
 from app.services import storage
@@ -67,6 +68,22 @@ def test_media_id_ignores_case_of_non_key_text():
 def test_dimensions_follow_importer_convention():
     assert media_service.dimensions_for_key(SERIES_THUMB) == (400, 400)
     assert media_service.dimensions_for_key(SERIES_KEY) == (1200, 1200)
+
+
+def test_thumb_key_derivation():
+    """Конвенция §16 п.17: thumb выводится заменой суффикса у .webp-ключа."""
+    assert media_service.thumb_key_for(SERIES_KEY) == SERIES_THUMB
+    # Уже-thumb и не-webp ключи не меняются: другого расположения у варианта нет.
+    assert media_service.thumb_key_for(SERIES_THUMB) == SERIES_THUMB
+    assert (
+        media_service.thumb_key_for("photos-series/serie-a.jpg")
+        == "photos-series/serie-a.jpg"
+    )
+    # Формула зеркалит витрину брендов — не должны разъехаться.
+    from app.services.public_catalog import _series_out
+
+    out = _series_out(Series(id=uuid.uuid4(), name="Serie A", photo_key=SERIES_KEY))
+    assert out.photo_thumb == SERIES_THUMB
 
 
 def test_non_photo_key_is_rejected():
@@ -229,6 +246,104 @@ async def test_media_storage_failure_is_502(api_client, session_factory, monkeyp
 
 
 # =========================================================
+# Варианты размера: ?size=thumb
+# =========================================================
+async def test_media_thumb_serves_thumb_key(api_client, session_factory, monkeypatch):
+    """?size=thumb читает {stem}_thumb.webp — втрое меньше large-кадра."""
+    await _client(session_factory)
+    await _login(api_client)
+    async with session_factory() as s:
+        asset = await media_service.register_key(s, SERIES_KEY, commit=True)
+        media_id = asset.id
+
+    requested: list[str] = []
+    monkeypatch.setattr(
+        "app.services.storage.get_bytes",
+        lambda b, k, **kw: requested.append(k) or b"thumb-bytes",
+    )
+    r = await api_client.get(f"/api/v2/media/{media_id}?size=thumb")
+    assert r.status_code == 200
+    assert requested == [SERIES_THUMB]  # другой ключ, не large
+    assert r.content == b"thumb-bytes"
+    assert r.headers["content-type"].startswith("image/webp")
+
+
+async def test_media_default_serves_large_key(api_client, session_factory, monkeypatch):
+    """Без параметра (и с size=large) — прежнее поведение: large-ключ."""
+    await _client(session_factory)
+    await _login(api_client)
+    async with session_factory() as s:
+        asset = await media_service.register_key(s, SERIES_KEY, commit=True)
+        media_id = asset.id
+
+    requested: list[str] = []
+    monkeypatch.setattr(
+        "app.services.storage.get_bytes",
+        lambda b, k, **kw: requested.append(k) or b"large-bytes",
+    )
+    for url in (f"/api/v2/media/{media_id}", f"/api/v2/media/{media_id}?size=large"):
+        r = await api_client.get(url)
+        assert r.status_code == 200
+        assert requested[-1] == SERIES_KEY
+    assert requested == [SERIES_KEY, SERIES_KEY]
+
+
+async def test_media_thumb_falls_back_to_large_when_missing(
+    api_client, session_factory, monkeypatch
+):
+    """Старые загрузки без thumb-варианта: отдаём large, а не 404."""
+    await _client(session_factory)
+    await _login(api_client)
+    async with session_factory() as s:
+        asset = await media_service.register_key(s, SERIES_KEY, commit=True)
+        media_id = asset.id
+
+    requested: list[str] = []
+
+    def _get(bucket, key, **kw):
+        requested.append(key)
+        if key == SERIES_THUMB:
+            raise storage.ObjectNotFound(f"нет {key}")
+        return b"large-bytes"
+
+    monkeypatch.setattr("app.services.storage.get_bytes", _get)
+    r = await api_client.get(f"/api/v2/media/{media_id}?size=thumb")
+    assert r.status_code == 200
+    assert requested == [SERIES_THUMB, SERIES_KEY]  # сначала thumb, фолбэк → large
+    assert r.content == b"large-bytes"
+
+
+async def test_media_thumb_still_404_when_large_missing_too(
+    api_client, session_factory, monkeypatch
+):
+    """Фолбэк не маскирует удалённое фото: large тоже нет → 404."""
+    await _client(session_factory)
+    await _login(api_client)
+    async with session_factory() as s:
+        asset = await media_service.register_key(s, SERIES_KEY, commit=True)
+        media_id = asset.id
+
+    def _missing(bucket, key, **kw):
+        raise storage.ObjectNotFound(f"нет {key}")
+
+    monkeypatch.setattr("app.services.storage.get_bytes", _missing)
+    r = await api_client.get(f"/api/v2/media/{media_id}?size=thumb")
+    assert r.status_code == 404
+    assert r.json()["code"] == "MEDIA_NOT_FOUND"
+
+
+async def test_media_invalid_size_is_422(api_client, session_factory, stored_bytes):
+    await _client(session_factory)
+    await _login(api_client)
+    async with session_factory() as s:
+        asset = await media_service.register_key(s, SERIES_KEY, commit=True)
+        media_id = asset.id
+    r = await api_client.get(f"/api/v2/media/{media_id}?size=huge")
+    assert r.status_code == 422
+    assert r.json()["code"] == "VALIDATION_ERROR"
+
+
+# =========================================================
 # Каталог отдаёт media, а не S3-ключи
 # =========================================================
 async def test_catalog_thumbnail_is_stable_media_ref(
@@ -236,7 +351,8 @@ async def test_catalog_thumbnail_is_stable_media_ref(
 ):
     await _client(session_factory)
     brand = await create_brand(session_factory, name="Media Brand")
-    series = await create_series(session_factory, brand=brand, name="Serie A", photo_key=SERIES_THUMB)
+    # В БД лежит large-ключ (так пишет загрузчик) — миниатюра выводится из него.
+    series = await create_series(session_factory, brand=brand, name="Serie A", photo_key=SERIES_KEY)
     await create_product(
         session_factory, sku="MEDIA-1", name="Widget", brand=brand, series=series
     )
@@ -245,12 +361,17 @@ async def test_catalog_thumbnail_is_stable_media_ref(
     r = await api_client.get("/api/v2/catalog/products")
     assert r.status_code == 200
     thumb = r.json()["data"][0]["thumbnail"]
-    assert thumb["id"] == str(media_service.media_id_for_key(SERIES_THUMB))
-    assert thumb["url"] == f"/api/v2/media/{media_service.media_id_for_key(SERIES_THUMB)}"
+    # id — по-прежнему uuid5 large-ключа (реестр резолвит его напрямую),
+    # а URL несёт ?size=thumb: эндпоинт отдаст лежащий рядом кадр 400×400.
+    assert thumb["id"] == str(media_service.media_id_for_key(SERIES_KEY))
+    assert thumb["url"] == (
+        f"/api/v2/media/{media_service.media_id_for_key(SERIES_KEY)}?size=thumb"
+    )
+    # Геометрия миниатюры — 400×400 по конвенции, не large.
     assert (thumb["width"], thumb["height"]) == (400, 400)
     assert thumb["mimeType"] == "image/webp"
     # Ключ хранилища наружу не отдаётся ни в каком виде.
-    assert SERIES_THUMB not in r.text
+    assert SERIES_KEY not in r.text
     assert "photos-series" not in r.text
     # Список отдаёт только плитку, без галереи.
     assert r.json()["data"][0]["media"] == []

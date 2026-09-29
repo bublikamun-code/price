@@ -139,6 +139,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
     if (cookies) cookies.userC.value = user.value
     persistCookie('auth_user', user.value ? JSON.stringify(user.value) : null, COOKIE_MAX_AGE.user)
+    // Сессия подтверждена — запускаем доставку уведомлений (SSE-стрим бейджа +
+    // poll-fallback, §16 п.26). Без этого старта события не доходили ни до
+    // браузера, ни до Mini App. Idempotent: живой стрим не пересоздаём, упавший
+    // (CLOSED после 401) — поднимаем заново при следующем /me.
+    if (import.meta.client && user.value) {
+      try {
+        const notifications = useNotifications()
+        notifications.startStream()
+        notifications.startPolling()
+      } catch {
+        // Вне Nuxt-контекста (поздний ответ fetchMe) бейдж не критичен.
+      }
+    }
   }
 
   function applyTokens(t: Pick<TokenPair, 'access_token'>) {
@@ -166,6 +179,14 @@ export const useAuthStore = defineStore('auth', () => {
       } else {
         // MANAGER/ADMIN and Mini App navigation keep the legacy cart state.
         useCart().resetState()
+      }
+      // Login/2FA: applyUser успел отработать ДО сброса, а resetState выше
+      // закрыл стрим и poll-таймер — перезапускаем доставку под новую сессию.
+      // При разлогине user уже null: доставлять некому, resetState всё закрыл.
+      if (import.meta.client && user.value) {
+        const notifications = useNotifications()
+        notifications.startStream()
+        notifications.startPolling()
       }
     } catch {
       // Тихо: сброс UI-state не критичен (на сервере он и не нужен).

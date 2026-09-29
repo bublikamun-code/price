@@ -5237,7 +5237,7 @@
     },
     "/api/v2/media/{mediaId}": {
       "get": {
-        "description": "Отдаёт изображение каталога по стабильному mediaId.\n\nОбъекта нет в бакете (ключ остался в реестре, фото удалили) → 404, как и\nнеизвестный id; хранилище недоступно → 502.",
+        "description": "Отдаёт изображение каталога по стабильному mediaId.\n\nОбъекта нет в бакете (ключ остался в реестре, фото удалили) → 404, как и\nнеизвестный id; хранилище недоступно → 502. ``size=thumb`` выводит ключ\nминиатюры из large-ключа реестра; нет thumb-объекта (старые загрузки) →\nфолбэк на large, а не 404.",
         "operationId": "get_media_api_v2_media__mediaId__get",
         "parameters": [
           {
@@ -5247,6 +5247,22 @@
             "schema": {
               "format": "uuid",
               "title": "Mediaid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Вариант изображения: large (1200×1200) или thumb (400×400)",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "large",
+              "description": "Вариант изображения: large (1200×1200) или thumb (400×400)",
+              "enum": [
+                "large",
+                "thumb"
+              ],
+              "title": "Size",
               "type": "string"
             }
           }

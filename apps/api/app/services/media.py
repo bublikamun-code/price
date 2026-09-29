@@ -51,6 +51,18 @@ def is_photo_key(s3_key: str) -> bool:
     return s3_key.startswith(PHOTO_KEY_PREFIXES)
 
 
+def thumb_key_for(s3_key: str) -> str:
+    """Ключ thumb-варианта по конвенции загрузчика (§16 п.17).
+
+    ``photos-series/a.webp`` → ``photos-series/a_thumb.webp``. Ключ без ``.webp``
+    или уже-thumb возвращается как есть: вариант выводится заменой суффикса,
+    для него просто нет другого расположения (зеркалит services/public_catalog.py).
+    """
+    if s3_key.endswith(".webp") and not s3_key.endswith(THUMB_SUFFIX):
+        return s3_key.replace(".webp", THUMB_SUFFIX)
+    return s3_key
+
+
 def media_ref(asset: MediaAsset) -> dict[str, object]:
     """Проекция реестра в v2-DTO. URL — стабильный v2-путь, не presigned."""
     return {
@@ -62,17 +74,27 @@ def media_ref(asset: MediaAsset) -> dict[str, object]:
     }
 
 
-def media_ref_for_key(s3_key: str) -> dict[str, object] | None:
+def media_ref_for_key(
+    s3_key: str, *, thumb: bool = False
+) -> dict[str, object] | None:
     """Тот же DTO, вычисленный напрямую из ключа — для путей, где реестр ещё
     не обязателен (одиночное фото товара). Реестр нужен только чтобы отдать
-    307 по id; здесь id выводится детерминированно и совпадёт с реестром."""
+    307 по id; здесь id выводится детерминированно и совпадёт с реестром.
+
+    ``thumb=True`` — ссылка на миниатюру: URL несёт ``?size=thumb`` (байты
+    отдаёт эндпоинт ключом ``_thumb``, см. api/v2/media.py), геометрия —
+    400×400 по конвенции, хотя в БД лежит large-ключ.
+    """
     if not s3_key:
         return None
-    width, height = dimensions_for_key(s3_key)
+    width, height = THUMB_SIZE if thumb else dimensions_for_key(s3_key)
     media_id = media_id_for_key(s3_key)
+    url = f"/api/v2/media/{media_id}"
+    if thumb:
+        url += "?size=thumb"
     return {
         "id": str(media_id),
-        "url": f"/api/v2/media/{media_id}",
+        "url": url,
         "width": width,
         "height": height,
         "mime_type": MIME_TYPE,
@@ -151,4 +173,5 @@ __all__ = [
     "media_ref_for_key",
     "register_existing_photo_keys",
     "register_key",
+    "thumb_key_for",
 ]

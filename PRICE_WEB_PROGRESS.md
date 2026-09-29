@@ -368,3 +368,34 @@ isExpired, скачивание байтами без утечки ключа/Lo
 confirm удаления; успешные upload/download e2e локально не прогонялись — MinIO стенда недоступен
 (502 обрабатывается инлайном), multipart-связь подтверждена логами API. Прод недоступен по SSH из
 текущей сети (29.09) — деплой по команде, когда маршрут вернётся.
+
+## 2026-09-29 — починка стабов: SSE-события, email-шаблоны, thumb в плитке
+
+**publish_notification() реализована** (была заглушка `pass` с первого коммита, SSE отдавал только
+heartbeat). SSE `/api/v1/notifications/stream` уже подписывался на Redis pub/sub
+`notifications:user:{id}` + `notifications:broadcast` (MANAGER) — не было издателя: добавлен
+sync-PUBLISH (ленивый синглетон, работает из async-контекста и Celery), fail-open (сбой брокера →
+warning, уведомление не ломается), `ensure_ascii=False` с экранированием переводов строк.
+Формат события не менялся: `event: notification`, data `{id, type, title, body}`. Все 6 мест вызова
+(public LEAD_CREATED, PRICE_CHANGED сводка/дайджест, курс НБРБ, manager/admin users) публикуют.
+Вторая половина бага была на фронте: `startStream()`/`startPolling()` вообще не вызывались — стрим
+не открывался; запуск добавлен в `useAuth.applyUser()` (покрывает вход, 2FA, Telegram-вход миниаппа)
+и `resetClientData()` (перезапуск после сброса), идемпотентно, только клиент.
+
+**Email-шаблоны заказов** (были `<p>Заглушка: заказ …</p>`): общий каркас `_order_email_layout()`,
+инлайн-CSS в палитре витрины, без внешних ресурсов. order_created менеджеру (номер, клиент, сумма
+как в PDF-выгрузках, способ получения, кнопка/ссылка на /manager/orders) и status_changed клиенту
+(новый статус, кнопка/ссылка на /orders). Ссылка из `settings.web_app_url`, при пустом —
+относительный путь (как у сброса пароля).
+
+**`?size=thumb` в media API** — починена выдача (параметр вернули в контракт как
+`Literal["large","thumb"]`, default large = прежнее поведение): `thumb_key_for()` зеркалит витрину
+брендов, `size=thumb` читает thumb-ключ, при отсутствии — фолбэк на large (не 404). `thumbnail` в
+v2 product detail несёт `?size=thumb` — плитка каталога тянет ~12КБ вместо ~36КБ. Cache-Control
+immutable сохранён (ключ кэша — полный URL). OpenAPI-фикстура перегенерирована (аддитивно).
+
+Проверки: pytest весь suite **578 passed** (новые: 8 notification_events включая round-trip
+publish→подписчик на fakeredis, 10 email-шаблонов, +6 media thumb); vitest 173/173; ESLint (Node 22)
+по изменённым composables OK. Не проверено: живая SMTP-отправка и рендер писем в клиентах,
+live-SSE в браузере (стендовый GUI-прогон — отдельным шагом), поведение KMP-клиента с thumb
+(байты по URL, коллизии кэша нет).
