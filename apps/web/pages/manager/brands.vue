@@ -149,6 +149,13 @@ const MAX_PHOTO_BYTES = 20 * 1024 * 1024
 const uploadingId = ref<string | null>(null)
 const uploadError = ref<{ id: string; msg: string } | null>(null)
 
+// --- Документы серии (этап 3): модалка со списком, загрузкой и удалением ---
+const seriesDocs = ref<SeriesRef | null>(null)
+
+function openSeriesDocs(s: SeriesRef) {
+  seriesDocs.value = s
+}
+
 async function onPhotoPick(s: SeriesRef, ev: Event) {
   const input = ev.target as HTMLInputElement
   const file = input.files?.[0]
@@ -286,6 +293,15 @@ onMounted(load)
                   <Icon v-else name="heroicons:camera" class="w-3.5 h-3.5" />
                   {{ s.photo_key ? 'Заменить' : 'Загрузить фото' }}
                 </label>
+                <button
+                  type="button"
+                  class="btn-ghost min-h-11 cursor-pointer px-2 text-xs"
+                  :data-testid="`manager-series-documents-${s.id}`"
+                  @click="openSeriesDocs(s)"
+                >
+                  <Icon name="heroicons:document-text" class="w-3.5 h-3.5" />
+                  Документы
+                </button>
               </div>
               <p v-if="uploadError?.id === s.id" class="text-xs text-danger mt-1 pl-12">{{ uploadError.msg }}</p>
             </li>
@@ -374,6 +390,29 @@ onMounted(load)
           </button>
         </div>
       </form>
+    </div>
+
+    <!-- Документы серии: список + загрузка PDF + удаление (этап 3) -->
+    <div
+      v-if="seriesDocs"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) seriesDocs = null; overlayDown = false"
+    >
+      <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5" data-testid="manager-series-documents-modal">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div class="min-w-0">
+            <h3 class="font-semibold">Документы серии</h3>
+            <p class="text-sm text-ink-muted mt-0.5 truncate">{{ seriesDocs.name }}</p>
+          </div>
+          <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="seriesDocs = null">
+            <Icon name="heroicons:x-mark" class="w-5 h-5" />
+          </button>
+        </div>
+        <ProductDocumentsPanel scope="series" :target-id="seriesDocs.id" />
+        <div class="flex justify-end mt-5">
+          <button type="button" class="btn-ghost min-h-11" @click="seriesDocs = null">Закрыть</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>

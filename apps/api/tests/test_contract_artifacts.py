@@ -45,6 +45,10 @@ def test_v2_openapi_snapshot_matches_generated_v2_surface():
         "/api/v2/catalog/products",
         "/api/v2/catalog/products/by-sku/{sku}",
         "/api/v2/catalog/products/{productId}",
+        "/api/v2/catalog/products/{productId}/documents/{documentId}/download",
+        "/api/v2/manager/documents/{documentId}",
+        "/api/v2/manager/products/{productId}/documents",
+        "/api/v2/manager/series/{seriesId}/documents",
         "/api/v2/me/organization/addresses",
         "/api/v2/me/organization/addresses/{addressId}",
         "/api/v2/media/{mediaId}",
@@ -216,6 +220,23 @@ def test_shared_v2_json_fixtures_match_pydantic_contract():
     assert catalog_detail.data.media[0].width == 1200
     # Галерея не обязана повторять thumbnail.
     assert catalog_detail.data.media[0].id != catalog_detail.data.thumbnail.id
+
+    # Документы на товар (§16 п.38): свои + документы серии, просроченные
+    # помечаются isExpired, а не скрываются. Скачивание — байтами через
+    # v2-эндпоинт, поэтому presigned-ссылки в контракте нет вовсе.
+    documents = catalog_detail.data.documents
+    assert [(d.type, d.scope) for d in documents] == [
+        ("CERTIFICATE", "product"),
+        ("DATASHEET", "series"),
+        ("CERTIFICATE", "product"),
+    ]
+    assert documents[0].file_name == "certificate-2026.pdf"
+    assert str(documents[0].valid_until) == "2027-03-31"
+    assert documents[0].is_expired is False
+    assert documents[1].valid_until is None
+    assert documents[2].is_expired is True
+    assert not hasattr(documents[0], "s3_key")
+    assert not hasattr(documents[0], "url")
 
     # Нативный grant: токены в теле, а не в cookie — это и есть отличие NATIVE от WEB.
     assert grant.meta.request_id == "v2-fixture-auth-grant-001"

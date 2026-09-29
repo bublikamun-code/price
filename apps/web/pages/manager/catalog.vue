@@ -500,6 +500,9 @@ onUnmounted(() => {
               placeholder="Напр. 12 (пусто — не менять)"
             >
           </div>
+
+          <!-- Документы на товар: список + загрузка PDF + удаление (этап 3). -->
+          <ProductDocumentsPanel scope="product" :target-id="editing.id" />
         </div>
 
         <div v-if="editSuccess" class="badge-success w-full justify-center py-2 mt-5">Сохранено</div>

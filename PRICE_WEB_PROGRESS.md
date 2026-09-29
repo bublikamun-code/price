@@ -334,3 +334,37 @@ GUI-клики в IAB-стенде по-прежнему не проходят (
 логика UI покрыта checkout-address.spec.ts). Менеджерская read-only витрина адресов отложена: менеджер
 не член организации, по контракту адреса ему недоступны — нужен отдельный manager-эндпоинт (след. этап).
 Не закоммичено; деплой — по команде.
+
+## 2026-09-29 — Этап 3 дорожной карты фич: документы на товар (сертификаты и даташиты)
+
+Backend v2: `FileAsset` + `product_id`/`series_id` (nullable FK, SET NULL) + `valid_until DATE`,
+`FileAssetType` + `CERTIFICATE`/`DATASHEET` (миграция 0021, `ALTER TYPE ... ADD VALUE` по паттерну
+0014). Загрузка — `POST /api/v2/manager/products|series/{id}/documents` (multipart: file/type/
+valid_until, RBAC MANAGER, опц. Idempotency-Key; PDF-only: расширение + content-type + magic-bytes
+`%PDF` + лимит, ровно одна привязка, S3 до записи БД), `DELETE /api/v2/manager/documents/{id}` (204,
+сначала S3; `BRAND_PDF` → 404 — брендовые PDF удаляются через v1 `/manager/files`). Выдача клиенту:
+`documents[]` в v2 product detail (`id/type/fileName/scope product|series/validUntil/isExpired` —
+свои документы + документы серии, просроченные помечаются, не скрываются); скачивание **байтами**
+`GET /api/v2/catalog/products/{id}/documents/{docId}/download` (не presigned — урок mixed-content
+27.09). `upload_asset` (v1) больше не принимает CERTIFICATE/DATASHEET — только через v2-привязку.
+Попутно пойман баг приоритета операторов `a | b == c` в file_assets-репозитории.
+
+Frontend: секция «Документы» в карточке товара — бейджи «Сертификат»/«Даташит», «действует до …»
+зелёным, «истёк …» красным, пометка «общий для серии», скачивание blob с кукой по паттерну
+useXlsxExport, per-row loading, скрыта при пустом списке; trade-presentation без UiStatusBadge.
+Менеджерка: `ProductDocumentsPanel` (список + форма загрузки + удаление с инлайн-подтверждением)
+в модалке товара `/manager/catalog` и в модалке серии `/manager/brands`. zod-схемы
+`documents.schema.ts`, `domain/documents.repository.ts` (series-резолв через detail первого товара
+серии), composable `useDocumentDownload`. Мини-апп `/m/**` не тронут (отложен).
+
+Доки: §6/§10 канона + §16 п.38; API_V2_CONTRACT §8/§14/§15; openapi-фикстура перегенерирована,
+`catalog_product_detail.json` — 3 документа (свой/серии/просроченный), contract-артефакты обновлены.
+
+Проверки: pytest — весь suite **550 passed** (новые 24: 403 клиенту, 201 менеджеру + S3-ключ,
+415 на не-PDF/расширение/content-type/magic-bytes, 422 тип/valid_until, 413, documents[] со scope и
+isExpired, скачивание байтами без утечки ключа/Location, удаление + очистка S3). Web: vitest
+173/173 (9 новых контрактных), ESLint (Node 22) OK, nuxt typecheck exit 0. GUI-смоук стенда: 3 типа
+документов, «истёк 31.12.2024» красным, наследование серии на брате-товаре, модалки менеджера,
+confirm удаления; успешные upload/download e2e локально не прогонялись — MinIO стенда недоступен
+(502 обрабатывается инлайном), multipart-связь подтверждена логами API. Прод недоступен по SSH из
+текущей сети (29.09) — деплой по команде, когда маршрут вернётся.

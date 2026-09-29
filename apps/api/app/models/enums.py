@@ -58,6 +58,9 @@ class FileAssetType(str, enum.Enum):
     CUSTOM_CSV = "CUSTOM_CSV"
     PHOTO_ZIP = "PHOTO_ZIP"
     OTHER = "OTHER"
+    # Документы на товар/серию (§16 п.38): сертификаты и datasheets, PDF-only.
+    CERTIFICATE = "CERTIFICATE"
+    DATASHEET = "DATASHEET"
 
 
 class FileVisibility(str, enum.Enum):

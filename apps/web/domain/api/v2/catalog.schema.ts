@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { moneySchema, rateSchema, uuidSchema } from './common.schema'
+import { productDocumentSchema } from './documents.schema'
 
 export const catalogProductIdSchema = uuidSchema
 export const catalogProductSkuSchema = z.string().min(1).max(128)
@@ -93,6 +94,10 @@ export const catalogProductSchema = z
     // width/height, а не подгонять под 400×400.
     thumbnail: catalogMediaResourceSchema.nullable().optional(),
     media: z.array(catalogMediaResourceSchema).optional(),
+    // Сертификаты/datasheets товара и его серии (§16 п.38). Опционально:
+    // список /products документы не несёт (только detail by-sku/{productId}),
+    // как и ответы до этапа «Документы на товар».
+    documents: z.array(productDocumentSchema).optional(),
   })
   .strict()
 

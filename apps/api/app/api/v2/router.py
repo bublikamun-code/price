@@ -6,6 +6,7 @@ from app.api.v2 import (
     auth,
     cart,
     catalog,
+    documents,
     media,
     orders,
     organizations,
@@ -18,6 +19,7 @@ api_router.include_router(session.router)
 api_router.include_router(organizations.router)
 api_router.include_router(addresses.router)
 api_router.include_router(catalog.router)
+api_router.include_router(documents.router)
 api_router.include_router(cart.router)
 api_router.include_router(orders.router)
 api_router.include_router(media.router)

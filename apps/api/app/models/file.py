@@ -1,7 +1,8 @@
-"""Файловые активы (S3). См. ARCHITECTURE_PLAN.md §5, §10."""
+"""Файловые активы (S3). См. ARCHITECTURE_PLAN.md §5, §10, §16 п.38."""
 import uuid
+from datetime import date
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Date, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,7 +11,14 @@ from app.models.enums import FileAssetType, FileVisibility, pg_enum
 
 
 class FileAsset(Base, TimestampMixin, UUIDPrimaryKey):
-    """Файл в S3: PDF-каталог бренда, спец-CSV, ZIP с фото и т.д. (§10)."""
+    """Файл в S3: PDF-каталог бренда, спец-CSV, ZIP с фото и т.д. (§10).
+
+    Документы на товар (§16 п.38): сертификаты/datasheets привязываются
+    nullable-FK к товару или серии — SET NULL, как ``brand_id``: удаление
+    товара не должно терять сам документ из архива. ``valid_until`` —
+    срок действия; прошедшая дата допустима (документ помечается
+    ``is_expired`` при выдаче, не скрывается).
+    """
     __tablename__ = "file_assets"
 
     type: Mapped[FileAssetType] = mapped_column(
@@ -23,6 +31,19 @@ class FileAsset(Base, TimestampMixin, UUIDPrimaryKey):
     brand_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("brands.id", ondelete="SET NULL"), nullable=True
     )
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    series_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("series.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    valid_until: Mapped[date | None] = mapped_column(Date(), nullable=True)
     visibility: Mapped[FileVisibility] = mapped_column(
         pg_enum(FileVisibility, "file_visibility"),
         nullable=False,

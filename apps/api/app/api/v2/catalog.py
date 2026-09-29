@@ -26,6 +26,7 @@ from app.db.session import get_db
 from app.models.enums import StockStatus
 from app.models.user import User
 from app.repositories import catalog as repo
+from app.repositories import file_assets as file_assets_repo
 from app.schemas.v2.catalog import (
     BrandRef,
     CatalogFacets,
@@ -42,6 +43,7 @@ from app.schemas.v2.common import (
     SuccessResponse,
     rate_value,
 )
+from app.schemas.v2.documents import ProductDocument
 from app.schemas.v2.media import MediaResource
 from app.services import media as media_service
 from app.services.organizations import OrganizationContextService
@@ -218,6 +220,25 @@ async def _gallery_media(db: AsyncSession, product_id: uuid.UUID) -> list[MediaR
     ]
 
 
+async def _card_documents(db: AsyncSession, product) -> list[ProductDocument]:
+    """Документы карточки товара (§16 п.38): свои + документы его серии.
+
+    Просроченные приходят с ``is_expired=true`` — помечаем, не скрываем.
+    Как и галерея, блок обязателен в обоих detail-хендлерах (карточка
+    открывается и по by-sku).
+    """
+    assets = await file_assets_repo.fetch_product_documents(
+        db, product_id=product.id, series_id=product.series_id
+    )
+    return [
+        ProductDocument.from_asset(
+            asset,
+            scope="product" if asset.product_id == product.id else "series",
+        )
+        for asset in assets
+    ]
+
+
 @router.get(
     "/products",
     response_model=CursorResponse[CatalogProduct],
@@ -332,6 +353,7 @@ async def get_product_by_sku(
     )
     detail = _product(row, prices[product.id], resolved)
     detail.media = await _gallery_media(db, product.id)
+    detail.documents = await _card_documents(db, product)
     return SuccessResponse[CatalogProduct](
         data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),
@@ -381,6 +403,7 @@ async def get_product(
     )
     detail = _product(row, prices[product.id], resolved)
     detail.media = await _gallery_media(db, product_id)
+    detail.documents = await _card_documents(db, product)
     return SuccessResponse[CatalogProduct](
         data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),

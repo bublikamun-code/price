@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/domain/api/v2/catalog.schema'
+import type { ProductDocument } from '~/domain/api/v2/documents.schema'
 import { catalogProductIdSchema } from '~/domain/api/v2/catalog.schema'
 import { createCatalogRepository } from '~/domain/catalog/catalog.repository'
 
@@ -9,6 +10,12 @@ const route = useRoute()
 const repository = createCatalogRepository(useApiV2())
 const cartV2 = useCartV2()
 const favorites = useFavorites()
+// Скачивание PDF-документов (байты, не presigned — §16 п.38).
+const {
+  activeId: downloadingDocId,
+  error: downloadError,
+  downloadProductDocument,
+} = useDocumentDownload()
 
 const sku = computed(() => String(route.params.sku))
 const product = ref<CatalogProduct | null>(null)
@@ -52,6 +59,15 @@ const attrEntries = computed(() => {
     .map(([key, value]) => ({ label: getAttributeLabel(key), value: formatAttributeValue(key, value) }))
     .filter((row) => row.value && row.value !== '—')
 })
+
+// Документы товара: свои + унаследованные из серии (scope=series). Просроченные
+// (isExpired) не скрываются — показываются с красной пометкой «истёк» (§16 п.38).
+const documents = computed<ProductDocument[]>(() => product.value?.documents ?? [])
+
+async function downloadDocument(doc: ProductDocument) {
+  if (!product.value || downloadingDocId.value) return
+  await downloadProductDocument(product.value.id, doc.id, doc.fileName)
+}
 
 // Галерея детальной проекции: thumbnail (фото товара, иначе серии) плюс
 // собственные фото товара из `media`. Выбранный кадр сбрасывается на
@@ -161,6 +177,7 @@ async function load() {
   qty.value = 1
   qtyHint.value = ''
   added.value = false
+  downloadError.value = ''
   try {
     const result = await repository.getBySku(sku.value, 'fixed')
     if (seq !== loadSeq || isUnmounted) return
@@ -329,6 +346,36 @@ onUnmounted(() => {
             <dt class="text-ink-muted">{{ row.label }}</dt><dd class="break-words text-right font-medium text-ink">{{ row.value }}</dd>
           </div>
         </dl>
+      </section>
+
+      <section v-if="documents.length" class="border-b border-border p-4 sm:p-5" aria-labelledby="product-documents-title" data-testid="catalog-product-documents">
+        <h2 id="product-documents-title" class="text-lg font-bold text-ink">Документы</h2>
+        <ul class="mt-3 border-t border-border">
+          <li
+            v-for="doc in documents"
+            :key="doc.id"
+            class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border py-2.5 text-sm"
+            :data-testid="`catalog-product-document-${doc.id}`"
+          >
+            <span class="badge" :class="doc.type === 'CERTIFICATE' ? 'badge-info' : ''">{{ doc.type === 'CERTIFICATE' ? 'Сертификат' : 'Даташит' }}</span>
+            <span class="min-w-0 flex-1 basis-40 truncate font-medium text-ink" :title="doc.fileName">{{ doc.fileName }}</span>
+            <span v-if="doc.scope === 'series'" class="text-xs text-ink-muted">общий для серии</span>
+            <span v-if="doc.validUntil && !doc.isExpired" class="badge-success">действует до {{ formatDate(doc.validUntil) }}</span>
+            <span v-else-if="doc.isExpired" class="badge-danger">истёк{{ doc.validUntil ? ` ${formatDate(doc.validUntil)}` : '' }}</span>
+            <UiButton
+              variant="outline"
+              size="compact"
+              :loading="downloadingDocId === doc.id"
+              :disabled="downloadingDocId !== null && downloadingDocId !== doc.id"
+              :data-testid="`catalog-product-document-download-${doc.id}`"
+              @click="downloadDocument(doc)"
+            >
+              <template #leading><Icon name="heroicons:arrow-down-tray" class="size-4" /></template>
+              Скачать
+            </UiButton>
+          </li>
+        </ul>
+        <p v-if="downloadError" class="mt-2 text-xs text-danger-text" role="alert" data-testid="catalog-product-documents-error">{{ downloadError }}</p>
       </section>
 
       <section v-if="siblings.length" class="p-4 sm:p-5" aria-labelledby="product-related-title">

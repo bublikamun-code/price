@@ -1,10 +1,13 @@
-"""Use-case'ы файлового архива (§10, §16 п.18).
+"""Use-case'ы файлового архива (§10, §16 п.18, §16 п.38).
 
   * ``upload_asset`` — приём файла менеджером: валидация (расширение,
     content-type, magic-bytes, размер — стримингом по чанкам, без
     буферизации в памяти, паттерн ``_validate_zip_stream`` из
     manager/prices), заливка в S3 ``pdf-catalogs`` стримингом и запись
     ``file_assets``;
+  * ``upload_product_document`` — сертификат/datasheet товара или серии
+    (§16 п.38): PDF-only, тот же конвейер валидации; запись получает
+    ``product_id``/``series_id`` и ``valid_until``;
   * ``issue_download_url`` — presigned-URL (TTL 5 мин, §10);
   * ``delete_asset`` — сначала объект S3, затем запись БД (§16 п.18):
     при ``StorageError`` запись не трогается.
@@ -14,6 +17,7 @@ manager/prices: 415/413/422 — HTTP-концерны). ``StorageError`` не
 ловим — роутер мапит её в 502. Коммитит роутер (§4).
 """
 import uuid
+from datetime import date
 
 from fastapi import HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
@@ -55,6 +59,11 @@ _MAGIC_ERRORS = {
     ".pdf": "Файл не является корректным PDF",
     ".zip": "Файл не является ZIP-архивом",
 }
+
+# Срок действия документа: отсекаем только бессмыслицу (опечатки в годе).
+# Дата в прошлом допустима — документ останется видимым с is_expired=true.
+_VALID_UNTIL_MIN = date(2000, 1, 1)
+_VALID_UNTIL_MAX = date(2100, 12, 31)
 
 
 def _extension(filename: str) -> str:
@@ -124,10 +133,17 @@ async def upload_asset(
     заливается ДО создания записи: при ``StorageError`` в БД ничего не
     меняется (нет записи, указывающей на несуществующий объект).
     """
-    if type == FileAssetType.PHOTO_ZIP:
+    if type in (
+        FileAssetType.PHOTO_ZIP,
+        FileAssetType.CERTIFICATE,
+        FileAssetType.DATASHEET,
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="PHOTO_ZIP — системный тип: загрузка через /manager/prices/photo-zip",
+            detail=(
+                f"{type.value} — тип с обязательной привязкой: загрузка через "
+                "v2 manager documents (файл архива без товара/серии не имеет смысла)"
+            ),
         )
     ext = _extension(upload.filename or "")
     content_type = _validate_content_type(upload, ext=ext)
@@ -157,6 +173,98 @@ async def upload_asset(
     except Exception:
         # Flush не создал строку — уникальный ключ больше не на что опереться,
         # поэтому откатываем транзакцию и убираем новый S3-объект.
+        await db.rollback()
+        await _delete_uploaded_object(key, reason="db_flush_failed")
+        raise
+
+
+def validate_valid_until(raw: str | None) -> date | None:
+    """``valid_until`` из формы → date; пустая строка → None (§16 п.38).
+
+    Дата в прошлом не запрещена: документ останется видимым и будет помечен
+    ``is_expired``. Отсекаем только бессмыслицу (опечатки в годе) и мусорный
+    формат — иначе 422 (HTTP-концерн валидации, паттерн manager/prices).
+    """
+    if raw is None or not raw.strip():
+        return None
+    try:
+        parsed = date.fromisoformat(raw.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="valid_until должен быть датой в формате YYYY-MM-DD",
+        ) from exc
+    if not (_VALID_UNTIL_MIN <= parsed <= _VALID_UNTIL_MAX):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "valid_until вне допустимого диапазона "
+                f"({_VALID_UNTIL_MIN.isoformat()}..{_VALID_UNTIL_MAX.isoformat()})"
+            ),
+        )
+    return parsed
+
+
+async def upload_product_document(
+    db: AsyncSession,
+    *,
+    upload: UploadFile,
+    type: FileAssetType,
+    valid_until: date | None,
+    product_id: uuid.UUID | None = None,
+    series_id: uuid.UUID | None = None,
+) -> FileAsset:
+    """Сертификат/datasheet товара или серии (§16 п.38).
+
+    PDF-only: сертификат в JPEG или CSV-прайс в этот раздел не проходит —
+    для них есть файловый архив (``upload_asset``). Привязка обязательна
+    ровно одна: документ без товара/серии недостижим из карточки. S3-объект
+    заливается ДО записи в БД (паттерн ``upload_asset``).
+    """
+    if type not in file_assets_repo.PRODUCT_DOCUMENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="type должен быть CERTIFICATE или DATASHEET",
+        )
+    if (product_id is None) == (series_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Документ привязывается к товару или к серии (ровно одна привязка)",
+        )
+    ext = _extension(upload.filename or "")
+    if ext != ".pdf":
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Документы на товар принимаются только в PDF",
+        )
+    content_type = _validate_content_type(upload, ext=ext)
+    max_bytes = settings.files_max_mb * 1024 * 1024
+    size_bytes = await _validate_stream(upload, ext=ext, max_bytes=max_bytes)
+
+    key = f"{type.value.lower()}/{uuid.uuid4()}{ext}"
+    await upload.seek(0)
+    await run_in_threadpool(
+        storage.upload_fileobj,
+        settings.s3_bucket_pdfs,
+        key,
+        upload.file,
+        content_type=content_type or "application/octet-stream",
+    )
+    try:
+        return await file_assets_repo.create_file_asset(
+            db,
+            type=type,
+            s3_key=key,
+            filename_display=upload.filename or key,
+            content_type=upload.content_type,
+            size_bytes=size_bytes,
+            brand_id=None,
+            product_id=product_id,
+            series_id=series_id,
+            valid_until=valid_until,
+            visibility=FileVisibility.AUTHED,
+        )
+    except Exception:
         await db.rollback()
         await _delete_uploaded_object(key, reason="db_flush_failed")
         raise

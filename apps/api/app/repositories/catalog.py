@@ -306,6 +306,16 @@ async def get_series(db: AsyncSession, series_id: uuid.UUID) -> Series | None:
     return await db.scalar(select(Series).where(Series.id == series_id))
 
 
+async def get_product_by_id(db: AsyncSession, product_id: uuid.UUID) -> Product | None:
+    """Товар по PK без фильтра видимости (для manager-операций).
+
+    ``get_visible_by_id`` прячет ARCHIVED/удалённые товары от клиентов, но
+    менеджер вправе повесить сертификат и на архивную позицию — документ
+    останется в архиве и после архивации (§16 п.38).
+    """
+    return await db.scalar(select(Product).where(Product.id == product_id))
+
+
 # ----------------------------- фото товаров -----------------------------
 
 async def list_product_photos(db: AsyncSession, product_id: uuid.UUID) -> list[str]:

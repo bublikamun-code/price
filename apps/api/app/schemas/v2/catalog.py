@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.schemas.v2.common import Money, Rate, V2Model
+from app.schemas.v2.documents import ProductDocument
 from app.schemas.v2.media import MediaResource
 
 StockVisibility = Literal["IN_STOCK", "PREORDER"]
@@ -46,6 +47,9 @@ class CatalogProduct(V2Model):
     # Галерея в detail-проекции — в `media`.
     thumbnail: MediaResource | None = None
     media: list[MediaResource] = Field(default_factory=list)
+    # Документы товара (§16 п.38): заполняется только в detail-проекции
+    # (свои + документы серии товара, со scope и is_expired).
+    documents: list[ProductDocument] = Field(default_factory=list)
 
 
 class CatalogFacets(V2Model):
@@ -61,4 +65,6 @@ __all__ = [
     "CatalogProduct",
     "SeriesRef",
     "StockVisibility",
+    # Реэкспорт для удобства потребителей карточки (роутеры, фикстуры).
+    "ProductDocument",
 ]
