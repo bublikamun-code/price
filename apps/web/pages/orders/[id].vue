@@ -170,6 +170,8 @@ onUnmounted(() => {
         <OrderStatusTimeline :status="order.status" />
       </section>
 
+      <InvoiceCard v-if="order.invoice" :invoice="order.invoice" />
+
       <section class="mt-7" aria-labelledby="order-lines-title">
         <div class="flex items-end justify-between gap-4 border-b border-border pb-3">
           <div><p class="text-xs font-semibold uppercase tracking-wider text-ink-muted">Состав</p><h2 id="order-lines-title" class="mt-1 text-lg font-bold text-ink">Позиции заявки</h2></div>

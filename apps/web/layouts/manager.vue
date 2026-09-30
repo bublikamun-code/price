@@ -8,6 +8,7 @@ const collapsed = ref(false)
 const navItems = [
   { to: '/manager', label: 'Обзор', icon: 'heroicons:chart-bar' },
   { to: '/manager/orders', label: 'Заявки', icon: 'heroicons:clipboard-document-list' },
+  { to: '/manager/organizations', label: 'Организации', icon: 'heroicons:building-office-2' },
   { to: '/manager/users', label: 'Клиенты', icon: 'heroicons:users' },
   { to: '/manager/catalog', label: 'Каталог', icon: 'heroicons:archive-box' },
   { to: '/manager/import', label: 'Импорт прайса', icon: 'heroicons:arrow-up-tray' },

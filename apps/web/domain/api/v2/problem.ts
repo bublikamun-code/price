@@ -1,4 +1,4 @@
-import { mapProblemDetails } from '../../../utils/errors'
+import { getErrorMessage, mapProblemDetails } from '../../../utils/errors'
 import type { ProblemFieldError } from '../../../types/api'
 
 export interface AppProblemInit {
@@ -56,4 +56,13 @@ export function toAppProblem(error: unknown, fallback: string): AppProblem {
     isProblemDetails: mapped.isProblemDetails,
     retryable,
   })
+}
+
+/**
+ * Понятный пользователю текст ошибки: у уже разобранного `AppProblem` берём
+ * `detail`/`title` (то, что прислал бэк по RFC 9457), из сырой ошибки v1 —
+ * общий маппер. Ничего не выдумываем, fallback — на случай без текста.
+ */
+export function problemMessage(cause: unknown, fallback: string): string {
+  return cause instanceof AppProblem ? cause.message : getErrorMessage(cause, fallback)
 }

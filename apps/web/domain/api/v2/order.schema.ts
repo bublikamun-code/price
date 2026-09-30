@@ -9,6 +9,7 @@ import {
   rateSchema,
   uuidSchema,
 } from "./common.schema";
+import { invoiceSchema, invoiceSummarySchema } from "./invoice.schema";
 
 const noteSchema = z.string().max(2000).nullable().optional();
 
@@ -108,6 +109,9 @@ export const orderSummarySchema = z
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
     version: z.number().int().min(1),
+    // Блок счёта в коллекции — сокращённый (§6 «Счета на оплату»): номер и
+    // статус, сумма и PDF здесь не выводятся.
+    invoice: invoiceSummarySchema.nullable().optional(),
   })
   .strict();
 
@@ -153,6 +157,8 @@ export const orderDetailSchema = z
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
     version: z.number().int().min(1),
+    // Полный блок счёта в деталях заказа; счёта нет — null (§6).
+    invoice: invoiceSchema.nullable().optional(),
   })
   .strict();
 

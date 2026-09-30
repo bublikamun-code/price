@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "orderId": "88888888-8888-4888-8888-888888888888",
+    "number": "СЧ-2026-000042",
+    "status": "ISSUED",
+    "pdfStatus": "PENDING",
+    "total": {
+      "amount": "294.90",
+      "currency": "BYN"
+    },
+    "issuedAt": "2026-09-30T08:15:00Z",
+    "dueAt": "2026-10-07",
+    "version": 1,
+    "buyer": {
+      "legalName": "ООО «Промэлектро»",
+      "taxId": "191234567",
+      "legalAddress": "220030, г. Минск, ул. Ленина, 1",
+      "bank": {
+        "name": "ОАО «Бебанк»",
+        "code": "BYNORBY2",
+        "account": "BY11NBRB00000000000000000933"
+      }
+    },
+    "seller": {
+      "legalName": "ООО «Трейд Партс»",
+      "taxId": "190123456",
+      "legalAddress": "220000, г. Минск, пр-т Победителей, 20",
+      "bank": {
+        "name": "ОАО «Бебанк»",
+        "code": "BYNORBY2",
+        "account": "BY11NBRB00000000000000000A99"
+      }
+    }
+  },
+  "meta": {
+    "requestId": "v2-fixture-invoice-001"
+  }
+}

@@ -144,6 +144,9 @@ onMounted(load)
         </div>
       </div>
 
+      <!-- Счёт на оплату (§16 п.40) -->
+      <OrderInvoicePanel :order-id="order.id" :order-status="order.status" />
+
       <!-- Позиции -->
       <div class="mb-5 border border-border bg-surface">
         <div class="px-5 py-4 border-b border-border">

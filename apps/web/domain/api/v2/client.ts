@@ -4,7 +4,7 @@ import { toAppProblem } from './problem'
 
 export type ApiRequester = <T>(url: string, options?: FetchOptions) => Promise<T>
 
-export type ApiRequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
+export type ApiRequestMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export type ApiRequestOptions = Omit<FetchOptions, 'method'> & {
   method: ApiRequestMethod

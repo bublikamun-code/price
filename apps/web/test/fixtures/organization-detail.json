@@ -1,0 +1,23 @@
+{
+  "data": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "legalName": "ООО «Промэлектро»",
+    "displayName": "Промэлектро",
+    "taxId": "191234567",
+    "countryCode": "BY",
+    "defaultCurrency": "BYN",
+    "isActive": true,
+    "version": 3,
+    "createdAt": "2026-06-01T09:00:00Z",
+    "updatedAt": "2026-09-20T12:30:00Z",
+    "legalAddress": "220030, г. Минск, ул. Ленина, 1",
+    "legalEmail": "office@promelectro.by",
+    "legalPhone": "+375 17 300 11 22",
+    "bankName": "ОАО «Бебанк»",
+    "bankCode": "BYNORBY2",
+    "bankAccount": "BY11NBRB00000000000000000933"
+  },
+  "meta": {
+    "requestId": "v2-fixture-organization-detail-001"
+  }
+}
