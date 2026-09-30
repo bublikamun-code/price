@@ -219,7 +219,9 @@ defineExpose({ reload: load })
             <div class="min-w-0 flex-1">
               <p class="text-sm font-semibold">
                 от {{ tier.minQty }} шт <span class="text-ink-muted">—</span>
-                <span class="text-success-text">минус {{ tier.discountPercent }}%</span>
+                <!-- Пробел после тире держим отдельным текстовым узлом: без него он
+                     схлопывается вместе с переносом строки в «—минус». -->
+                <span class="text-success-text">&nbsp;минус {{ tier.discountPercent }}%</span>
               </p>
               <p class="text-xs text-ink-faint">версия {{ tier.version }}</p>
             </div>
