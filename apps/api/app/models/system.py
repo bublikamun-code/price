@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,4 +50,32 @@ class Notification(Base, UUIDPrimaryKey):
             "user_id",
             postgresql_where=text("is_read = FALSE"),
         ),
+    )
+
+
+class NotificationReadState(Base, UUIDPrimaryKey):
+    """Персональный факт прочтения broadcast-уведомления. См. §16 п.39.
+
+    Колонка ``Notification.is_read`` — состояние только личных уведомлений
+    (user_id задан). Broadcast (user_id IS NULL) виден всем менеджерам, поэтому
+    «прочитано» для него — per-user: строка здесь = «юзер прочитал». Имя класса
+    сознательно не ``NotificationRead`` — это имя Pydantic-DTO ленты.
+    """
+    __tablename__ = "notification_reads"
+
+    notification_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notifications.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("notification_id", "user_id", name="uq_notification_reads_notif_user"),
+        Index("ix_notification_reads_user", "user_id"),
     )

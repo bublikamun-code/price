@@ -1,7 +1,8 @@
-"""Тесты pull-ленты in-app уведомлений (§6 «Уведомления», §16 п.20-4).
+"""Тесты pull-ленты in-app уведомлений (§6 «Уведомления», §16 п.20-4, §16 п.39).
 
 Сценарии: свои уведомления + broadcast всем менеджерам (user_id IS NULL);
-unread_count — только «свои»; прочитанным можно отметить только своё.
+unread_count — только «свои»; прочтение персональное: личное — колонка is_read,
+broadcast менеджер отмечает для себя (notification_reads, §16 п.39).
 """
 import uuid
 
@@ -13,6 +14,7 @@ PASSWORD = "Passw0rd!"
 CLIENT_EMAIL = "client@example.by"
 CLIENT2_EMAIL = "client2@example.by"
 MANAGER_EMAIL = "manager@example.by"
+MANAGER2_EMAIL = "manager2@example.by"
 
 
 async def _login(api_client, email):
@@ -162,34 +164,73 @@ async def test_mark_read_foreign_404(api_client, session_factory):
     assert r.status_code == 404
 
 
-async def test_mark_read_broadcast_404_even_for_manager(api_client, session_factory):
+async def test_mark_read_broadcast_personal(api_client, session_factory):
+    """Broadcast менеджер отмечает для себя; прочтение персонально (§16 п.39)."""
     sf = session_factory
     await create_user(sf, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
+    await create_user(sf, email=MANAGER2_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
     broadcast_id = await _seed(sf)  # user_id IS NULL
 
     await _login(api_client, MANAGER_EMAIL)
     r = await api_client.patch(f"/api/v1/notifications/{broadcast_id}/read")
+    assert r.status_code == 200, r.text
+    assert r.json()["is_broadcast"] is True
+    assert r.json()["is_read"] is True
+
+    # повторный PATCH — идемпотентно, без дубля и ошибки
+    r = await api_client.patch(f"/api/v1/notifications/{broadcast_id}/read")
+    assert r.status_code == 200, r.text
+
+    body = await _get(api_client)
+    by_id = {n["id"]: n for n in body["data"]}
+    assert by_id[broadcast_id]["is_read"] is True
+
+    # другой менеджер видит тот же broadcast непрочитанным
+    await _login(api_client, MANAGER2_EMAIL)
+    body = await _get(api_client)
+    by_id = {n["id"]: n for n in body["data"]}
+    assert by_id[broadcast_id]["is_broadcast"] is True
+    assert by_id[broadcast_id]["is_read"] is False
+
+
+async def test_mark_read_broadcast_404_for_client(api_client, session_factory):
+    """Клиент broadcast не видит в ленте — отметить не может (404)."""
+    sf = session_factory
+    await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    broadcast_id = await _seed(sf)  # user_id IS NULL
+
+    await _login(api_client, CLIENT_EMAIL)
+    r = await api_client.patch(f"/api/v1/notifications/{broadcast_id}/read")
     assert r.status_code == 404
 
 
-async def test_read_all_marks_only_own(api_client, session_factory):
+async def test_read_all_marks_own_and_broadcast(api_client, session_factory):
     sf = session_factory
     manager = await create_user(sf, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
+    await create_user(sf, email=MANAGER2_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
     for _ in range(2):
         await _seed(sf, user_id=manager.id)
-    await _seed(sf, type="IMPORT_DONE")  # broadcast остаётся непрочитанным
+    broadcast_id = await _seed(sf, type="IMPORT_DONE")  # broadcast
 
     await _login(api_client, MANAGER_EMAIL)
     r = await api_client.patch("/api/v1/notifications/read-all")
     assert r.status_code == 204
 
     body = await _get(api_client)
-    assert body["meta"]["unread_count"] == 0
+    assert body["meta"]["unread_count"] == 0  # бейдж — только личные
 
-    # broadcast в ленте менеджера остаётся непрочитанным
+    # broadcast закрыт для текущего менеджера (пер-юзер, §16 п.39)...
     broadcasts = [n for n in body["data"] if n["is_broadcast"]]
     assert len(broadcasts) == 1
-    assert broadcasts[0]["is_read"] is False
+    assert broadcasts[0]["is_read"] is True
 
     body = await _get(api_client, {"unread_only": True})
-    assert {n["id"] for n in body["data"]} == {broadcasts[0]["id"]}
+    assert body["data"] == []
+
+    # ...но у другого менеджера остаётся непрочитанным
+    await _login(api_client, MANAGER2_EMAIL)
+    body = await _get(api_client)
+    by_id = {n["id"]: n for n in body["data"]}
+    assert by_id[broadcast_id]["is_read"] is False
+    body = await _get(api_client, {"unread_only": True})
+    assert {n["id"] for n in body["data"]} == {broadcast_id}

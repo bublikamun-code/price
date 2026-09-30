@@ -1,8 +1,9 @@
-"""Pull-лента + SSE-стрим in-app уведомлений. См. ARCHITECTURE_PLAN.md §6 («Уведомления»), §20.2, §16 п.26.
+"""Pull-лента + SSE-стрим in-app уведомлений. См. ARCHITECTURE_PLAN.md §6 («Уведомления»), §20.2, §16 п.26, §16 п.39.
 
 Лента: собственные уведомления + broadcast всем менеджерам (user_id IS NULL,
-``is_broadcast=true``). Отметить прочитанным можно только своё — чужое/broadcast → 404;
-broadcast не попадает в meta.unread_count (бейдж).
+``is_broadcast=true``). Прочтение персональное: личное — колонка is_read;
+broadcast менеджер отмечает для себя (строка в notification_reads, §16 п.39);
+чужое личное → 404. Broadcast не попадает в meta.unread_count (бейдж).
 
 SSE: GET /notifications/stream — долгоживущий text/event-stream; авторизация по
 cookie на момент коннекта; доставка — Redis pub/sub (services/notification_events).
@@ -47,7 +48,7 @@ async def read_all_notifications(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Отметить прочитанными все СВОИ непрочитанные уведомления (broadcast не трогаем)."""
+    """Отметить прочитанными всё из ленты: личные и broadcast (§16 п.39)."""
     await NotificationsFeedService(db).mark_all_read(current_user)
     await db.commit()
     return None
@@ -59,7 +60,8 @@ async def mark_notification_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> NotificationRead:
-    """Отметить уведомление прочитанным (только своё; чужое/broadcast → 404)."""
+    """Отметить прочитанным: личное своё — is_read; broadcast — per-user read-строка
+    (§16 п.39); чужое личное → 404."""
     try:
         notif = await NotificationsFeedService(db).mark_read(current_user, notification_id)
     except ValueError as e:

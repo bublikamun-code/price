@@ -26,7 +26,7 @@ from app.models.organization import (
     OrganizationPricingAgreement,
 )
 from app.models.pricing import ExchangeRate, UserBrand
-from app.models.system import AuditLog, Notification
+from app.models.system import AuditLog, Notification, NotificationReadState
 from app.models.user import (
     ConsentLog,
     Favorite,
@@ -72,6 +72,7 @@ __all__ = [
     # system
     "AuditLog",
     "Notification",
+    "NotificationReadState",
     # news
     "News",
     # banner
