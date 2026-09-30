@@ -9,6 +9,7 @@
 from app.models.banner import Banner
 from app.models.catalog import (
     Brand,
+    BrandVolumeTier,
     PriceHistory,
     PriceListVersion,
     Product,
@@ -47,6 +48,7 @@ __all__ = [
     "Favorite",
     # catalog
     "Brand",
+    "BrandVolumeTier",
     "Series",
     "Product",
     "ProductPhoto",

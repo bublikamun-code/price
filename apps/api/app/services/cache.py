@@ -15,6 +15,10 @@ log = get_logger("app.services.cache")
 
 CATALOG_TAG = "catalog"
 FILTERS_TAG = "filters"
+# Скидки за объём (§16 п.41). В /api/v2 кэша ответов каталога нет вообще —
+# кэшируются только лестницы brand_volume_tiers: данных мало, читаются на
+# каждой строке корзины, меняются редко. Инвалидация — при любой правке ступени.
+VOLUME_TIERS_TAG = "volume-tiers"
 
 
 class TaggedCache:

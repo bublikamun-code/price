@@ -284,12 +284,15 @@ class OrderService:
             if product.stock_qty is not None and quantity > product.stock_qty:
                 raise StockExceededError(product.sku, product.stock_qty)
 
+        # Количество позиции известно → объёмная скидка применяется и
+        # замораживается в unit_price вместе с ценой (§16 п.41 п.7).
         prices = await self.pricing.price_products(
             list(products.values()),
             user,
             "fixed",
             resolved=resolved,
             organization_id=organization_id,
+            quantities={item.product_id: int(item.quantity) for item in payload.items},
         )
         new_items: list[OrderItem] = []
         total = Decimal(0)
@@ -400,6 +403,7 @@ class OrderService:
             payload.price_calc_mode,
             resolved=resolved,
             organization_id=organization_id,
+            quantities={products[ci.sku].id: ci.quantity for ci in items if ci.sku in products},
         )
 
         new_items: list[OrderItem] = []

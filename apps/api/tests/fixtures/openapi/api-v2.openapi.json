@@ -196,6 +196,16 @@
           },
           "unitPrice": {
             "$ref": "#/components/schemas/Money"
+          },
+          "volumeTier": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CartLineVolumeTier"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -210,6 +220,25 @@
           "lineTotal"
         ],
         "title": "CartLine",
+        "type": "object"
+      },
+      "CartLineVolumeTier": {
+        "description": "Ступень скидки за объём, применённая к этой строке (§16 п.41).\n\nПорог сравнивается с ``quantity`` самой строки, а не с суммой по бренду:\nстроки разных товаров одного бренда не образуют одну партию, а цена позиции\nдолжна воспроизводиться из её собственного количества.",
+        "properties": {
+          "discountPercent": {
+            "title": "Discountpercent",
+            "type": "number"
+          },
+          "minQty": {
+            "title": "Minqty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minQty",
+          "discountPercent"
+        ],
+        "title": "CartLineVolumeTier",
         "type": "object"
       },
       "CartSummary": {
@@ -403,6 +432,13 @@
                 "type": "null"
               }
             ]
+          },
+          "volumeTiers": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeTierHint"
+            },
+            "title": "Volumetiers",
+            "type": "array"
           }
         },
         "required": [
@@ -2893,6 +2929,22 @@
         "title": "SuccessResponse[Union[SessionGrant, TwoFaChallenge]]",
         "type": "object"
       },
+      "SuccessResponse_VolumeTierOut_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/VolumeTierOut"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[VolumeTierOut]",
+        "type": "object"
+      },
       "SuccessResponse_list_OrganizationAddressOut__": {
         "properties": {
           "data": {
@@ -2931,6 +2983,26 @@
           "meta"
         ],
         "title": "SuccessResponse[list[SessionSummary]]",
+        "type": "object"
+      },
+      "SuccessResponse_list_VolumeTierOut__": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/VolumeTierOut"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[list[VolumeTierOut]]",
         "type": "object"
       },
       "TwoFaChallenge": {
@@ -3033,6 +3105,136 @@
         ],
         "title": "UserRole",
         "type": "string"
+      },
+      "VolumeTierCreateIn": {
+        "description": "Тело POST. Границы (min_qty >= 1, 0 < d < 100) проверяет сервис: на\nклиенте они обходятся прямым вызовом API.",
+        "properties": {
+          "discountPercent": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Discountpercent"
+          },
+          "minQty": {
+            "minimum": 1.0,
+            "title": "Minqty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minQty",
+          "discountPercent"
+        ],
+        "title": "VolumeTierCreateIn",
+        "type": "object"
+      },
+      "VolumeTierHint": {
+        "description": "Одна ступень лестницы за объём в том виде, в каком она уходит в UI.",
+        "properties": {
+          "discountPercent": {
+            "title": "Discountpercent",
+            "type": "number"
+          },
+          "minQty": {
+            "title": "Minqty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minQty",
+          "discountPercent"
+        ],
+        "title": "VolumeTierHint",
+        "type": "object"
+      },
+      "VolumeTierOut": {
+        "properties": {
+          "brandId": {
+            "format": "uuid",
+            "title": "Brandid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "discountPercent": {
+            "title": "Discountpercent",
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "minQty": {
+            "title": "Minqty",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "brandId",
+          "minQty",
+          "discountPercent",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "VolumeTierOut",
+        "type": "object"
+      },
+      "VolumeTierUpdateIn": {
+        "description": "Тело PATCH: хотя бы одно поле; отсутствующее не меняется.",
+        "properties": {
+          "discountPercent": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discountpercent"
+          },
+          "minQty": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minqty"
+          }
+        },
+        "title": "VolumeTierUpdateIn",
+        "type": "object"
       },
       "app__schemas__v2__catalog__SeriesRef": {
         "properties": {
@@ -4841,6 +5043,292 @@
         ]
       }
     },
+    "/api/v2/manager/brands/{brandId}/volume-tiers": {
+      "get": {
+        "description": "Лестница бренда по возрастанию порога.",
+        "operationId": "list_volume_tiers_api_v2_manager_brands__brandId__volume_tiers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "brandId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Brandid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_list_VolumeTierOut__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid If-Match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Brand or volume tier not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale resource version or duplicate threshold"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "List Volume Tiers",
+        "tags": [
+          "manager:volume-tiers"
+        ]
+      },
+      "post": {
+        "description": "Добавить ступень. Дубль порога в пределах бренда — 409.",
+        "operationId": "create_volume_tier_api_v2_manager_brands__brandId__volume_tiers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "brandId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Brandid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeTierCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_VolumeTierOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid If-Match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Brand or volume tier not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale resource version or duplicate threshold"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Create Volume Tier",
+        "tags": [
+          "manager:volume-tiers"
+        ]
+      }
+    },
     "/api/v2/manager/documents/{documentId}": {
       "delete": {
         "description": "Удалить документ (исправление ошибок): сначала S3, затем запись.\n\nУдалять здесь можно только документы товара/серии; остальной файловый\nархив удаляется через ``DELETE /api/v1/manager/files/{id}`` (§16 п.18).",
@@ -5861,6 +6349,303 @@
         "tags": [
           "catalog",
           "manager:documents"
+        ]
+      }
+    },
+    "/api/v2/manager/volume-tiers/{tierId}": {
+      "delete": {
+        "description": "Удалить ступень. If-Match обязателен, stale → 409.",
+        "operationId": "delete_volume_tier_api_v2_manager_volume_tiers__tierId__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tierId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tierid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid If-Match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Brand or volume tier not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale resource version or duplicate threshold"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Delete Volume Tier",
+        "tags": [
+          "manager:volume-tiers"
+        ]
+      },
+      "patch": {
+        "description": "Правка ступени. If-Match — по ``brand_volume_tiers.version`` (§16 п.41 п.8).",
+        "operationId": "update_volume_tier_api_v2_manager_volume_tiers__tierId__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tierId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tierid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeTierUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_VolumeTierOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid If-Match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Brand or volume tier not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale resource version or duplicate threshold"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Update Volume Tier",
+        "tags": [
+          "manager:volume-tiers"
         ]
       }
     },

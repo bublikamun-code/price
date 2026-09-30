@@ -83,6 +83,16 @@
         "validUntil": "2024-12-31",
         "isExpired": true
       }
+    ],
+    "volumeTiers": [
+      {
+        "minQty": 10,
+        "discountPercent": 2.0
+      },
+      {
+        "minQty": 50,
+        "discountPercent": 5.0
+      }
     ]
   },
   "meta": {

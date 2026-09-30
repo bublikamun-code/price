@@ -32,6 +32,7 @@ from app.schemas.v2.catalog import (
     CatalogFacets,
     CatalogProduct,
     SeriesRef,
+    VolumeTierHint,
 )
 from app.schemas.v2.common import (
     RATE_SCALE,
@@ -199,6 +200,14 @@ def _product(row, prices: dict, resolved: ResolvedRate) -> CatalogProduct:
         client_price=Money.from_value(prices["client_price"], currency=resolved.currency),
         exchange_rate=_rate(resolved),
         has_discount=prices["has_discount"],
+        # Лестница за объём публикуется целиком: в каталоге количество ещё не
+        # выбрано, поэтому объёмной скидки в clientPrice нет (§16 п.41 п.6).
+        volume_tiers=[
+            VolumeTierHint(
+                min_qty=tier["min_qty"], discount_percent=tier["discount_percent"]
+            )
+            for tier in prices.get("volume_tiers", [])
+        ],
         thumbnail=MediaResource.model_validate(thumbnail) if thumbnail else None,
     )
 

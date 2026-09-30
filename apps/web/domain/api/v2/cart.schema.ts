@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { maxDatabaseInteger, moneySchema, quantitySchema, rateSchema, uuidSchema } from './common.schema'
 import { responseMetaSchema } from './session.schema'
+import { cartLineVolumeTierSchema } from './volume_tiers.schema'
 
 const uuid = uuidSchema
 
@@ -32,6 +33,10 @@ export const cartLineSchema = z
     note: z.string().max(2000).nullable(),
     unitPrice: moneySchema,
     lineTotal: moneySchema,
+    // Достигнутая ступень скидки за объём, уже учтённая в unitPrice
+    // (§16 п.41 п.2). null, когда количество строки ниже первого порога или
+    // лестницы у бренда нет.
+    volumeTier: cartLineVolumeTierSchema.nullable().optional(),
   })
   .strict()
 

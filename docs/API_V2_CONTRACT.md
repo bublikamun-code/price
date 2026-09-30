@@ -279,6 +279,16 @@ Supported sort values задаются enum/OpenAPI, не произвольны
 `GET /api/v2/cart` возвращает в `CartLine` поле `volumeTier: {minQty, discountPercent} | null` —
 ступень, применённую к этой строке; `unitPrice` уже рассчитан с ней. `null` означает, что
 количество строки ниже первого порога, либо у бренда лестницы нет.
+
+`discountPercent` — JSON-**число** (`2.0`, `5.5`) во всех трёх формах: `CatalogProduct.volumeTiers[]`,
+`CartLine.volumeTier` и `VolumeTierOut`. Деньги по §6 отдаются канонической строкой, процент — нет:
+в БД это `NUMERIC(5,2)`, и строковый вариант заставил бы клиента читать одно поле двумя типами в
+зависимости от эндпоинта. Точность до сотых гарантирует колонка.
+
+CRUD ступеней менеджером — `POST /api/v2/manager/brands/{brandId}/volume-tiers`,
+`PATCH`/`DELETE /api/v2/manager/volume-tiers/{tierId}`. `If-Match` несёт `version` **ступени**
+(не бренда); stale → 409 `STALE_RESOURCE_VERSION`, дубль `minQty` в том же бренде → 409
+`VOLUME_TIER_DUPLICATE_THRESHOLD`, неизвестный id или бренд → 404 `VOLUME_TIER_NOT_FOUND`.
 ### Product documents (`documents[]`, §16 п.38)
 
 Product detail (`/catalog/products/{productId}` и `/by-sku/{sku}`) содержит блок `documents[]`: собственные документы товара и документы его серии.

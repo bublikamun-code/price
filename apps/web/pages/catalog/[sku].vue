@@ -43,6 +43,12 @@ function displayPrice(item: CatalogProduct) {
 function hasDisplayPrice(item: CatalogProduct): boolean {
   return Number(item.clientPrice.amount) > 0 || Number(item.retailPrice.amount) > 0
 }
+// Лестница скидок за объём бренда, по возрастанию порога (§16 п.41). Каталог
+// публикует её целиком: количество строки известно только в корзине, поэтому
+// цена выше остаётся за штуку без учёта объёма.
+const volumeTiers = computed(() =>
+  [...(product.value?.volumeTiers ?? [])].sort((a, b) => a.minQty - b.minQty),
+)
 const catalogMeta = computed(() => {
   const value = product.value
   if (!value) return ''
@@ -306,6 +312,22 @@ onUnmounted(() => {
             <div class="flex justify-between gap-4"><dt class="text-ink-muted">Курс</dt><dd class="text-ink">{{ rateSourceLabel(product.exchangeRate.source) }}</dd></div>
             <div class="flex justify-between gap-4"><dt class="text-ink-muted">Базовая цена</dt><dd class="numeric text-ink">{{ money(product.basePrice.amount, product.basePrice.currency) }}</dd></div>
           </dl>
+
+          <!-- Лестница объёмных скидок (§16 п.41). Цена выше — за штуку, без
+               учёта объёма: количество строки известно только в корзине. -->
+          <div v-if="volumeTiers.length" class="mt-4 border-t border-border pt-3">
+            <p class="text-xs font-semibold text-ink-muted">Скидка за объём</p>
+            <ul class="mt-2 space-y-1.5">
+              <li v-for="tier in volumeTiers" :key="tier.minQty" class="flex items-center justify-between gap-3 text-xs">
+                <span class="text-ink-muted">от {{ tier.minQty }} шт</span>
+                <span class="numeric font-semibold text-success-text">минус {{ formatPercent(tier.discountPercent) }}</span>
+              </li>
+            </ul>
+            <p class="mt-2 text-xs text-ink-faint">
+              Скидка считается от количества в одной позиции заявки. Применяется одна ступень — та,
+              порог которой уже достигнут.
+            </p>
+          </div>
         </div>
 
         <div class="p-4 sm:p-5">

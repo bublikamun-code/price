@@ -39,7 +39,17 @@
         "height": 400,
         "mimeType": "image/webp"
       },
-      "media": []
+      "media": [],
+      "volumeTiers": [
+        {
+          "minQty": 10,
+          "discountPercent": 2.0
+        },
+        {
+          "minQty": 50,
+          "discountPercent": 5.0
+        }
+      ]
     }
   ],
   "meta": {

@@ -54,6 +54,13 @@ async function removeLine(line: CartLine) {
           <div class="min-w-0 flex-1">
             <NuxtLink :to="`/catalog/${encodeURIComponent(line.sku)}`" class="line-clamp-2 text-sm font-semibold text-ink hover:text-action">{{ line.name }}</NuxtLink>
             <p class="numeric mt-1 text-xs text-ink-muted">{{ line.sku }} · {{ line.quantity }} шт.</p>
+            <VolumeTierBadge
+              v-if="line.volumeTier"
+              class="mt-1.5"
+              applied
+              :min-qty="line.volumeTier.minQty"
+              :discount-percent="line.volumeTier.discountPercent"
+            />
             <strong class="numeric mt-2 block text-sm text-ink">{{ formatMoney(line.lineTotal.amount, line.lineTotal.currency) }}</strong>
           </div>
           <div class="flex shrink-0 flex-col items-end gap-2">

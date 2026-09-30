@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -28,6 +29,47 @@ class Brand(Base, TimestampMixin, UUIDPrimaryKey):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    # Optimistic concurrency. В таблице бренда колонки не было, а If-Match (§6)
+    # на правку лестницы скидок за объём опереться было не на что (§16 п.41 п.8).
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+
+class BrandVolumeTier(Base, TimestampMixin, UUIDPrimaryKey):
+    """Лестница скидок за объём: «от N шт — X%» на бренд (§16 п.41).
+
+    Порог сравнивается с количеством **одной строки** корзины/заказа, а не с
+    суммой по бренду: цена позиции должна воспроизводиться из её собственного
+    ``quantity``. Действует одна ступень — наибольшая с ``min_qty <= quantity``;
+    ступени не суммируются, а с процентом по бренду берётся максимум из двух
+    (§8). ``products.override_price`` не подвержен (§8 п.1).
+    """
+
+    __tablename__ = "brand_volume_tiers"
+
+    brand_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("brands.id", ondelete="CASCADE"), nullable=False
+    )
+    min_qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    discount_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+    __table_args__ = (
+        # Два порога с одинаковым min_qty сделали бы «лучшую подходящую ступень»
+        # неоднозначной, а выбор ступени — последней строкой выборки.
+        UniqueConstraint(
+            "brand_id", "min_qty", name="uq_brand_volume_tiers_brand_min_qty"
+        ),
+        Index(
+            "ix_brand_volume_tiers_brand_min_qty",
+            "brand_id",
+            text("min_qty DESC"),
+        ),
+        CheckConstraint("min_qty >= 1", name="ck_brand_volume_tiers_min_qty_positive"),
+        CheckConstraint(
+            "discount_percent > 0 AND discount_percent < 100",
+            name="ck_brand_volume_tiers_discount_range",
+        ),
+    )
 
 
 class Series(Base, TimestampMixin, UUIDPrimaryKey):

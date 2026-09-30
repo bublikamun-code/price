@@ -19,6 +19,7 @@ from app.schemas.v2.common import (
 from app.schemas.v2.cart import CartItemAdd, CartSummary
 from app.schemas.v2.orders import OrderCreate, OrderDetail, OrderSummary
 from app.schemas.v2.session import SessionContext
+from app.schemas.v2.volume_tiers import VolumeTierOut
 from app.scripts.export_v2_contract import v2_openapi_document
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -46,6 +47,7 @@ def test_v2_openapi_snapshot_matches_generated_v2_surface():
         "/api/v2/catalog/products/by-sku/{sku}",
         "/api/v2/catalog/products/{productId}",
         "/api/v2/catalog/products/{productId}/documents/{documentId}/download",
+        "/api/v2/manager/brands/{brandId}/volume-tiers",
         "/api/v2/manager/documents/{documentId}",
         "/api/v2/manager/invoices/{invoiceId}",
         "/api/v2/manager/invoices/{invoiceId}/pdf",
@@ -53,6 +55,7 @@ def test_v2_openapi_snapshot_matches_generated_v2_surface():
         "/api/v2/manager/organizations/{id}",
         "/api/v2/manager/products/{productId}/documents",
         "/api/v2/manager/series/{seriesId}/documents",
+        "/api/v2/manager/volume-tiers/{tierId}",
         "/api/v2/me/organization/addresses",
         "/api/v2/me/organization/addresses/{addressId}",
         "/api/v2/media/{mediaId}",
@@ -175,6 +178,9 @@ def test_shared_v2_json_fixtures_match_pydantic_contract():
     invalid_credentials = ProblemDetails.model_validate(
         _load("v2/problem_invalid_credentials.json")
     )
+    tiers = SuccessResponse[list[VolumeTierOut]].model_validate(
+        _load("v2/volume_tiers_list.json")
+    )
 
     assert money.amount == "294.90"
     assert rate.value == "1.0000"
@@ -260,6 +266,27 @@ def test_shared_v2_json_fixtures_match_pydantic_contract():
     assert not hasattr(challenge.data, "access_token")
     assert invalid_credentials.code == "INVALID_CREDENTIALS"
     assert invalid_credentials.status == 401
+
+    # Скидки за объём (§16 п.41). Процент — число во всех трёх формах, а лестница
+    # приходит по возрастанию minQty: UI выбирает ступень по количеству строки.
+    assert tiers.meta.request_id == "v2-fixture-volume-tiers-001"
+    assert [tier.min_qty for tier in tiers.data] == [10, 50]
+    assert tiers.data[0].discount_percent == 2.0
+    assert tiers.data[0].version == 1
+    # Порог принадлежит бренду, а не товару: id шапки каталога один и тот же.
+    assert tiers.data[1].brand_id == catalog_page.data[0].brand.id
+    assert [hint.min_qty for hint in catalog_page.data[0].volume_tiers] == [10, 50]
+    assert catalog_page.data[0].volume_tiers[0].discount_percent == 2.0
+    # В корзине ступень уже применена к цене строки (2 шт × 19.00 = 38.00 USD).
+    line = cart_get.data.items[0]
+    assert line.volume_tier is not None
+    assert line.volume_tier.min_qty == 2
+    assert line.volume_tier.discount_percent == 5.0
+    assert line.unit_price == Money(amount="19.00", currency="USD")
+    assert line.line_total == Money(amount="38.00", currency="USD")
+    assert cart_get.data.total == Money(amount="38.00", currency="USD")
+    # Повтор заказа: лестницы у бренда нет — ступень null, цена не тронута.
+    assert cart.data.items[0].volume_tier is None
 
 
 def test_legacy_migration_fixture_is_deterministic_and_representative():

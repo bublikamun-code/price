@@ -19,7 +19,8 @@
         "lineTotal": {
           "amount": "40.00",
           "currency": "BYN"
-        }
+        },
+        "volumeTier": null
       }
     ],
     "total": {

@@ -27,6 +27,13 @@ const stockStatus = computed<'IN_STOCK' | 'PREORDER' | null>(() => {
   if (!isCartLine.value) return null
   return (props.line as CartLine).stockStatus === 'IN_STOCK' ? 'IN_STOCK' : 'PREORDER'
 })
+// Расшифровка применённой объёмной скидки: почему цена за единицу ниже и при
+// каком пороге она снизится дальше (§16 п.41). Только для строк корзины —
+// в заказе цена зафиксирована, и «достигнутая ступень» была бы враньём.
+const volumeTier = computed(() => {
+  if (!isCartLine.value) return null
+  return (props.line as CartLine).volumeTier ?? null
+})
 
 // Фото подтягиваем по артикулу из v1-каталога; если его нет или загрузка
 // сорвалась — остаётся иконка-заглушка. При смене артикула сброс сбоя.
@@ -66,6 +73,12 @@ watch(
         <div class="flex flex-wrap items-center gap-2">
           <span class="numeric text-xs font-semibold text-ink">{{ line.sku || 'Артикул недоступен' }}</span>
           <StockBadge v-if="stockStatus" :status="stockStatus" />
+          <VolumeTierBadge
+            v-if="volumeTier"
+            :min-qty="volumeTier.minQty"
+            :discount-percent="volumeTier.discountPercent"
+            applied
+          />
           <span v-if="props.readonly" class="text-xs text-ink-muted">Зафиксировано</span>
         </div>
         <NuxtLink

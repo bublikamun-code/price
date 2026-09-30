@@ -13,17 +13,21 @@
         "quantity": 2,
         "note": "Поставка отдельной строкой",
         "unitPrice": {
-          "amount": "20.00",
+          "amount": "19.00",
           "currency": "USD"
         },
         "lineTotal": {
-          "amount": "40.00",
+          "amount": "38.00",
           "currency": "USD"
+        },
+        "volumeTier": {
+          "minQty": 2,
+          "discountPercent": 5.0
         }
       }
     ],
     "total": {
-      "amount": "40.00",
+      "amount": "38.00",
       "currency": "USD"
     },
     "totalItems": 1,

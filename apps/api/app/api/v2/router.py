@@ -12,6 +12,7 @@ from app.api.v2 import (
     orders,
     organizations,
     session,
+    volume_tiers,
 )
 
 api_router = APIRouter(prefix="/api/v2")
@@ -29,3 +30,4 @@ api_router.include_router(invoices.router)
 api_router.include_router(invoices.manager_router)
 api_router.include_router(orders.router)
 api_router.include_router(media.router)
+api_router.include_router(volume_tiers.router)

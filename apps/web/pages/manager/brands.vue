@@ -156,6 +156,15 @@ function openSeriesDocs(s: SeriesRef) {
   seriesDocs.value = s
 }
 
+// --- Скидки за объём бренда (этап 5, §16 п.41): модалка с лестницей «от N шт — X%» ---
+// Лестница принадлежит бренду, а не товару, поэтому редактор висит в карточке
+// бренда; данные тянет v2 (v1-эндпоинтов у ступеней нет).
+const volumeTiersBrand = ref<ManagerBrand | null>(null)
+
+function openVolumeTiers(b: ManagerBrand) {
+  volumeTiersBrand.value = b
+}
+
 async function onPhotoPick(s: SeriesRef, ev: Event) {
   const input = ev.target as HTMLInputElement
   const file = input.files?.[0]
@@ -233,6 +242,14 @@ onMounted(load)
             <p class="text-xs text-ink-faint font-mono mt-0.5 truncate">{{ b.slug }}</p>
           </div>
           <div class="flex gap-1 shrink-0">
+            <button
+              type="button"
+              class="btn-ghost min-h-11 px-2 text-xs"
+              :data-testid="`manager-brand-volume-tiers-${b.id}`"
+              @click="openVolumeTiers(b)"
+            >
+              <Icon name="heroicons:bars-arrow-down" class="w-3.5 h-3.5" /> Скидки за объём
+            </button>
             <button class="btn-ghost min-h-11 px-2 text-xs" @click="openRename(b)">
               <Icon name="heroicons:pencil" class="w-3.5 h-3.5" /> Переименовать
             </button>
@@ -390,6 +407,29 @@ onMounted(load)
           </button>
         </div>
       </form>
+    </div>
+
+    <!-- Скидки за объём бренда: лестница «от N шт — X%» (этап 5, §16 п.41) -->
+    <div
+      v-if="volumeTiersBrand"
+      class="fixed inset-0 bg-ink/60  flex items-center justify-center z-50 p-4"
+      @mousedown.self="overlayDown = true" @click.self="if (overlayDown) volumeTiersBrand = null; overlayDown = false"
+    >
+      <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto border border-border-strong bg-surface p-5" data-testid="manager-volume-tiers-modal">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div class="min-w-0">
+            <h3 class="font-semibold">Скидки за объём</h3>
+            <p class="text-sm text-ink-muted mt-0.5 truncate">{{ volumeTiersBrand.name }}</p>
+          </div>
+          <button type="button" class="btn-ghost p-2 -mr-2 shrink-0" @click="volumeTiersBrand = null">
+            <Icon name="heroicons:x-mark" class="w-5 h-5" />
+          </button>
+        </div>
+        <VolumeTiersPanel :brand-id="volumeTiersBrand.id" />
+        <div class="flex justify-end mt-5">
+          <button type="button" class="btn-ghost min-h-11" @click="volumeTiersBrand = null">Закрыть</button>
+        </div>
+      </div>
     </div>
 
     <!-- Документы серии: список + загрузка PDF + удаление (этап 3) -->

@@ -94,12 +94,17 @@ class CartV2Service:
     ) -> CartSummary:
         rows = await cart_repo.fetch_cart_items_detailed(self.db, cart_id=cart.id)
         products = [row[1] for row in rows if row[1] is not None]
+        # Количество строки известно — объёмная скидка применяется (в каталоге
+        # нет, §8). Скидка по бренду и ступень за объём берутся как максимум из
+        # двух, ступени не суммируются (§16 п.41).
+        quantities = {row[1].id: row[0].quantity for row in rows if row[1] is not None}
         prices = await self.pricing.price_products(
             products,
             user,
             "fixed",
             resolved=resolved,
             organization_id=organization_id,
+            quantities=quantities,
         )
         lines: list[CartLine] = []
         total = Decimal(0)
@@ -124,6 +129,7 @@ class CartV2Service:
                 quantity=item.quantity,
                 note=item.note,
                 unit_price=unit_price,
+                volume_tier=price.get("volume_tier"),
             )
             total += Decimal(line.line_total.amount)
             lines.append(line)

@@ -9,6 +9,18 @@ from pydantic import Field
 from app.schemas.v2.common import Money, Quantity, Rate, V2Model, money_amount
 
 
+class CartLineVolumeTier(V2Model):
+    """Ступень скидки за объём, применённая к этой строке (§16 п.41).
+
+    Порог сравнивается с ``quantity`` самой строки, а не с суммой по бренду:
+    строки разных товаров одного бренда не образуют одну партию, а цена позиции
+    должна воспроизводиться из её собственного количества.
+    """
+
+    min_qty: int
+    discount_percent: float
+
+
 class CartLine(V2Model):
     product_id: uuid.UUID
     sku: str
@@ -19,6 +31,10 @@ class CartLine(V2Model):
     note: str | None
     unit_price: Money
     line_total: Money
+    # Скидка за объём, применённая к строке; `None` — количество ниже первого
+    # порога, лестницы у бренда нет, либо цена жёсткая из CSV (`override_price`,
+    # §8 п.1 — объёмная скидка к ней не применяется).
+    volume_tier: CartLineVolumeTier | None = None
 
 
 class CartSummary(V2Model):
@@ -61,6 +77,7 @@ def cart_line(
     quantity: int,
     note: str | None,
     unit_price: Money,
+    volume_tier: dict | None = None,
 ) -> CartLine:
     return CartLine(
         product_id=product_id,
@@ -72,6 +89,14 @@ def cart_line(
         note=note,
         unit_price=unit_price,
         line_total=_line_total(unit_price, quantity),
+        volume_tier=(
+            CartLineVolumeTier(
+                min_qty=volume_tier["min_qty"],
+                discount_percent=volume_tier["discount_percent"],
+            )
+            if volume_tier
+            else None
+        ),
     )
 
 
@@ -79,6 +104,7 @@ __all__ = [
     "CartItemAdd",
     "CartItemReplace",
     "CartLine",
+    "CartLineVolumeTier",
     "CartSummary",
     "cart_line",
 ]

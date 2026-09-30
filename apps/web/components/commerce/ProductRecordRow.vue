@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/domain/api/v2/catalog.schema'
+import { firstVolumeTierHint } from '~/domain/api/v2/volume_tiers.schema'
 
 const props = withDefaults(
   defineProps<{
@@ -53,6 +54,11 @@ const actionLabel = computed(() => {
   if (props.inCartQuantity) return 'Обновить'
   return 'Добавить'
 })
+// Подсказка объёмной скидки: берём самую нижнюю ступень — порог, до которого
+// клиенту остаётся дописать одну позицию (§16 п.41). В каталоге количество
+// строки неизвестно, поэтому clientPrice объёмную скидку не включает и бейдж
+// остаётся обещанием, а не фактом (applied=false).
+const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTiers ?? []))
 </script>
 
 <template>
@@ -88,6 +94,12 @@ const actionLabel = computed(() => {
           <span v-else class="text-sm text-ink-muted">Цена по запросу</span>
           <span v-if="Number(product.clientPrice.amount) > 0" class="block text-xs text-ink-muted">за шт.</span>
           <span v-if="comparePrice" class="numeric block text-xs text-ink-muted line-through">{{ comparePrice }}</span>
+          <VolumeTierBadge
+            v-if="volumeTierHint"
+            class="mt-1.5"
+            :min-qty="volumeTierHint.minQty"
+            :discount-percent="volumeTierHint.discountPercent"
+          />
         </div>
         <div class="flex shrink-0 items-center gap-1">
           <div class="flex h-11 items-center border border-border bg-surface" role="group" :aria-label="`Количество товара «${product.name}»`">

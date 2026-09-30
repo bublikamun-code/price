@@ -629,7 +629,7 @@ Organization pricing terms и organization-brand discounts переносятс�
 | — | `GET /api/v2/catalog/products*` | В `CatalogProduct` появляется `volumeTiers: [{"minQty", "discountPercent"}]` (лестница бренда, по возрастанию). `clientPrice` **без** объёмной скидки — количество в каталоге неизвестно (§8). |
 | — | `GET /api/v2/cart` | `CartLine` получает `volumeTier: {"minQty", "discountPercent"} \| null` — ступень, применённая к **этой** строке по её `quantity`, и `unitPrice` уже с ней посчитан. |
 
-Форма `VolumeTierOut`: `{"id", "brandId", "minQty", "discountPercent", "version", "createdAt", "updatedAt"}`. Ошибки `VOLUME_TIER_NOT_FOUND`, `VOLUME_TIER_DUPLICATE_THRESHOLD` добавляются в список стабильных кодов `docs/API_V2_CONTRACT.md` §5.
+Форма `VolumeTierOut`: `{"id", "brandId", "minQty", "discountPercent", "version", "createdAt", "updatedAt"}`. `discountPercent` — **число** во всех трёх формах (`VolumeTierOut`, `VolumeTierHint`, `CartLineVolumeTier`), в отличие от денег, которые §6 требует отдавать канонической строкой: в БД это `NUMERIC(5,2)`, а строковый вариант заставил бы клиента читать одно и то же поле двумя типами в зависимости от эндпоинта. Ошибки `VOLUME_TIER_NOT_FOUND`, `VOLUME_TIER_DUPLICATE_THRESHOLD` добавляются в список стабильных кодов `docs/API_V2_CONTRACT.md` §5.
 
 ### Уведомления (in-app, pull)
 

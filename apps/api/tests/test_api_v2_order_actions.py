@@ -144,6 +144,8 @@ async def test_repeat_order_returns_safe_v2_cart_projection(
         "note": "Повторить строку",
         "unitPrice": {"amount": "10.00", "currency": "BYN"},
         "lineTotal": {"amount": "40.00", "currency": "BYN"},
+        # Ступени скидок за объём не заданы → null (§16 п.41)
+        "volumeTier": None,
     }
     assert "photoKey" not in response.text
     assert "photo_key" not in response.text

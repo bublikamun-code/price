@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { moneySchema, rateSchema, uuidSchema } from './common.schema'
 import { productDocumentSchema } from './documents.schema'
+import { volumeTierHintSchema } from './volume_tiers.schema'
 
 export const catalogProductIdSchema = uuidSchema
 export const catalogProductSkuSchema = z.string().min(1).max(128)
@@ -85,6 +86,11 @@ export const catalogProductSchema = z
     clientPrice: moneySchema,
     exchangeRate: rateSchema,
     hasDiscount: z.boolean(),
+    // Лестница скидок за объём бренда (§16 п.41). Каталог не знает количества
+    // строки, поэтому публикует лестницу целиком и НЕ применяет её к
+    // clientPrice — применение живёт в корзине и заказе. Опционально: ответы
+    // v1 и выкладки до этапа «Скидки за объём» поля не несут.
+    volumeTiers: z.array(volumeTierHintSchema).optional(),
     // Репрезентативный кадр для плитки каталога; полная галерея — в `media`.
     // Оба поля опциональны на клиенте: ответы v1 и старые выкладки v2 фото
     // не несут, и это штатное состояние, а не ошибка контракта.

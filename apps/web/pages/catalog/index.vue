@@ -7,6 +7,7 @@ import type {
   CatalogStockStatus,
 } from '~/domain/api/v2/catalog.schema'
 import { catalogProductIdSchema } from '~/domain/api/v2/catalog.schema'
+import { firstVolumeTierHint } from '~/domain/api/v2/volume_tiers.schema'
 import { createCatalogRepository } from '~/domain/catalog/catalog.repository'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
@@ -112,6 +113,10 @@ const activeFilterCount = computed(() => {
 })
 function hasPositivePrice(product: CatalogProduct): boolean {
   return Number(product.clientPrice.amount) > 0
+}
+/** Первая (самая доступная) ступень объёмной скидки — для бейджа в таблице. */
+function tierHintOf(product: CatalogProduct) {
+  return firstVolumeTierHint(product.volumeTiers ?? [])
 }
 function inCartQty(productId: string): number {
   return cartLines.value.find((item) => item.productId === productId)?.quantity ?? 0
@@ -508,6 +513,12 @@ onUnmounted(() => {
                     <template v-if="hasPositivePrice(product)">
                       <strong class="block text-sm text-ink">{{ formatMoney(product.clientPrice.amount, product.clientPrice.currency) }}</strong>
                       <span v-if="product.hasDiscount" class="block text-xs text-ink-muted line-through">{{ formatMoney(product.retailPrice.amount, product.retailPrice.currency) }}</span>
+                      <VolumeTierBadge
+                        v-if="tierHintOf(product)"
+                        class="mt-1"
+                        :min-qty="tierHintOf(product)!.minQty"
+                        :discount-percent="tierHintOf(product)!.discountPercent"
+                      />
                     </template>
                     <span v-else class="text-xs text-ink-muted">По запросу</span>
                   </td>
