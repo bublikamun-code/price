@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import Field, StringConstraints, field_validator
+from pydantic import Field
 
 from app.models.enums import OrganizationRole
 from app.schemas.v2.common import V2Model
@@ -32,6 +32,11 @@ class OrganizationDetail(OrganizationSummary):
     legal_address: str | None = None
     legal_email: str | None = None
     legal_phone: str | None = None
+    # Реквизиты для счёта на оплату (§16 п.40 п.4): печатаются в PDF,
+    # правятся менеджером через PATCH /manager/organizations/{id}.
+    bank_name: str | None = None
+    bank_code: str | None = None
+    bank_account: str | None = None
 
 
 class OrganizationMember(V2Model):

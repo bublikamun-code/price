@@ -30,6 +30,7 @@ from app.schemas.v2.common import (
     ResponseMeta,
     SuccessResponse,
 )
+from app.schemas.v2.invoices import OrganizationBillingPatch
 from app.schemas.v2.organizations import (
     OrganizationDetail,
     OrganizationMember,
@@ -37,6 +38,7 @@ from app.schemas.v2.organizations import (
     OrganizationMemberPatch,
     OrganizationSummary,
 )
+from app.services.invoice import InvoiceError, InvoiceService, StaleResourceVersionError
 from app.services.organizations import (
     MembershipTargetNotFoundError,
     OrganizationManagementError,
@@ -44,6 +46,13 @@ from app.services.organizations import (
 )
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
+
+# Реквизиты для счёта на оплату живут на отдельном manager-префиксе (§6
+# «Счета на оплату», §16 п.40 п.4): правка печатных реквизитов — привилегия
+# менеджера и требует If-Match, а чтение остаётся на общем /organizations/{id}.
+manager_router = APIRouter(
+    prefix="/manager/organizations", tags=["manager:organizations"]
+)
 
 _ORGANIZATION_SORT = Literal["legalName", "-legalName", "createdAt", "-createdAt"]
 _MEMBER_SORT = Literal[
@@ -122,6 +131,9 @@ def _organization_detail(organization: Organization) -> OrganizationDetail:
         legal_address=organization.legal_address,
         legal_email=organization.legal_email,
         legal_phone=organization.legal_phone,
+        bank_name=organization.bank_name,
+        bank_code=organization.bank_code,
+        bank_account=organization.bank_account,
     )
 
 
@@ -395,4 +407,57 @@ async def update_member(
         raise _as_v2_problem(exc) from exc
 
 
-__all__ = ["router"]
+@manager_router.patch(
+    "/{id}",
+    response_model=SuccessResponse[OrganizationDetail],
+    response_model_by_alias=True,
+    responses=problem_responses(
+        {
+            400: "Invalid If-Match",
+            401: "Authentication required",
+            403: "Manager role required",
+            404: "Organization not found",
+            409: "Stale resource version",
+            422: "Validation error",
+            500: "Internal server error",
+        }
+    ),
+)
+async def update_organization_billing(
+    request: Request,
+    payload: OrganizationBillingPatch,
+    organization_id: uuid.UUID = Path(alias="id"),
+    if_match: str = Header(..., alias="If-Match"),
+    manager: User = Depends(require_role(UserRole.MANAGER)),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[OrganizationDetail]:
+    """Реквизиты организации для счёта на оплату (§6, §16 п.40 п.4).
+
+    ``If-Match`` сверяет ``organizations.version`` (не версию счёта и не
+    заказа): реквизиты общие для всех счетов организации, поэтому конкурируют
+    между собой правки менеджеров, а не операции со счётом. Аудит —
+    ``organization.update``.
+    """
+    try:
+        expected_version = parse_if_match(if_match)
+        if payload.version is not None and payload.version != expected_version:
+            raise StaleResourceVersionError(
+                "Версия организации в теле не совпадает с If-Match"
+            )
+        organization = await InvoiceService(db).update_organization_billing(
+            manager,
+            organization_id,
+            expected_version=expected_version,
+            patch=payload,
+        )
+        result = SuccessResponse[OrganizationDetail](
+            data=_organization_detail(organization),
+            meta=ResponseMeta(request_id=request_id_for(request)),
+        )
+        await db.commit()
+        return result
+    except InvoiceError as exc:
+        raise _as_v2_problem(exc) from exc
+
+
+__all__ = ["manager_router", "router"]

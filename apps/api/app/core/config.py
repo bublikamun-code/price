@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     # --- PDF-выгрузки (§16 п.25) ---
     pdf_supplier_name: str = "ООО «Поставщик»"  # шапка PDF-заявки (блок «Поставщик»)
 
+    # --- Реквизиты продавца для счёта на оплату (§10, §16 п.40 п.4) ---
+    # Продавец — это наша организация, а не клиентская карточка, поэтому
+    # реквизиты живут в конфигурации, а не в БД: меняются деплоем/env.
+    # Всё опционально — незаполненное печатается в PDF прочерком.
+    seller_legal_name: str = ""
+    seller_tax_id: str = ""
+    seller_address: str = ""
+    seller_bank_name: str = ""
+    seller_bank_code: str = ""
+    seller_bank_account: str = ""
+
     @property
     def import_allowed_ext_list(self) -> list[str]:
         return [e.strip().lower() for e in self.import_allowed_extensions.split(",") if e.strip()]
@@ -179,6 +190,9 @@ class Settings(BaseSettings):
     login_lockout_minutes: int = 30
     # Второй шаг логина при 2FA — тот же лимит, что у login (§16 п.22)
     rate_limit_2fa_verify: str = "5/15minutes"
+    # Выставление счёта по заказу — 10/час на менеджера (§6 «Счета на оплату»):
+    # операция редкая и всегда пишет нумерованный документ в аудит.
+    rate_limit_invoice_issue: str = "10/1hour"
     # Ticket второго шага логина при 2FA: JWT type=2fa, TTL 5 мин (§16 п.22)
     totp_ticket_ttl_min: int = 5
     csrf_cookie_name: str = "csrf_token"

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Счёт на оплату {{ number }}</title>
+<style>
+    /* A4 print-friendly (§10): без фоновых заливок в шапке — экономия тонера. */
+    @page {
+        size: A4;
+        margin: 15mm 12mm;
+        @bottom-center {
+            content: "Стр. " counter(page) " из " counter(pages);
+            font-size: 8pt;
+            color: #666;
+        }
+    }
+    body {
+        font-family: "DejaVu Sans", "PT Sans", Arial, sans-serif;
+        font-size: 9pt;
+        color: #111;
+    }
+    h1 { font-size: 15pt; margin: 0 0 2mm; }
+    .meta { font-size: 9pt; color: #333; margin: 0 0 1.5mm; }
+    .parties {
+        display: flex;
+        gap: 6mm;
+        margin: 4mm 0;
+    }
+    .party {
+        width: 50%;
+        border: 0.5pt solid #999;
+        padding: 2mm 2.5mm;
+        vertical-align: top;
+    }
+    .party h2 {
+        font-size: 9pt;
+        margin: 0 0 1.5mm;
+        text-transform: uppercase;
+        letter-spacing: 0.3pt;
+    }
+    .party p { margin: 0 0 1mm; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 3mm;
+    }
+    th, td {
+        border: 0.5pt solid #999;
+        padding: 1.2mm 1.8mm;
+        text-align: left;
+        vertical-align: top;
+    }
+    th {
+        background-color: #eee;
+        font-size: 8.5pt;
+        text-align: center;
+    }
+    td.num { text-align: right; white-space: nowrap; }
+    tr.total td {
+        background-color: #eee;
+        font-weight: bold;
+    }
+    .delivery { margin-top: 3mm; font-size: 8.5pt; color: #333; }
+    .notes { margin-top: 3mm; font-size: 8pt; color: #666; }
+</style>
+</head>
+<body>
+    <h1>Счёт на оплату № {{ number }}</h1>
+    <p class="meta">Дата выставления: {{ issued_at }}</p>
+    {% if due_at %}
+    <p class="meta">Срок оплаты: {{ due_at }}</p>
+    {% endif %}
+    <p class="meta">Основание: заявка № {{ order_no }}</p>
+
+    <div class="parties">
+        <div class="party">
+            <h2>Продавец</h2>
+            <p>{{ seller.legal_name }}</p>
+            <p>УНП: {{ seller.tax_id | default('—', true) }}</p>
+            <p>Адрес: {{ seller.legal_address | default('—', true) }}</p>
+            {% if seller.bank %}
+            <p>Банк: {{ seller.bank.name | default('—', true) }}</p>
+            <p>Код банка: {{ seller.bank.code | default('—', true) }}</p>
+            <p>Р/с: {{ seller.bank.account | default('—', true) }}</p>
+            {% endif %}
+        </div>
+        <div class="party">
+            <h2>Покупатель</h2>
+            <p>{{ buyer.legal_name }}</p>
+            <p>УНП: {{ buyer.tax_id | default('—', true) }}</p>
+            <p>Адрес: {{ buyer.legal_address | default('—', true) }}</p>
+            {% if buyer.bank %}
+            <p>Банк: {{ buyer.bank.name | default('—', true) }}</p>
+            <p>Код банка: {{ buyer.bank.code | default('—', true) }}</p>
+            <p>Р/с: {{ buyer.bank.account | default('—', true) }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Артикул</th>
+                <th>Наименование</th>
+                <th>Кол-во</th>
+                <th>Цена, {{ currency }}</th>
+                <th>Сумма, {{ currency }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.sku }}</td>
+                <td>{{ r.name }}</td>
+                <td class="num">{{ r.qty }}</td>
+                <td class="num">{{ r.price }}</td>
+                <td class="num">{{ r.amount }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total">
+                <td colspan="4" style="text-align: right;">Итого к оплате</td>
+                <td class="num">{{ total }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if delivery %}
+    <p class="delivery">Адрес доставки: {{ delivery }}</p>
+    {% endif %}
+    {# Строка про НДС фиксирована каноном: ставки в данных нет (§16 п.40 п.5). #}
+    <p class="notes">Без выделения НДС.</p>
+    <p class="notes">Цены зафиксированы на момент выставления счёта и не пересчитываются.</p>
+</body>
+</html>

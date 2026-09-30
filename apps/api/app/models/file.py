@@ -44,6 +44,14 @@ class FileAsset(Base, TimestampMixin, UUIDPrimaryKey):
         index=True,
     )
     valid_until: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    # PDF счёта на оплату (§16 п.40): счёт — постоянный документ, поэтому он
+    # остаётся в архиве даже если заказ удалён (SET NULL, как product_id).
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     visibility: Mapped[FileVisibility] = mapped_column(
         pg_enum(FileVisibility, "file_visibility"),
         nullable=False,

@@ -10,7 +10,9 @@ from pydantic import Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from app.models.enums import OrderStatus
+from app.models.invoice import Invoice
 from app.models.order import Order, OrderItem
+from app.models.organization import Organization
 from app.schemas.v2.cart import CartLine, CartSummary
 from app.schemas.v2.common import (
     Money,
@@ -19,6 +21,12 @@ from app.schemas.v2.common import (
     V2Model,
     money_amount,
     rate_value,
+)
+from app.schemas.v2.invoices import (
+    InvoiceOut,
+    InvoiceSummary,
+    invoice_out,
+    invoice_summary,
 )
 
 
@@ -104,6 +112,9 @@ class OrderSummary(V2Model):
     status: OrderStatus
     total: Money
     exchange_rate: Rate
+    # Счёт 1:1 с заказом (§16 п.40): в коллекции только {id, number, status} —
+    # суммы и реквизиты покупателя там не выводятся.
+    invoice: InvoiceSummary | None = None
     created_at: datetime
     updated_at: datetime
     version: int
@@ -120,6 +131,9 @@ class OrderDetail(V2Model):
     exchange_rate: Rate
     lines: list[OrderLine]
     delivery: DeliverySummary
+    # Полный блок счёта (номер, даты, сумма, статусы) — клиент видит кнопку
+    # «Скачать счёт»; None, пока счёт не выставлен.
+    invoice: InvoiceOut | None = None
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -141,7 +155,7 @@ def _project_line(item: OrderItem) -> OrderLine:
     )
 
 
-def order_summary(order: Order) -> OrderSummary:
+def order_summary(order: Order, invoice: Invoice | None = None) -> OrderSummary:
     return OrderSummary(
         id=order.id,
         sequence=order.seq,
@@ -153,13 +167,20 @@ def order_summary(order: Order) -> OrderSummary:
             value=rate_value(order.exchange_rate),
             source=order.rate_source or "LEGACY",
         ),
+        invoice=invoice_summary(invoice) if invoice is not None else None,
         created_at=_utc(order.created_at),
         updated_at=_utc(order.updated_at),
         version=order.version,
     )
 
 
-def order_detail(order: Order, items: list[OrderItem]) -> OrderDetail:
+def order_detail(
+    order: Order,
+    items: list[OrderItem],
+    *,
+    invoice: Invoice | None = None,
+    organization: Organization | None = None,
+) -> OrderDetail:
     method = "DELIVERY" if order.delivery_method.lower() == "delivery" else "PICKUP"
     return OrderDetail(
         id=order.id,
@@ -184,6 +205,9 @@ def order_detail(order: Order, items: list[OrderItem]) -> OrderDetail:
             preferred_date=order.delivery_preferred_date,
             comment=order.delivery_comment,
         ),
+        invoice=invoice_out(invoice, organization=organization)
+        if invoice is not None
+        else None,
         notes=order.notes,
         created_at=_utc(order.created_at),
         updated_at=_utc(order.updated_at),

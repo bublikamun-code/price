@@ -745,10 +745,232 @@
           "PHOTO_ZIP",
           "OTHER",
           "CERTIFICATE",
-          "DATASHEET"
+          "DATASHEET",
+          "INVOICE_PDF"
         ],
         "title": "FileAssetType",
         "type": "string"
+      },
+      "InvoiceOut": {
+        "description": "Полная форма счёта (§6). Суммы — decimal string + currency.",
+        "properties": {
+          "buyer": {
+            "$ref": "#/components/schemas/InvoiceParty"
+          },
+          "dueAt": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dueat"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "title": "Issuedat",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "orderId": {
+            "format": "uuid",
+            "title": "Orderid",
+            "type": "string"
+          },
+          "pdfStatus": {
+            "$ref": "#/components/schemas/InvoicePdfStatus"
+          },
+          "seller": {
+            "$ref": "#/components/schemas/InvoiceParty"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvoiceStatus"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "number",
+          "status",
+          "pdfStatus",
+          "total",
+          "issuedAt",
+          "dueAt",
+          "version",
+          "buyer",
+          "seller"
+        ],
+        "title": "InvoiceOut",
+        "type": "object"
+      },
+      "InvoiceParty": {
+        "description": "Реквизиты покупателя/продавца — проекция, не замороженная копия.\n\nДублирующий ``organizations.unp`` не вводится: ``tax_id`` уже семантически\nУНП (§16 п.40 п.4).",
+        "properties": {
+          "bank": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoicePartyBank"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "legalAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legaladdress"
+          },
+          "legalName": {
+            "title": "Legalname",
+            "type": "string"
+          },
+          "taxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taxid"
+          }
+        },
+        "required": [
+          "legalName",
+          "taxId",
+          "legalAddress",
+          "bank"
+        ],
+        "title": "InvoiceParty",
+        "type": "object"
+      },
+      "InvoicePartyBank": {
+        "description": "Банковские реквизиты стороны счёта; незаполненные — прочерк в PDF.",
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "name",
+          "code",
+          "account"
+        ],
+        "title": "InvoicePartyBank",
+        "type": "object"
+      },
+      "InvoicePdfStatus": {
+        "description": "Состояние рендера PDF счёта — вместо Redis-job (§10, §16 п.40).\n\nСчёт — постоянный документ, поэтому состояние живёт в колонке: после\nрестарта воркера он явно ``FAILED`` и перерендеривается, а не\n«теряется» вместе с TTL записи в Redis.",
+        "enum": [
+          "PENDING",
+          "READY",
+          "FAILED"
+        ],
+        "title": "InvoicePdfStatus",
+        "type": "string"
+      },
+      "InvoiceStatus": {
+        "description": "Статус счёта на оплату (§16 п.40).\n\nПлатёжного ledger нет — статусы переключает менеджер вручную; смена\nстатуса счёта не трогает статус заказа и наоборот.",
+        "enum": [
+          "ISSUED",
+          "PAID",
+          "CANCELLED"
+        ],
+        "title": "InvoiceStatus",
+        "type": "string"
+      },
+      "InvoiceStatusPatch": {
+        "description": "Тело ``PATCH /manager/invoices/{id}`` — только статус.",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/InvoiceStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "InvoiceStatusPatch",
+        "type": "object"
+      },
+      "InvoiceSummary": {
+        "description": "Сокращённый блок для коллекции заказов — без сумм и реквизитов.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvoiceStatus"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "status"
+        ],
+        "title": "InvoiceSummary",
+        "type": "object"
       },
       "MediaResource": {
         "description": "Одно изображение каталога.\n\n`id` стабилен и пригоден как ключ кэша, `url` ведёт на стабильный v2-путь.\nГеометрия и MIME-тип — по конвенции загрузчика фото (см. services/media.py).",
@@ -912,6 +1134,16 @@
             "format": "uuid",
             "title": "Initiatedbyuserid",
             "type": "string"
+          },
+          "invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "lines": {
             "items": {
@@ -1109,6 +1341,16 @@
             "format": "uuid",
             "title": "Initiatedbyuserid",
             "type": "string"
+          },
+          "invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "organizationId": {
             "anyOf": [
@@ -1486,8 +1728,136 @@
         "title": "OrganizationAddressPatch",
         "type": "object"
       },
+      "OrganizationBillingPatch": {
+        "description": "Тело ``PATCH /manager/organizations/{id}`` — реквизиты для счёта.\n\nОтдельная схема от ``organizations.Organization*Patch``: здесь нет\nуправления доступом, только печатные реквизиты (§16 п.40 п.4).",
+        "properties": {
+          "bankAccount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bankaccount"
+          },
+          "bankCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bankcode"
+          },
+          "bankName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bankname"
+          },
+          "legalAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legaladdress"
+          },
+          "legalEmail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legalemail"
+          },
+          "legalPhone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legalphone"
+          },
+          "taxId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taxid"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "OrganizationBillingPatch",
+        "type": "object"
+      },
       "OrganizationDetail": {
         "properties": {
+          "bankAccount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bankaccount"
+          },
+          "bankCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bankcode"
+          },
+          "bankName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bankname"
+          },
           "countryCode": {
             "title": "Countrycode",
             "type": "string"
@@ -2369,6 +2739,22 @@
           "meta"
         ],
         "title": "SuccessResponse[CatalogProduct]",
+        "type": "object"
+      },
+      "SuccessResponse_InvoiceOut_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/InvoiceOut"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SuccessResponse[InvoiceOut]",
         "type": "object"
       },
       "SuccessResponse_OrderDetail_": {
@@ -4558,6 +4944,594 @@
         ]
       }
     },
+    "/api/v2/manager/invoices/{invoiceId}": {
+      "patch": {
+        "description": "Смена статуса счёта. If-Match — по версии СЧЁТА, не заказа (§16 п.40 п.8).",
+        "operationId": "change_invoice_status_api_v2_manager_invoices__invoiceId__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoiceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoiceid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvoiceStatusPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_InvoiceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid If-Match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale resource version"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Change Invoice Status",
+        "tags": [
+          "manager:invoices"
+        ]
+      }
+    },
+    "/api/v2/manager/invoices/{invoiceId}/pdf": {
+      "post": {
+        "description": "Перерендерить PDF после FAILED или после правки реквизитов (§6).",
+        "operationId": "regenerate_invoice_pdf_api_v2_manager_invoices__invoiceId__pdf_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoiceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoiceid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_InvoiceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice PDF already in progress"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Regenerate Invoice Pdf",
+        "tags": [
+          "manager:invoices"
+        ]
+      }
+    },
+    "/api/v2/manager/orders/{orderId}/invoice": {
+      "post": {
+        "description": "Выставить счёт по заказу. 1:1 — повтор выдаёт тот же счёт или 409.\n\nПовтор с тем же ``Idempotency-Key`` возвращает тот же счёт\n(``X-Idempotency-Replayed: true``); новый ключ на тот же заказ — 409\n``INVOICE_ALREADY_EXISTS`` (§16 п.40 п.1).",
+        "operationId": "issue_invoice_api_v2_manager_orders__orderId__invoice_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Orderid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_InvoiceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Order not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Order not invoicable or invoice already exists"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many invoices issued"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Issue Invoice",
+        "tags": [
+          "manager:invoices"
+        ]
+      }
+    },
+    "/api/v2/manager/organizations/{id}": {
+      "patch": {
+        "description": "Реквизиты организации для счёта на оплату (§6, §16 п.40 п.4).\n\n``If-Match`` сверяет ``organizations.version`` (не версию счёта и не\nзаказа): реквизиты общие для всех счетов организации, поэтому конкурируют\nмежду собой правки менеджеров, а не операции со счётом. Аудит —\n``organization.update``.",
+        "operationId": "update_organization_billing_api_v2_manager_organizations__id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationBillingPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrganizationDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid If-Match"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Manager role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Organization not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Stale resource version"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Update Organization Billing",
+        "tags": [
+          "manager:organizations"
+        ]
+      }
+    },
     "/api/v2/manager/products/{productId}/documents": {
       "post": {
         "description": "Загрузить PDF-документ товара (сертификат/datasheet), §16 п.38.\n\nМенеджеру разрешено вешать документ и на архивный товар — обычную\nкарточку он уже не увидит, но документ в архиве останется (SET NULL\nпри удалении товара, §10).",
@@ -5698,6 +6672,120 @@
         ]
       }
     },
+    "/api/v2/orders/invoices/{invoiceId}/download": {
+      "get": {
+        "description": "Отдаёт PDF счёта байтами (никогда presigned, §16 п.37).\n\nНет доступа или нет счёта → 404 (не раскрываем существование чужого);\n``pdf_status != READY`` → 409; хранилище недоступно → 502.",
+        "operationId": "download_invoice_pdf_api_v2_orders_invoices__invoiceId__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoiceId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoiceid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice PDF bytes (application/pdf)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice PDF is not ready"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Storage unavailable"
+          }
+        },
+        "summary": "Download Invoice Pdf",
+        "tags": [
+          "invoices"
+        ]
+      }
+    },
     "/api/v2/orders/{orderId}": {
       "get": {
         "operationId": "get_order_api_v2_orders__orderId__get",
@@ -5896,6 +6984,100 @@
         "summary": "Cancel Order",
         "tags": [
           "orders"
+        ]
+      }
+    },
+    "/api/v2/orders/{orderId}/invoice": {
+      "get": {
+        "description": "Счёт по заказу: клиент — только свой заказ, менеджер — любой (§6).",
+        "operationId": "get_order_invoice_api_v2_orders__orderId__invoice_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Orderid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_InvoiceOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invoice not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Get Order Invoice",
+        "tags": [
+          "invoices"
         ]
       }
     },

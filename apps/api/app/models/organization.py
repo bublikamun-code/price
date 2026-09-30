@@ -41,6 +41,14 @@ class Organization(Base, UUIDPrimaryKey, TimestampMixin):
     legal_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     legal_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # Банковские реквизиты покупателя для счёта на оплату (§16 п.40 п.4).
+    # Nullable: расчётного счёта в связке с нами может не быть, пустое поле
+    # печатается в PDF прочерком. Дублирующий ``unp`` не вводится — ``tax_id``
+    # уже семантически УНП.
+    bank_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bank_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bank_account: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     __table_args__ = (
         Index("ix_organizations_active_name", "is_active", "legal_name"),
     )

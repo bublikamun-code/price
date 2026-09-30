@@ -121,7 +121,11 @@ async def test_list_orders_success_envelope_string_money_and_summary_projection(
         "createdAt",
         "updatedAt",
         "version",
+        # Сокращённый блок счёта в коллекции заказов (§6, §16 п.40).
+        # null, пока счёт по заказу не выставлен.
+        "invoice",
     }
+    assert order["invoice"] is None
     assert "lines" not in order
     assert "photoKey" not in order
     assert "clientName" not in order

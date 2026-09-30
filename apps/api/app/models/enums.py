@@ -39,6 +39,29 @@ class OrderStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+class InvoiceStatus(str, enum.Enum):
+    """Статус счёта на оплату (§16 п.40).
+
+    Платёжного ledger нет — статусы переключает менеджер вручную; смена
+    статуса счёта не трогает статус заказа и наоборот.
+    """
+    ISSUED = "ISSUED"
+    PAID = "PAID"
+    CANCELLED = "CANCELLED"
+
+
+class InvoicePdfStatus(str, enum.Enum):
+    """Состояние рендера PDF счёта — вместо Redis-job (§10, §16 п.40).
+
+    Счёт — постоянный документ, поэтому состояние живёт в колонке: после
+    рестарта воркера он явно ``FAILED`` и перерендеривается, а не
+    «теряется» вместе с TTL записи в Redis.
+    """
+    PENDING = "PENDING"
+    READY = "READY"
+    FAILED = "FAILED"
+
+
 class ImportMode(str, enum.Enum):
     """Режимы импорта CSV (§7.2)."""
     UPSERT = "UPSERT"
@@ -61,6 +84,8 @@ class FileAssetType(str, enum.Enum):
     # Документы на товар/серию (§16 п.38): сертификаты и datasheets, PDF-only.
     CERTIFICATE = "CERTIFICATE"
     DATASHEET = "DATASHEET"
+    # PDF счёта на оплату (§16 п.40): постоянный документ, visibility=AUTHED.
+    INVOICE_PDF = "INVOICE_PDF"
 
 
 class FileVisibility(str, enum.Enum):

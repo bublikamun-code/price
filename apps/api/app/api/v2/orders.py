@@ -26,7 +26,9 @@ from app.db.session import get_db
 from app.models.enums import OrderStatus, UserRole
 from app.models.order import Order
 from app.models.user import User
+from app.repositories import invoices as invoices_repo
 from app.repositories import orders as orders_repo
+from app.repositories import organizations as organizations_repo
 from app.schemas.v2.cart import CartSummary
 from app.schemas.v2.common import (
     CursorMeta,
@@ -147,6 +149,24 @@ def _validated_idempotency_key(value: str) -> str:
     return normalized
 
 
+async def _detail_with_invoice(db: AsyncSession, order: Order, items) -> OrderDetail:
+    """Order detail + блок счёта (§6): счёт и организация — по одному запросу.
+
+    Отдельные запросы, а не поштучно в цикле: блок счёта добавлен в детали и
+    список заказов, N+1 здесь бросился бы в первую очередь на странице
+    «Мои заказы».
+    """
+    invoice = await invoices_repo.get_invoice_by_order(db, order_id=order.id)
+    organization = (
+        await organizations_repo.get_organization(
+            db, organization_id=order.organization_id
+        )
+        if order.organization_id is not None
+        else None
+    )
+    return order_detail(order, items, invoice=invoice, organization=organization)
+
+
 def _notify_manager_order_created(
     order: Order, client: User, *, items_count: int
 ) -> None:
@@ -239,8 +259,13 @@ async def list_orders(
         if has_more and rows
         else None
     )
+    # Блок счёта в коллекции — {id, number, status} (§6), подгружаем одним
+    # запросом на всю страницу, а не по одному на заказ.
+    invoices = await invoices_repo.fetch_invoices_by_orders(
+        db, order_ids=[order.id for order in rows]
+    )
     return CursorResponse[OrderSummary](
-        data=[order_summary(order) for order in rows],
+        data=[order_summary(order, invoices.get(order.id)) for order in rows],
         meta=CursorMeta(
             request_id=request_id_for(request),
             next_cursor=next_cursor,
@@ -301,7 +326,7 @@ async def create_order(
             items = await orders_repo.get_order_items(db, order_id=replayed.id)
             response.headers["X-Idempotency-Replayed"] = "true"
             return SuccessResponse[OrderDetail](
-                data=order_detail(replayed, items),
+                data=await _detail_with_invoice(db, replayed, items),
                 meta=ResponseMeta(request_id=request_id_for(request)),
             )
 
@@ -326,7 +351,7 @@ async def create_order(
             items = await orders_repo.get_order_items(db, order_id=replayed.id)
             response.headers["X-Idempotency-Replayed"] = "true"
             return SuccessResponse[OrderDetail](
-                data=order_detail(replayed, items),
+                data=await _detail_with_invoice(db, replayed, items),
                 meta=ResponseMeta(request_id=request_id_for(request)),
             )
 
@@ -334,7 +359,7 @@ async def create_order(
         record.order_id = order.id
         await db.flush()
         items = await orders_repo.get_order_items(db, order_id=order.id)
-        detail = order_detail(order, items)
+        detail = await _detail_with_invoice(db, order, items)
     except OrderError as exc:
         raise _as_v2_problem(exc) from exc
 
@@ -373,7 +398,7 @@ async def get_order(
         raise _as_v2_problem(exc) from exc
 
     return SuccessResponse[OrderDetail](
-        data=order_detail(order, items),
+        data=await _detail_with_invoice(db, order, items),
         meta=ResponseMeta(request_id=request_id_for(request)),
     )
 
@@ -406,7 +431,7 @@ async def cancel_order(
     await db.refresh(order)
     items = await orders_repo.get_order_items(db, order_id=order.id)
     return SuccessResponse[OrderDetail](
-        data=order_detail(order, items),
+        data=await _detail_with_invoice(db, order, items),
         meta=ResponseMeta(request_id=request_id_for(request)),
     )
 
