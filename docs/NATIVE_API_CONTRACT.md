@@ -132,6 +132,7 @@ struct Money: Codable, Hashable {
   "clientPrice": { "amount": "0.70", "currency": "BYN" },
   "exchangeRate": { "value": "3.0000", "scale": 4, "source": "NBRB" },
   "hasDiscount": true,
+  "volumeTiers": [{ "minQty": 10, "discountPercent": 2.0 }],
   "thumbnail": null,
   "media": []
 }
@@ -143,14 +144,16 @@ struct Money: Codable, Hashable {
 - `brand.slug` / `series.slug` отсутствуют — slug вычисляется только для публичной SEO-витрины (§16 п.29), в v2 не публикуется;
 - `availability{status,quantity}` заменён плоскими `stockStatus` + `stockQuantity`; допустимых значений два, `ARCHIVED` отфильтровывается сервером на уровне выборки;
 - `version` отсутствует — optimistic concurrency в v2 живёт на cart/order, у каталожных товаров нет изменяемой версии;
-- поля `price` не существует: цена разнесена на `basePrice` (всегда BYN), `retailPrice` и `clientPrice` (в display-валюте клиента) плюс `exchangeRate`.
+- поля `price` не существует: цена разнесена на `basePrice` (всегда BYN), `retailPrice` и `clientPrice` (в display-валюте клиента) плюс `exchangeRate`;
+- добавлен `volumeTiers[]` — лестница скидок за объём бренда (§16 п.41); в `clientPrice` она **не** учтена, потому что в каталоге количество неизвестно.
 
 Правила чтения цен:
 
 - `retailPrice` и `clientPrice` сравнимы только внутри одной `currency` — это display-валюта пользователя или pricing agreement организации;
 - дельта между ними считается в BYN, валюта дельты — валюта `basePrice`;
 - `hasDiscount` управляет тем, какую из двух цен показывает UI как основную (в web — тумблер «Розница / Со скидкой», в нативном клиенте — такой же переключатель);
-- `priceCalcMode` (`fixed` | `nbrb_current`) — выбор между договорным и текущим курсом НБ РБ; передаётся query-параметром, а не хранится в продукте.
+- `priceCalcMode` (`fixed` | `nbrb_current`) — выбор между договорным и текущим курсом НБ РБ; передаётся query-параметром, а не хранится в продукте;
+- `volumeTiers[]` — единственный источник, по которому нативный клиент может показать «от 10 шт −2%»; применённая скидка приходит в `CartLine.volumeTier` вместе с пересчитанным `unitPrice` (в корзине количество известно, в каталоге — нет). Правила: одна ступень (наибольшая подходящая), с бренд-скидкой — максимум из двух процентов, `overridePrice` не подвержен.
 
 Native client не кэширует personalized price бессрочно. Price имеет organization pricing context и может быть invalidated; UI показывает timestamp/refresh behavior.
 

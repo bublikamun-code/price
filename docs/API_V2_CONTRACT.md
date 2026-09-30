@@ -100,6 +100,8 @@ Server не обязан возвращать `total`, если cursor count д�
 - `INVOICE_ALREADY_EXISTS`;
 - `INVOICE_PDF_IN_PROGRESS`;
 - `INVOICE_PDF_NOT_READY`;
+- `VOLUME_TIER_NOT_FOUND`;
+- `VOLUME_TIER_DUPLICATE_THRESHOLD`;
 - `STORAGE_UNAVAILABLE`;
 - `CONFLICT`;
 - `RATE_LIMITED`;
@@ -262,6 +264,21 @@ Supported sort values задаются enum/OpenAPI, не произвольны
 
 Публичная product projection либо не содержит цен/остатков, либо требует auth. Public brand aggregate не делает N+1 series/product calls.
 
+
+### Volume discounts (`volumeTiers[]`, §16 п.41)
+
+`CatalogProduct` публикует лестницу скидок за объём своего бренда: `volumeTiers[]` с полями
+`minQty` и `discountPercent`, по возрастанию `minQty`. `clientPrice` при этом **не** включает
+объёмную скидку — в каталоге количество неизвестно; клиент рисует подсказку «от N шт −X%» и
+пересчитывает цену в корзине, где `quantity` уже известен.
+
+Правила применения (канон §8): действует одна ступень — наибольшая с `minQty <= quantity`;
+ступени не суммируются; с процентом по бренду (`organization_brand_terms`) берётся максимум из
+двух, а не сумма; `overridePrice` (жёсткая цена из CSV) не подвержен объёмной скидке.
+
+`GET /api/v2/cart` возвращает в `CartLine` поле `volumeTier: {minQty, discountPercent} | null` —
+ступень, применённую к этой строке; `unitPrice` уже рассчитан с ней. `null` означает, что
+количество строки ниже первого порога, либо у бренда лестницы нет.
 ### Product documents (`documents[]`, §16 п.38)
 
 Product detail (`/catalog/products/{productId}` и `/by-sku/{sku}`) содержит блок `documents[]`: собственные документы товара и документы его серии.
