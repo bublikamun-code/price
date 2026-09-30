@@ -9,7 +9,18 @@ DC_OBS = docker compose -f infra/docker-compose.yml -f infra/docker-compose.obse
 # Dev-режим фронтенда: базовый compose + override с Nuxt dev server (хот-релоад)
 DC_WEB_DEV = docker compose -f infra/docker-compose.yml -f infra/docker-compose.web-dev.yml --env-file .env
 
-.PHONY: help up down build logs ps api-shell web-shell web-dev web-prod alembic-check migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys obs-up obs-down test-e2e test-load test-load-import prod-up prod-down prod-logs prod-migrate gen-self-signed-certs backup backup-list ratelimit-reset
+# Авто-простой docker (infra/scripts/docker-idle.sh): стек гаснет, когда с ним никто не работает.
+# SID можно передать, чтобы скрипт не считал следы этой сессии чужими: make docker-check SID=sess_...
+docker-check: ## показать, можно ли выключить docker-стек, и почему пока нет
+	@bash infra/scripts/docker-idle.sh check $(SID)
+
+docker-stop: ## выключить docker-стек, если нет активных сессий
+	@bash infra/scripts/docker-idle.sh stop $(SID)
+
+docker-ensure: ## поднять docker-стек, если он выключен
+	@bash infra/scripts/docker-idle.sh ensure
+
+.PHONY: help up down build logs ps api-shell web-shell web-dev web-prod alembic-check migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys obs-up obs-down test-e2e test-load test-load-import prod-up prod-down prod-logs prod-migrate gen-self-signed-certs backup backup-list ratelimit-reset docker-check docker-stop docker-ensure
 
 help: ## показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
