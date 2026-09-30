@@ -73,6 +73,7 @@
 - Импорт прайса (`/manager/import`)
 - Бренды и серии (`/manager/brands`)
 - Организации и контакты (`/manager/organizations`)
+- Карточка организации (`/manager/organizations/[id]`, из списка организаций)
 - Клиенты-доступы (`/manager/users`)
 - Заявки (`/manager/orders`)
 - Файлы (`/manager/files`)
@@ -315,8 +316,9 @@
   2. Таблица позиций (snapshot цен на момент заказа, не меняется).
   3. Снапшот курса заказа.
   4. Комментарии.
-  5. Кнопки: «Повторить», «Скачать PDF», «Отменить заявку» (если статус NEW).
-- **API:** `GET /orders/{id}`, `POST /orders/{id}/repeat`, `POST /orders/{id}/pdf` + `GET /orders/export/{job_id}` (job-паттерн §16 п.25 вместо синхронного GET-pdf).
+  5. **Карточка счёта** (если счёт выставлен менеджером): номер, дата, сумма, статус, кнопка «Скачать PDF» (скачивание байтами, не presigned).
+  6. Кнопки: «Повторить», «Скачать PDF», «Отменить заявку» (если статус NEW).
+- **API:** `GET /orders/{id}`, `POST /orders/{id}/repeat`, `POST /orders/{id}/pdf` + `GET /orders/export/{job_id}` (job-паттерн §16 п.25 вместо синхронного GET-pdf), `GET /orders/{id}/invoice`, `GET /orders/invoices/{invoiceId}/download`.
 
 ### `/files` — Файловый архив
 - **Роль:** client.
@@ -407,8 +409,8 @@
 - **API v2:** `GET/POST /organizations`, `GET/PATCH /organizations/{id}`, membership endpoints. Старые `/manager/users` остаются для управления login access и compatibility.
 
 ### `/manager/organizations/[id]` — Организация
-- **Блоки:** legal/delivery details; memberships; pricing agreement; organization-brand terms; fixed rate; история заказов и audit reference.
-- **Правила:** update отправляет `version`/`If-Match`; conflict показывает reload/merge state без silent overwrite.
+- **Блоки:** legal/delivery details; **реквизиты для счёта** (УНП, юридический адрес, юр. телефон/email, банк: наименование/код/счёт); memberships; pricing agreement; organization-brand terms; fixed rate; история заказов и audit reference.
+- **Правила:** update отправляет `version`/`If-Match`; conflict показывает reload/merge state без silent overwrite. Правка реквизитов доступна менеджеру, она попадает в следующий перерендер счёта.
 - **API v2:** `GET/PATCH /organizations/{id}`, `GET/POST/PATCH .../members`, `GET/PUT .../pricing-terms`.
 
 ### `/manager/users` — Доступы клиентов
@@ -431,7 +433,8 @@
 
 ### `/manager/orders/[id]` — Детали заявки (менеджер)
 - **Блоки:** как у клиента + блок управления: смена статуса, назначение менеджера, внутренние комментарии, кнопки «Экспорт в 1С-формат (заглушка)».
-- **API:** `GET /manager/orders/{id}`, `PATCH ...`.
+- **Блок счёта:** кнопка «Выставить счёт» (если счёта ещё нет), смена статуса счёта (Выставлен / Оплачен / Отменён), перерендер PDF после правки реквизитов, кнопка «Скачать счёт».
+- **API:** `GET /manager/orders/{id}`, `PATCH ...`, `POST /manager/orders/{id}/invoice`, `PATCH /manager/invoices/{invoiceId}`, `POST /manager/invoices/{invoiceId}/pdf`.
 
 ### `/manager/files` — Загрузка файлов
 - **Блоки:** список загруженных файлов (PDF-каталоги, спец-CSV); dropzone для загрузки; выбор видимости (PUBLIC/AUTHED/MANAGER_ONLY), привязка к бренду; удаление.

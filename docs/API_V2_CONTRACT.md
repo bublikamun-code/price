@@ -95,6 +95,12 @@ Server не обязан возвращать `total`, если cursor count д�
 - `MEMBERSHIP_ALREADY_EXISTS`;
 - `LAST_OWNER_PROTECTED`;
 - `ORGANIZATION_SELECTION_INVALID`;
+- `ORDER_NOT_INVOICABLE`;
+- `INVOICE_NOT_FOUND`;
+- `INVOICE_ALREADY_EXISTS`;
+- `INVOICE_PDF_IN_PROGRESS`;
+- `INVOICE_PDF_NOT_READY`;
+- `STORAGE_UNAVAILABLE`;
 - `CONFLICT`;
 - `RATE_LIMITED`;
 - `ASYNC_JOB_NOT_FOUND`;
@@ -449,6 +455,29 @@ Collection DTO — отдельный `OrderSummary`: `id`, `sequence`, `organiz
 инициированные текущим пользователем; без выбранной organization — только legacy/NULL
 orders текущего пользователя. Outsider не видит organization orders.
 
+### Invoices (§16 п.40)
+
+Счёт на оплату — замороженный документ 1:1 с заказом (`invoices.order_id UNIQUE`). Счёт выставляет менеджер из заказа, клиент видит его в деталях своего заказа и скачивает PDF **байтами** (никогда presigned — §16 п.37). Реквизиты покупателя берутся из `organizations` (`tax_id`, `legal_address`, `legal_phone`, `legal_email`, `bank_*`), реквизиты продавца — из конфигурации `seller_*` (ARCHITECTURE_PLAN §10).
+
+| Method | Path | Назначение |
+|---|---|---|
+| POST | `/manager/orders/{orderId}/invoice` | (MANAGER) Выставить счёт по заказу. `Idempotency-Key`. → 201 `SuccessResponse[InvoiceOut]`. |
+| POST | `/manager/invoices/{invoiceId}/pdf` | (MANAGER) Перерендерить PDF после `FAILED` или правки реквизитов. → 202 `SuccessResponse[InvoiceOut]`. |
+| PATCH | `/manager/invoices/{invoiceId}` | (MANAGER) Сменить статус счёта. `If-Match` по `invoices.version`. → 200 `SuccessResponse[InvoiceOut]`. |
+| PATCH | `/manager/organizations/{id}` | (MANAGER) Реквизиты организации для счёта: `tax_id`, `legal_address`, `legal_phone`, `legal_email`, `bank_name`, `bank_code`, `bank_account`. `If-Match` по `organizations.version`. → 200 `SuccessResponse[OrganizationOut]`. |
+| GET | `/orders/{orderId}/invoice` | Счёт по заказу: клиент — только свой, менеджер — любой. → 200 `SuccessResponse[InvoiceOut]`. |
+| GET | `/orders/invoices/{invoiceId}/download` | Скачивание PDF байтами: клиент своей организации или менеджер; `Content-Disposition: attachment`. |
+
+`POST /api/v2/manager/orders/{orderId}/invoice` принимает `Idempotency-Key` (формат как у orders, §11): повтор с тем же key возвращает тот же счёт, тот же key с другим fingerprint — `409 IDEMPOTENCY_KEY_REUSED`. Заказ в статусе `CANCELLED` → `409 ORDER_NOT_INVOICABLE`; счёт на заказ уже существует (1:1) → `409 INVOICE_ALREADY_EXISTS`. Создание ставит `pdfStatus=PENDING`, назначает `number` вида `СЧ-YYYY-NNNNNN` и ставит Celery-задачу рендера; rate-limit 10/час на менеджера.
+
+`POST /api/v2/manager/invoices/{invoiceId}/pdf` снова переводит `pdfStatus` в `PENDING` и ставит задачу; при `PENDING` → `409 INVOICE_PDF_IN_PROGRESS`. `PATCH /api/v2/manager/invoices/{invoiceId}` принимает `{status: ISSUED|PAID|CANCELLED}`; `If-Match` берётся по `invoices.version`, а не по версии заказа, stale → `409 STALE_RESOURCE_VERSION`. Смена статуса счёта не трогает статус заказа. Обе операции пишут audit (`invoice.update`).
+
+Рендер PDF — Celery-задача (weasyprint + Jinja2 `app/templates/pdf/invoice.j2`), результат кладётся в S3 `pdf-catalogs/invoices/invoice-{seq}.pdf` и регистрируется как постоянный `FileAsset` (`type=INVOICE_PDF`, `order_id`, `visibility=AUTHED`). Состояние рендера — колонка `invoices.pdf_status` (`PENDING`/`READY`/`FAILED`), а не Redis job: после рестарта воркера счёт явно `FAILED` и перерендеривается. Шаблон печатает замороженные позиции из `product_snapshot`/`unit_price`, реквизиты продавца и покупателя, адрес доставки и строку «Без выделения НДС» (фиксированная строка, §16 п.40).
+
+`GET /api/v2/orders/{orderId}/invoice` возвращает `404 INVOICE_NOT_FOUND`, если счёта нет, и не раскрывает счёт постороннему. `GET /api/v2/orders/invoices/{invoiceId}/download` при `pdfStatus != READY` → `409 INVOICE_PDF_NOT_READY`, при отсутствии доступа или счёта → `404`, при недоступном хранилище → `502 STORAGE_UNAVAILABLE`; S3-ключ наружу не выдаётся.
+
+Форма `InvoiceOut`: `id`, `orderId`, `number`, `status` (`ISSUED|PAID|CANCELLED`), `pdfStatus` (`PENDING|READY|FAILED`), `total` (`Money`), `issuedAt`, `dueAt` (`YYYY-MM-DD` | `null`), `version`, `buyer` (`legalName`, `taxId`?, `legalAddress`?, `bank`?) и `seller` (тот же набор). Денежные суммы — decimal string + currency, используется Money-схема v2 (§5); float в публичных схемах отсутствует. `GET /orders/{orderId}` дополняется блоком `invoice: InvoiceOut | null`, а `OrderSummary` в collection — сокращённым `invoice: {id, number, status} | null`; строка `«Скачать счёт»` в коллекции не выводится.
+
 ## 13. Notifications and jobs
 
 | Method | Path | Назначение |
@@ -489,6 +518,7 @@ Manager v2 resources:
 - product/series documents (PDF upload, delete — §8 «Product documents», §14);
 - brands and series aggregates;
 - orders/status transitions;
+- invoices: issue per order, status transitions, PDF re-render, organization billing details (§12 «Invoices», §16 п.40);
 - imports, price versions, rollback;
 - currencies;
 - files and media;
