@@ -34,11 +34,13 @@ from app.models.enums import (
     OrganizationRole,
     UserRole,
 )
+from app.core.config import settings
 from app.models.file import FileAsset
 from app.models.invoice import Invoice
 from app.models.order import Order, OrderItem
 from app.models.organization import Organization
 from app.models.system import AuditLog
+from app.schemas.v2.invoices import InvoicePartyBank, invoice_buyer, invoice_seller
 from app.services import storage
 from tests.conftest import (
     add_organization_membership,
@@ -823,3 +825,38 @@ async def test_organization_billing_patch_requires_manager(api_client, session_f
 
     assert response.status_code == 403
     assert response.json()["code"] == "PERMISSION_DENIED"
+
+async def test_invoice_party_bank_is_null_when_requisites_absent(
+    session_factory,
+):
+    """Пустые банковские реквизиты не превращаются в три прочерка в PDF.
+
+    Проекция ``buyer``/``seller`` отдаёт ``bank: null``, пока не заполнено ни
+    одного поля: иначе шаблон печатает «Банк/Код банка/Р-с: —», и счёт выглядит
+    недозаполненным (§10 «Счёт на оплату»).
+    """
+    organization = await create_organization(
+        session_factory, legal_name="ООО Без банковских реквизитов"
+    )
+    assert invoice_buyer(organization).bank is None
+
+    async with session_factory() as session:
+        stored = await session.get(Organization, organization.id)
+        stored.bank_account = "BY11POIS30000000000000000000POIS"
+        await session.commit()
+
+    async with session_factory() as session:
+        reloaded = await session.get(Organization, organization.id)
+        # Достаточно одного заполненного поля, чтобы блок печатался.
+        assert invoice_buyer(reloaded).bank == InvoicePartyBank(
+            name=None, code=None, account="BY11POIS30000000000000000000POIS"
+        )
+
+
+def test_invoice_seller_bank_is_null_without_config(monkeypatch):
+    """У продавца без ``seller_*`` в конфиге банковский блок не печатается."""
+    monkeypatch.setattr(settings, "seller_bank_name", None)
+    monkeypatch.setattr(settings, "seller_bank_code", None)
+    monkeypatch.setattr(settings, "seller_bank_account", None)
+
+    assert invoice_seller().bank is None

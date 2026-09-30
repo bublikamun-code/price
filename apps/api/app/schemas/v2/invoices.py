@@ -106,6 +106,19 @@ def invoice_summary(invoice: Invoice) -> InvoiceSummary:
     )
 
 
+def _party_bank(
+    name: str | None, code: str | None, account: str | None
+) -> InvoicePartyBank | None:
+    """Банковские реквизиты стороны; ``None``, если не заполнено ни одного поля.
+
+    Иначе шаблон печатал бы три прочерка «Банк/Код банка/Р-с» на пустом месте —
+    в PDF это выглядит как недозаполненный документ.
+    """
+    if not (name or code or account):
+        return None
+    return InvoicePartyBank(name=name, code=code, account=account)
+
+
 def invoice_buyer(organization: Organization | None) -> InvoiceParty:
     """Реквизиты покупателя — из organizations (может отсутствовать)."""
     if organization is None:
@@ -119,10 +132,8 @@ def invoice_buyer(organization: Organization | None) -> InvoiceParty:
         legal_name=organization.legal_name,
         tax_id=organization.tax_id,
         legal_address=organization.legal_address,
-        bank=InvoicePartyBank(
-            name=organization.bank_name,
-            code=organization.bank_code,
-            account=organization.bank_account,
+        bank=_party_bank(
+            organization.bank_name, organization.bank_code, organization.bank_account
         ),
     )
 
@@ -137,10 +148,10 @@ def invoice_seller() -> InvoiceParty:
         legal_name=settings.seller_legal_name or "—",
         tax_id=settings.seller_tax_id or None,
         legal_address=settings.seller_address or None,
-        bank=InvoicePartyBank(
-            name=settings.seller_bank_name or None,
-            code=settings.seller_bank_code or None,
-            account=settings.seller_bank_account or None,
+        bank=_party_bank(
+            settings.seller_bank_name or None,
+            settings.seller_bank_code or None,
+            settings.seller_bank_account or None,
         ),
     )
 
