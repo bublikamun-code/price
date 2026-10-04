@@ -52,7 +52,7 @@
     ├── docker-compose.yml      # dev (все сервисы)
     ├── docker-compose.prod.yml # prod-override
     ├── nginx/nginx.conf
-    └── minio/init.sh           # создание бакетов
+    └── scripts/               # backup_db.sh, restore_db.sh, docker-idle.sh
 ```
 
 ---
@@ -88,7 +88,7 @@ make migrate
 | Web (клиент) | http://localhost:3000 |
 | API (FastAPI) + Swagger | http://localhost:8000/docs |
 | Nginx (единый вход) | http://localhost:8080 (override: `DEV_NGINX_PORT` в `.env` — напр. 8081 при конфликте портов с соседними проектами; аналогично `DEV_DB_PORT`/`DEV_REDIS_PORT`) |
-| MinIO Console | http://localhost:9001 (minioadmin / minioadmin) |
+| RustFS Console | http://localhost:9001 (minioadmin / minioadmin) |
 | PostgreSQL | localhost:5432 (price / price_secret) |
 | Redis | localhost:6379 |
 
@@ -116,12 +116,12 @@ make test          # тесты
 | 1 — БД и ядро BE | ✅ | модели, миграции, конфиг, structlog |
 | 2 — Авторизация + RBAC | ✅ | JWT/сессии, `require_role`, seed-менеджер, CSRF double-submit |
 | 3 — Каталог и цены | ✅ | PricingService, API и frontend каталога/карточки товара; Redis-кэш каталога, фильтров и рассчитанных цен с теговой инвалидацией; индексированный pg_trgm-поиск |
-| 4 — Импорт CSV (Celery) | ✅ | upload→polars→upsert→PriceHistory→отчёт ошибок→MinIO и manager import UI; streaming upload в S3; rollback версии прайса (§16 п.14); photo-ZIP: webp thumb/large + матчинг к сериям + `series_photo` CSV (§16 п.17) |
+| 4 — Импорт CSV (Celery) | ✅ | upload→polars→upsert→PriceHistory→отчёт ошибок→S3 и manager import UI; streaming upload в S3; rollback версии прайса (§16 п.14); photo-ZIP: webp thumb/large + матчинг к сериям + `series_photo` CSV (§16 п.17) |
 | 5 — Frontend | ✅ | все экраны MVP: login, каталог/карточка, корзина/checkout, заявки, избранное, профиль, consent, уведомления (pull, колокольчик), массовое добавление, файлы + manager-страницы (§16 п.20) |
 | 6–8 — Заявки и менеджер | ✅ | заявки клиента/менеджера; экспорт каталога CSV/XLSX (PDF отложен, §16 п.16); файловый архив `/files` + `/manager/files` (§16 п.18); клиенты/скидки/курсы/аудит (§16 п.19): `/manager/users` CRUD + temp-пароли + матрица скидок + fixed-rate, `/manager/currency`, `/manager/audit`; дозакрытие экранов (§16 п.20): дашборд (фича G, кэш 60 с), `/manager/catalog` + PATCH товара (аудит, инвалидация кэша), `/manager/brands` + фото серий, уведомления in-app pull, `/bulk-add` (фича B), `/consent` (п.10) |
 | 9 — Hardening | ✅ | rollback версии прайса, rate limits + Redis, валидация файлов, CSRF-фикс стейл-кук (§16 п.21), 2FA TOTP для менеджера + журнал сессий с отзывом (§16 п.22); i18n исключён каноном (§16 п.9 — RU-only) |
 | 10 — Observability и тесты | ✅ | `/metrics` (instrumentator) + Pushgateway для Celery; `make obs-up` — Prometheus+Grafana (2 дашборда)+Alertmanager (правила §12)+Pushgateway; E2E Playwright `make test-e2e` (9 сценариев §13); k6-скрипты `infra/k6/` (`make test-load[-import]`, нужен k6 на хосте); Loki/Tempo/Uptime Kuma и CI → Этап 11 (§16 п.23) |
-| 11 — Деплой в prod | ✅ (комплект) | `nginx.prod.conf` (TLS1.3+HSTS, :80→301, /metrics allow приватные сети), prod-overlay харднинг (порты db/redis/minio закрыты, фиксы merge-багов), `make prod-up/prod-down/prod-logs/prod-migrate`, `make backup` (pg_dump -Fc, retention 30 д.) + `backup-list`, `make gen-self-signed-certs`, `docs/RUNBOOK.md`, CI `.github/workflows/ci.yml` (lint→test→security→build; registry/WAL-G — пост-MVP, §16 п.24) |
+| 11 — Деплой в prod | ✅ (комплект) | `nginx.prod.conf` (TLS1.3+HSTS, :80→301, /metrics allow приватные сети), prod-overlay харднинг (порты db/redis/rustfs закрыты, фиксы merge-багов), `make prod-up/prod-down/prod-logs/prod-migrate`, `make backup` (pg_dump -Fc, retention 30 д.) + `backup-list`, `make gen-self-signed-certs`, `docs/RUNBOOK.md`, CI `.github/workflows/ci.yml` (lint→test→security→build; registry/WAL-G — пост-MVP, §16 п.24) |
 | 11.5 — 1С-заглушки | ✅ | subroute `/api/integrations/1c` (§18): 4 эндпоинта → 501; `X-Integration-Token` (401) + IP-allowlist CIDR (403), пустой токен → 503; DTO `schemas/commerceml/`; 27 тестов |
 | 12 | ⬜ | TG Mini App (post-MVP) |
 | 13 | 🚧 | Нативные клиенты iOS + Android (§16 п.36): общее KMP-ядро `core/` ✅ (26 тестов на общих фикстурах, `make mobile-test`), native auth в v2 (`clientType=NATIVE`, refresh в теле, ротация + reuse detection) ✅, v2 media resources (§16 п.37) ✅, UI первой версии (вход/прайс/каталог): iOS **собирается и линкуется** против настоящего KMP-фреймворка (`xcodebuild` → `BUILD SUCCEEDED`), но ещё ни разу не запускался — на машине нет iOS Simulator runtime; Android написан и выверен по сигнатурам ядра, но **не компилировался** (нет Android SDK). Подробности и список непроверенного — `ios/PriceWebApp/README.md` и `android/README.md`. Контракт — `docs/NATIVE_API_CONTRACT.md` |

@@ -243,9 +243,11 @@ stop_stack() {
   log "стек выключен"
 }
 
-# Локально стек живёт без minio/createbuckets: их образы уже не тянутся с Docker Hub,
-# поэтому `docker compose up -d` без списка сервисов падает на pull. Держим рабочий набор.
-SERVICES="${DOCKER_IDLE_SERVICES:-db redis api web nginx}"
+# Полный набор сервисов. Раньше здесь был жёсткий список без S3: образы MinIO
+# удалены с Docker Hub, поэтому `docker compose up -d` без списка падал на pull и
+# локально файловое хранилище просто не работало. С переходом на RustFS
+# (infra/docker-compose.yml) стек поднимается целиком.
+SERVICES="${DOCKER_IDLE_SERVICES:-db redis rustfs s3init api web nginx}"
 
 compose() { docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" -p "$COMPOSE_PROJECT" "$@"; }
 

@@ -10,6 +10,12 @@ interface ApiErrorLike {
   data?: unknown
   response?: { status?: unknown; _data?: unknown }
   statusCode?: unknown
+  /**
+   * Статус, который кладёт в поле `status` AppProblem (domain/api/v2/problem.ts)
+   * — обёртка ошибок API v2. Без него getErrorStatus() на v2-ошибке давал
+   * undefined, и проверки вида `=== 404` на v2-страницах не срабатывали.
+   */
+  status?: unknown
 }
 
 function asRecord(value: unknown): ErrorRecord | undefined {
@@ -55,7 +61,10 @@ export function mapProblemDetails(e: unknown, fallback: string): MappedApiError 
   const status =
     toStatus(payload?.status) ??
     toStatus(response?.status) ??
-    (e && typeof e === 'object' ? toStatus((e as ApiErrorLike).statusCode) : undefined)
+    (e && typeof e === 'object' ? toStatus((e as ApiErrorLike).statusCode) : undefined) ??
+    // AppProblem/ofetch кладут HTTP-статус прямо в error.status и не имеют
+    // ни .data, ни .response — без этой ветки mapProblemDetails терял статус.
+    (e && typeof e === 'object' ? toStatus((e as ApiErrorLike).status) : undefined)
   const errors = problemErrors(payload)
   const detail = toText(payload?.detail)
   const title = toText(payload?.title)

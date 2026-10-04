@@ -7,6 +7,7 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAG
 
 const route = useRoute()
 const { request } = useApi()
+const { show } = useToast()
 
 const STATUS_META = ORDER_STATUS_META
 
@@ -14,6 +15,9 @@ const STATUS_OPTIONS: OrderStatus[] = ['NEW', 'IN_PROGRESS', 'SHIPPED', 'COMPLET
 
 const loading = ref(true)
 const error = ref('')
+// Сбой смены статуса — ошибка действия, а не загрузки: её показываем у поля
+// статуса, чтобы не выдавать за состояние всей страницы.
+const statusError = ref('')
 const notFound = ref(false)
 const order = ref<OrderRead | null>(null)
 const selectedStatus = ref<OrderStatus>('NEW')
@@ -45,6 +49,7 @@ function xlsxFileName(): string {
 async function load() {
   loading.value = true
   error.value = ''
+  statusError.value = ''
   notFound.value = false
   try {
     order.value = await request<OrderRead>(`/api/v1/manager/orders/${route.params.id}`)
@@ -61,16 +66,17 @@ async function saveStatus() {
   if (!order.value || saving.value) return
   if (selectedStatus.value === order.value.status) return
   saving.value = true
-  error.value = ''
+  statusError.value = ''
   try {
     order.value = await request<OrderRead>(`/api/v1/manager/orders/${order.value.id}`, {
       method: 'PATCH',
       body: { status: selectedStatus.value },
     })
+    show(`Статус заявки: ${STATUS_META[order.value.status].label}`, { type: 'success' })
   } catch (e) {
     // 409 — запрещённый переход; восстанавливаем select.
     selectedStatus.value = order.value!.status
-    error.value = getErrorMessage(e, 'Не удалось изменить статус (возможно, переход запрещён)')
+    statusError.value = getErrorMessage(e, 'Не удалось изменить статус (возможно, переход запрещён)')
   } finally {
     saving.value = false
   }
@@ -92,16 +98,28 @@ onMounted(load)
       <div class="skeleton h-64 w-full"/>
     </div>
 
-    <div v-else-if="notFound" class="border border-border bg-surface p-6 text-center">
-      <Icon name="heroicons:archive-box-x-mark" class="size-8 mb-3 text-ink-faint" />
-      <p class="text-ink-muted mb-4">Заявка не найдена</p>
-      <NuxtLink to="/manager/orders" class="btn-primary">К списку заявок</NuxtLink>
-    </div>
+    <UiEmptyState
+      v-else-if="notFound"
+      class="border border-border bg-surface"
+      title="Заявка не найдена"
+      description="Проверьте номер заявки или вернитесь к списку — возможно, она была удалена."
+      icon="heroicons:archive-box-x-mark"
+    >
+      <template #action>
+        <NuxtLink to="/manager/orders" class="btn-primary min-h-11 inline-flex items-center">К списку заявок</NuxtLink>
+      </template>
+    </UiEmptyState>
 
-    <div v-else-if="error && !order" class="border border-danger/50 bg-danger-soft p-5">
-      <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-outline min-h-11" @click="load">Повторить</button></div>
-    </div>
+    <UiErrorState
+      v-else-if="error && !order"
+      class="mb-5"
+      title="Заявка недоступна"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-else-if="order">
       <!-- Шапка -->
@@ -119,7 +137,26 @@ onMounted(load)
         </template>
       </PageHeading>
 
-      <div v-if="error || xlsxError" class="badge-danger w-full justify-center py-2 mb-4">{{ error || xlsxError }}</div>
+      <UiErrorState
+        v-if="error"
+        class="mb-4"
+        title="Не удалось обновить заявку"
+        :description="error"
+      >
+        <template #action>
+          <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+        </template>
+      </UiErrorState>
+      <UiErrorState
+        v-if="xlsxError"
+        class="mb-4"
+        title="Excel-файл недоступен"
+        :description="xlsxError"
+      >
+        <template #action>
+          <UiButton variant="secondary" size="compact" @click="exportOrderXlsx(order.id, xlsxFileName())">Повторить</UiButton>
+        </template>
+      </UiErrorState>
 
       <!-- Управление статусом -->
       <div class="mb-5 border border-border bg-surface p-4">
@@ -134,7 +171,7 @@ onMounted(load)
             :disabled="saving || selectedStatus === order.status"
             @click="saveStatus"
           >
-            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
             <Icon v-else name="heroicons:check" class="w-4 h-4" />
             Применить
           </button>
@@ -142,6 +179,13 @@ onMounted(load)
             Допустимые переходы: NEW → В работе/Отменена, В работе → Отгружена/Отменена, Отгружена → Завершена/Отменена.
           </p>
         </div>
+
+        <UiErrorState
+          v-if="statusError"
+          class="mt-4"
+          title="Не удалось изменить статус"
+          :description="statusError"
+        />
       </div>
 
       <!-- Счёт на оплату (§16 п.40) -->

@@ -10,7 +10,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password
+from app.core.security import hash_password_async
 from app.models.user import User
 from app.repositories import admin as admin_repo
 from app.repositories import audit as audit_repo
@@ -65,7 +65,7 @@ class AdminUsersService:
         user = await admin_repo.create_manager(
             self.db,
             email=email,
-            password_hash=hash_password(temp_password),
+            password_hash=await hash_password_async(temp_password),
             full_name=payload.full_name,
             phone=payload.phone,
         )

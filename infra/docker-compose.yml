@@ -7,7 +7,7 @@ name: price-portal
 services:
   # ---------- База данных ----------
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     container_name: pp-db
     restart: unless-stopped
     environment:
@@ -27,7 +27,7 @@ services:
 
   # ---------- Кэш / брокер Celery ----------
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: pp-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
@@ -43,44 +43,54 @@ services:
     networks: [pp-net]
 
   # ---------- S3-хранилище (фото, PDF, экспорты) ----------
-  minio:
-    image: minio/minio:latest
-    container_name: pp-minio
+  # MinIO удалил свои образы с Docker Hub: в пространстве имён `minio` больше нет
+  # репозиториев `minio` и `mc`, поэтому `docker compose up` падал на pull с
+  # «pull access denied» на любой машине, включая чистый клон репозитория.
+  # Замена — RustFS: S3-совместимый сервер, один бинарник. Проверен на boto3 из
+  # apps/api (SigV4 + path-style addressing) — создание бакета, загрузка, чтение,
+  # листинг. Прод на VPS использует нативный MinIO (docs/PROD-h215691.md) и этого
+  # изменения не касается.
+  # Все образы запинены по digest: при переезде на другую машину поднимется ровно
+  # та же версия, а не «latest на момент запуска».
+  rustfs:
+    image: rustfs/rustfs@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff
+    container_name: pp-rustfs
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+      RUSTFS_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      RUSTFS_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
     volumes:
-      - minio-data:/data
+      - rustfs-data:/data
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web Console
+      - "${DEV_S3_PORT:-9000}:9000"           # S3 API
+      - "${DEV_S3_CONSOLE_PORT:-9001}:9001"   # Web Console
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/ready"]
       interval: 15s
       timeout: 5s
       retries: 5
     networks: [pp-net]
 
-  # Разовое создание бакетов при первом старте
-  createbuckets:
-    image: minio/mc:latest
-    container_name: pp-minio-init
+  # Разовое создание бакетов при первом старте. Раньше здесь был `minio/mc` с
+  # `mc mb -p`; образа mc больше нет, поэтому используется aws-cli.
+  s3init:
+    image: amazon/aws-cli@sha256:95f8d1e6d31aaa16997d1406eb532b0ca6a9830fe8a859c37a0fd223f10959e5
+    container_name: pp-s3-init
     depends_on:
-      minio:
+      rustfs:
         condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-minioadmin}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
     entrypoint: >
       /bin/sh -c "
-      sleep 2;
-      mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin};
-      mc mb -p local/${S3_BUCKET_PHOTOS:-photos-series} || true;
-      mc mb -p local/${S3_BUCKET_PDFS:-pdf-catalogs}   || true;
-      mc mb -p local/${S3_BUCKET_EXPORTS:-csv-exports} || true;
-      mc mb -p local/${S3_BUCKET_TMP:-tmp-uploads}     || true;
-      mc mb -p local/${S3_BUCKET_ERRORS:-error-logs}   || true;
-      mc anonymous set download local/${S3_BUCKET_PHOTOS:-photos-series} || true;
-      exit 0;
+      set -e;
+      A='--endpoint-url http://rustfs:9000';
+      for b in $${S3_BUCKET_PHOTOS:-photos-series} $${S3_BUCKET_PDFS:-pdf-catalogs} $${S3_BUCKET_EXPORTS:-csv-exports} $${S3_BUCKET_TMP:-tmp-uploads} $${S3_BUCKET_ERRORS:-error-logs}; do
+        aws $$A s3api head-bucket --bucket $$b >/dev/null 2>&1 || aws $$A s3api create-bucket --bucket $$b;
+      done;
+      echo 'бакеты S3 готовы';
       "
     networks: [pp-net]
 
@@ -207,7 +217,7 @@ services:
 
   # ---------- Nginx (единый вход, reverse proxy) ----------
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
     container_name: pp-nginx
     restart: unless-stopped
     depends_on:
@@ -255,7 +265,7 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  minio-data:
+  rustfs-data:
   web-tools-node-modules:
 
 networks:

@@ -32,8 +32,8 @@ from app.core.logging import get_logger
 from app.core.security import (
     create_access_token,
     decode_token,
-    hash_password,
-    verify_password,
+    hash_password_async,
+    verify_password_async,
 )
 from app.models.pricing import ExchangeRate
 from app.models.user import (
@@ -170,7 +170,7 @@ class AuthService:
             # одинаковая ошибка чтобы не светить существование email;
             # счётчик не трогаем — иначе атакующий лочил бы произвольные email
             raise AuthError("Неверный email или пароль")
-        if not verify_password(password, user.password_hash):
+        if not await verify_password_async(password, user.password_hash):
             attempts = await record_login_failure(
                 email, settings.login_max_attempts, settings.login_lockout_minutes, ip
             )
@@ -316,7 +316,7 @@ class AuthService:
             if rate is not None:
                 fixed_rate = MyTermsFixedRate(
                     currency=rate.currency_code,
-                    rate=float(rate.rate),
+                    rate=rate.rate,
                     source=rate.source,
                     fetched_at=datetime.combine(
                         rate.fetched_at, datetime.min.time(), tzinfo=timezone.utc
@@ -327,7 +327,7 @@ class AuthService:
                 MyTermsBrandDiscount(
                     brand_id=row.brand_id,
                     brand_name=row.brand_name,
-                    discount_percent=float(row.percent),
+                    discount_percent=row.percent,
                 )
                 for row in rows
             ],
@@ -418,7 +418,7 @@ class AuthService:
         codes = [_generate_recovery_code() for _ in range(_RECOVERY_CODES_COUNT)]
         for plain in codes:
             self.db.add(
-                TotpRecoveryCode(user_id=user.id, code_hash=hash_password(plain), used_at=None)
+                TotpRecoveryCode(user_id=user.id, code_hash=await hash_password_async(plain), used_at=None)
             )
         await audit_repo.create_audit(
             self.db,
@@ -464,7 +464,7 @@ class AuthService:
         confirmed = (
             code is not None
             and (self._check_totp(user, code) or await self._try_use_recovery(user, code, commit=False))
-        ) or (password is not None and verify_password(password, user.password_hash))
+        ) or (password is not None and await verify_password_async(password, user.password_hash))
         if not confirmed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -527,7 +527,7 @@ class AuthService:
             )
         )
         for rc in unused:
-            if verify_password(normalized, rc.code_hash):
+            if await verify_password_async(normalized, rc.code_hash):
                 rc.used_at = datetime.now(timezone.utc)
                 if commit:
                     await self.db.commit()
@@ -767,7 +767,7 @@ class AuthService:
         user = await self.db.get(User, prt.user_id)
         if user is None or not user.is_active:
             return False
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         prt.used_at = now
         # revoke_all_sessions коммитит транзакцию целиком и инвалидирует сессии.
         await self.revoke_all_sessions(user, current_refresh_plain=None)
@@ -791,12 +791,12 @@ class AuthService:
         выживает, чтобы не разлогинить только что сменившего пароль).
         Ошибки: HTTPException 400 (неверный текущий пароль).
         """
-        if not verify_password(current_password, user.password_hash):
+        if not await verify_password_async(current_password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Неверный текущий пароль",
             )
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         user.must_change_password = False
         # revoke_all_sessions коммитит и чистит кэш сессий; текущая сессия
         # (совпадает refresh-хэш с кукой) не трогается.

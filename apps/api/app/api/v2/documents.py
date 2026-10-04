@@ -13,7 +13,6 @@ product detail (v2 ``catalog.py``), скачивание — байтами, п�
 from __future__ import annotations
 
 import uuid
-from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -33,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v2.errors import V2ProblemError, problem_responses, request_id_for
 from app.core.config import settings
 from app.core.deps import get_current_user, require_role
+from app.core.sanitize import content_disposition
 from app.db.session import get_db
 from app.models.enums import FileAssetType, UserRole
 from app.models.user import User
@@ -66,14 +66,12 @@ def _validated_idempotency_key(value: str | None) -> str | None:
 
 
 def _content_disposition(filename: str) -> str:
-    """attachment с UTF-8 именем: ASCII-фолбэк + RFC 5987 filename*."""
-    ascii_fallback = (
-        filename.encode("ascii", "ignore").decode("ascii").strip() or "document.pdf"
-    )
-    return (
-        f'attachment; filename="{ascii_fallback}"; '
-        f"filename*=UTF-8''{quote(filename)}"
-    )
+    """attachment с UTF-8 именем: ASCII-фолбэк + RFC 5987 filename*.
+
+    Санитизация — в app.core.sanitize: имя файла приходит от клиента и без
+    очистки позволял подделать заголовок ответа (§11).
+    """
+    return content_disposition(filename, default="document.pdf")
 
 
 async def _upload_document(

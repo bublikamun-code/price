@@ -81,6 +81,11 @@ apps/api/alembic/versions/__pycache__/
 apps/api/celerybeat-schedule
 test-results/
 
+# --- Playwright E2E: артефакты прогонов (trace, скриншоты, html-report,
+#     сохранённая сессия менеджера) — генерируются, в git не коммитятся ---
+apps/web/e2e/.artifacts/
+apps/web/playwright-report/
+
 # --- Mobile (этап 13): только исходники, сборка мимо git ---
 core/.gradle/
 core/.kotlin/
@@ -93,3 +98,10 @@ ios/build/
 ios/DerivedData/
 ios/PriceWebApp/build/
 ios/build-device/
+
+# Playwright: локальные артефакты прогонов
+.pw-browsers/
+apps/web/test-results/
+
+# --- Локальный npm-кэш (provision-скрипты, не часть проекта) ---
+.npm-cache/

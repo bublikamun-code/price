@@ -17,6 +17,7 @@
 import codecs
 import re
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -192,7 +193,10 @@ async def import_prices(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="base_currency должна состоять ровно из 3 латинских букв",
         )
-    rate = 1.0 if cur == "BYN" else float(rate_to_byn or 1.0)
+    # Поле формы остаётся float — контракт эндпоинта (OpenAPI number и 422 от
+    # FastAPI на нечисловом значении) прежний. Внутри курс становится Decimal
+    # до записи в Numeric(12, 4), а не после: str(float) не теряет знаков.
+    rate = Decimal(1) if cur == "BYN" else Decimal(str(rate_to_byn or 1.0))
     if rate <= 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="rate_to_byn должен быть > 0"

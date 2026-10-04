@@ -10,6 +10,9 @@
   3. GET /catalog/export/{job_id}: DONE + presigned url; чужой пользователь → 404;
      случайный job_id → 404.
   4. Фильтры: brand_ids ограничивает выгрузку товарами бренда.
+  5. CSV/XLSX-инъекции (§11): значение-формула в названии товара / способе
+     получения не должно ни вычисляться Excel'ем, ни превращаться в формулу
+     openpyxl (``data_type='f'``).
 """
 import asyncio
 import csv
@@ -17,17 +20,20 @@ import io
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from openpyxl import load_workbook
 
 from app.api.v1 import catalog as catalog_api
 from app.core.config import settings
+from app.importers.csv_price import RowError
 from app.models.enums import UserRole
 from app.repositories.catalog import CatalogFilters
 from app.services import export as export_service
 from app.services.storage import StorageError
 from app.tasks import export_catalog as export_task
+from app.tasks import export_products_full, import_price_list
 from tests.conftest import (
     create_brand,
     create_product,
@@ -226,11 +232,14 @@ class TestExportTask:
         rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig")), delimiter=";"))
         assert rows[0] == COLUMNS
         # сортировка по имени: Gadget < Widget
+        # Деньги в CSV — канонические два знака (Decimal, а не repr(float)):
+        # «200.0» превратилось бы в «200.00», зато сумма читается из файла
+        # однозначно и совпадает с Numeric-колонкой.
         assert rows[1] == ["B-2", "Gadget", "IEK", "",
-                           "IN_STOCK", "200.0", "200.0", "BYN"]
-        # A-1: скидка 10% на KEAZ → unit_price 90.0
+                           "IN_STOCK", "200.00", "200.00", "BYN"]
+        # A-1: скидка 10% на KEAZ → unit_price 90.00
         assert rows[2] == ["A-1", "Widget", "KEAZ", "Optibox",
-                           "IN_STOCK", "100.0", "90.0", "BYN"]
+                           "IN_STOCK", "100.00", "90.00", "BYN"]
 
     async def test_xlsx_readable_by_openpyxl(
         self, session_factory, monkeypatch, job_redis, dispatched
@@ -486,3 +495,151 @@ class TestStaleRunningJob:
 
         assert state["status"] == "FAILED"
         assert "прерван" in state["error"]
+
+
+# ===========================================================================
+# 5. CSV/XLSX-инъекции (§11) — значения-формулы не должны вычисляться
+# ===========================================================================
+FORMULA_NAME = "=cmd|'/c calc.exe'!A1"
+FORMULA_ATTR = "@SUM(1+1)*cmd|' /C calc'!A0"
+
+
+class TestSpreadsheetInjection:
+    """Регресс на CSV/XLSX-инъекции (§11). asyncio_mode=auto — async-тесты класса
+    выполняются без явного маркера, синхронные юниты работают как обычно."""
+
+    async def test_catalog_csv_neutralizes_formula_name(
+        self, session_factory, monkeypatch, job_redis, dispatched
+    ):
+        """Название товара ``=cmd|...`` в CSV получает апостроф-префикс."""
+        client = await create_user(
+            session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT
+        )
+        brand = await create_brand(session_factory, name="KEAZ")
+        await create_product(session_factory, sku="F-1", name=FORMULA_NAME,
+                             brand=brand, base_price=100)
+        job_id = await export_service.start_export(
+            user=client, filters=CatalogFilters(), format="csv",
+            price_calc_mode="fixed",
+        )
+
+        result, uploads = await _run_task(
+            session_factory, monkeypatch, job_id=job_id, user=client,
+            filters={"q": None, "brand_ids": [], "series_ids": [], "stock": None},
+            fmt="csv",
+        )
+
+        assert result["status"] == "DONE"
+        rows = list(
+            csv.reader(
+                io.StringIO(uploads[0]["body"].decode("utf-8-sig")), delimiter=";"
+            )
+        )
+        assert rows[0] == COLUMNS  # заголовок не тронут
+        assert rows[1][1] == f"'{FORMULA_NAME}"  # Excel не вычислит значение
+        # цены остались числами (обёртка не ломает числовые колонки) —
+        # Decimal печатается двумя знаками: 100.00
+        assert rows[1][5] == "100.00" and rows[1][6] == "100.00"
+
+    async def test_catalog_xlsx_keeps_formula_as_text(
+        self, session_factory, monkeypatch, job_redis, dispatched
+    ):
+        """В XLSX значение-формула остаётся текстом (``data_type='s'``)."""
+        client = await create_user(
+            session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT
+        )
+        brand = await create_brand(session_factory, name="KEAZ")
+        await create_product(session_factory, sku="F-1", name=FORMULA_NAME,
+                             brand=brand, base_price=100)
+        job_id = await export_service.start_export(
+            user=client, filters=CatalogFilters(), format="xlsx",
+            price_calc_mode="fixed",
+        )
+
+        result, uploads = await _run_task(
+            session_factory, monkeypatch, job_id=job_id, user=client,
+            filters={"q": None, "brand_ids": [], "series_ids": [], "stock": None},
+            fmt="xlsx",
+        )
+
+        assert result["status"] == "DONE"
+        ws = load_workbook(io.BytesIO(uploads[0]["body"])).active
+        assert ws["B2"].data_type == "s"  # не 'f' — живой формулы нет
+        assert ws["B2"].value == f"'{FORMULA_NAME}"
+        assert ws["A2"].value == "F-1"  # обычные значения не тронуты
+        assert float(ws["F2"].value) == 100.0  # цена осталась числом
+
+    def test_order_xlsx_neutralizes_client_data(self):
+        """XLSX заявки для 1С: ФИО и delivery_point клиента — недоверенный ввод.
+
+        Главный вектор: ``delivery_point`` вводит сам клиент, а файл открывают
+        в Excel/1С. Числовые колонки (кол-во/цена/сумма) остаются числами.
+        """
+        order = SimpleNamespace(
+            seq=42,
+            created_at=datetime(2026, 9, 6, 12, 0),
+            delivery_method="delivery",
+            delivery_point=FORMULA_NAME,
+            total_amount=300,
+        )
+        client = SimpleNamespace(full_name=FORMULA_NAME, company="ООО «Ромашка»")
+        items = [
+            SimpleNamespace(
+                product_snapshot={"sku": "A-1", "name": FORMULA_ATTR},
+                quantity=3,
+                unit_price=100,
+            )
+        ]
+
+        ws = load_workbook(io.BytesIO(export_service.build_order_xlsx(
+            order=order, client=client, items=items
+        ))).active
+
+        # Шапка: ФИО и способ получения (с точкой доставки) — текст, не формула.
+        head = {row[0].value: row[1] for row in ws.iter_rows(min_col=1, max_col=2)
+                if row[0].value}
+        assert head["Клиент"].value == f"'{FORMULA_NAME}"
+        assert head["Клиент"].data_type == "s"
+        assert head["Способ получения"].value == f"Доставка ('{FORMULA_NAME})"
+        assert head["Способ получения"].data_type == "s"
+        assert head["Компания"].value == "ООО «Ромашка»"  # обычное значение цело
+
+        # Позиции: наименование — текст, кол-во/цена/сумма — числа.
+        item_row = next(r for r in ws.iter_rows() if r[0].value == "A-1")
+        assert item_row[0].value == "A-1"
+        assert item_row[1].value == f"'{FORMULA_ATTR}"
+        assert item_row[1].data_type == "s"
+        assert item_row[2].value == 3
+        assert item_row[3].value == 100.0
+        assert item_row[4].value == 300.0
+        totals = next(r for r in ws.iter_rows() if r[1].value == "Итого")
+        assert totals[4].value == 300.0  # «Итого» числом, 1С вставит как число
+
+    def test_products_full_csv_neutralizes_attribute(self):
+        """Выгрузка продукции менеджера: характеристика-формула тоже нейтрализуется."""
+        columns = ["Артикул", "Наименование", "Характеристика"]
+        body = export_products_full._to_csv_bytes(
+            columns, [["A-1", "Widget", FORMULA_ATTR], ["B-2", "Гаджет", "-12.50"]]
+        )
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig")), delimiter=";"))
+
+        assert rows[0] == columns  # заголовок не тронут
+        assert rows[1] == ["A-1", "Widget", f"'{FORMULA_ATTR}"]
+        assert rows[2][2] == "-12.50"  # отрицательное число осталось числом
+
+    def test_import_errors_csv_neutralizes_fragment(self):
+        """Отчёт об ошибках импорта содержит фрагменты присланного CSV.
+
+        ``spreadsheet_cell`` смотрит на первый символ ячейки — именно его Excel
+        и вычисляет. Если колонка/сообщение начинаются с фрагмента файла (напр.
+        ``str(exc)`` от схемы), они получают апостроф-префикс.
+        """
+        body = import_price_list._errors_to_csv([
+            RowError(row_num=3, column=FORMULA_NAME, message=FORMULA_ATTR),
+        ])
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8"))))
+
+        assert rows[0] == ["row", "column", "message"]
+        assert rows[1][0] == "3"  # номер строки — число, не обёрнут
+        assert rows[1][1] == f"'{FORMULA_NAME}"
+        assert rows[1][2] == f"'{FORMULA_ATTR}"

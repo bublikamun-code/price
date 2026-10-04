@@ -3,6 +3,8 @@
 Без БД: проверяем нормализацию строки выгрузки 1С-Битрикс.
 Колонки — коды свойств Битрикса (см. заголовок листа «OptiBox Pro»).
 """
+from decimal import Decimal
+
 from app.importers.optibox import row_to_product
 
 # Реалистичная строка выгрузки (по мотивам OptiBox_Pro_Belarus.xlsx).
@@ -90,15 +92,17 @@ def test_photo_url_duplicated_into_attributes():
 
 
 def test_test_base_price_formula():
+    # Цена — Decimal с двумя знаками: float-22.4 на самом деле 22.399999…
+    # и в Numeric(12, 2) попал бы после ещё одного округления.
     # 8 модулей → 8 + 1.8*8 = 22.40 BYN
     p8 = row_to_product(SAMPLE_ROW)
-    assert p8["base_price"] == 22.40
+    assert p8["base_price"] == Decimal("22.40")
     # 12 модулей → 8 + 1.8*12 = 29.60
     row12 = {**SAMPLE_ROW, "IE_NAME": "Корпус OptiBox Pro 12-NNR-IP40", "IP_PROP130": "12"}
-    assert row_to_product(row12)["base_price"] == 29.60
+    assert row_to_product(row12)["base_price"] == Decimal("29.60")
     # 60 модулей → 8 + 1.8*60 = 116.00
     row60 = {**SAMPLE_ROW, "IE_NAME": "Корпус OptiBox Pro 60-NNR-IP40", "IP_PROP130": "60"}
-    assert row_to_product(row60)["base_price"] == 116.00
+    assert row_to_product(row60)["base_price"] == Decimal("116.00")
 
 
 def test_empty_optionals_omitted():
@@ -111,4 +115,4 @@ def test_empty_optionals_omitted():
     assert a.get("modules") == 8
     for absent in ("color", "ip_rating", "material", "dimensions_mm", "weight_g", "photo_url"):
         assert absent not in a
-    assert p["base_price"] == 22.40
+    assert p["base_price"] == Decimal("22.40")

@@ -107,8 +107,8 @@ class Settings(BaseSettings):
     # В overlay infra/docker-compose.observability.yml: PUSHGATEWAY_URL=http://pushgateway:9091
     pushgateway_url: str = ""
 
-    # --- S3 / MinIO ---
-    s3_endpoint: str = "http://minio:9000"
+    # --- S3 (RustFS в dev/compose; нативный MinIO на VPS) ---
+    s3_endpoint: str = "http://rustfs:9000"
     s3_external_endpoint: str = "http://localhost:9000"
     s3_access_key: str = Field(min_length=1)
     s3_secret_key: str = Field(min_length=1)
@@ -176,9 +176,35 @@ class Settings(BaseSettings):
     telegram_manager_chat_id: str = ""
     telegram_webhook_url: str = ""
 
-    # --- 1С интеграция (заглушки) ---
+    # --- 1С интеграция (§18) ---
+    # Исходящий обмен (портал → 1С). Пока BASE_URL пуст — интеграция считается
+    # ненастроенной и работает заглушка (StubOneCClient): приложение стартует,
+    # /api/integrations/1c/** отвечает «интеграция не настроена».
+    integration_1c_base_url: str = ""
+    integration_1c_timeout_sec: float = 10.0
+    # Явный выключатель исходящего обмена: с заполненными настройками можно
+    # всё равно оставить заглушку (стенд без доступа к 1С, отладка).
+    integration_1c_enabled: bool = False
+    # Статический токен для ВХОДЯЩИХ запросов от 1С (header X-Integration-Token).
     integration_1c_token: str = ""
+    # Allowlist IP 1С через запятую. Пусто = проверка IP не выполняется.
     integration_1c_ip_allowlist: str = ""
+
+    @property
+    def integration_1c_ip_allowlist_list(self) -> list[str]:
+        return [ip.strip() for ip in self.integration_1c_ip_allowlist.split(",") if ip.strip()]
+
+    @property
+    def integration_1c_outbound_configured(self) -> bool:
+        """Настроен ли исходящий обмен портал → 1С (флаг + база URL)."""
+        return bool(
+            self.integration_1c_enabled and self.integration_1c_base_url.strip()
+        )
+
+    @property
+    def integration_1c_inbound_configured(self) -> bool:
+        """Настроен ли приём запросов от 1С (есть непустой статический токен)."""
+        return bool(self.integration_1c_token.strip())
 
     # --- Security / CORS ---
     rate_limit_login: str = "5/15minutes"

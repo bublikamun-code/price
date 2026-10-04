@@ -173,7 +173,7 @@ def _notify_manager_order_created(order: Order, client: User, *, items_count: in
         order_no=email_service.format_order_no(order.seq),
         client_name=client.full_name,
         client_company=client.company,
-        total_amount=float(order.total_amount),
+        total_amount=order.total_amount,  # Decimal: письмо форматирует quantize_money
         currency_code=order.currency_code,
         delivery_method=order.delivery_method,
         items_count=items_count,

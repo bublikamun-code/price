@@ -7,6 +7,7 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['ADMIN
 useHead({ title: 'Администрирование — Менеджер' })
 
 const { request } = useApi()
+const { show } = useToast()
 /* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
 const overlayDown = ref(false)
 
@@ -106,6 +107,10 @@ async function confirmToggle() {
       m.id === target.id ? { ...m, is_active: !target.is_active } : m,
     )
     confirmTarget.value = null
+    show(
+      `Менеджер ${target.full_name} ${target.is_active ? 'заблокирован' : 'разблокирован'}`,
+      { type: 'success' },
+    )
   } catch (e) {
     actionError.value = getErrorMessage(e, 'Не удалось изменить статус')
   } finally {
@@ -127,10 +132,37 @@ onMounted(load)
       </template>
     </PageHeading>
 
-    <div v-if="error" class="badge-danger w-full justify-center py-2 mb-4">{{ error }}</div>
-    <div v-if="actionError" class="badge-danger w-full justify-center py-2 mb-4">{{ actionError }}</div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить менеджеров"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
-    <div class="border border-border bg-surface">
+    <div v-if="loading" class="border border-border bg-surface p-4">
+      <UiLoadingState label="Загрузка менеджеров" />
+    </div>
+
+    <UiEmptyState
+      v-else-if="!managers.length && !error"
+      class="border border-border bg-surface"
+      title="Менеджеров пока нет"
+      description="Создайте учётную запись менеджера — он получит временный пароль для входа в портал."
+      icon="heroicons:user-group"
+    >
+      <template #action>
+        <UiButton size="touch" @click="openCreate">
+          <template #leading><Icon name="heroicons:plus" class="size-5" /></template>
+          Создать менеджера
+        </UiButton>
+      </template>
+    </UiEmptyState>
+
+    <div v-else-if="managers.length" class="border border-border bg-surface">
       <!-- На узких экранах таблица не влезает: скроллим по горизонтали
            вместо сжатия колонок до нечитаемой ширины. -->
       <div class="overflow-x-auto">
@@ -145,12 +177,6 @@ onMounted(load)
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="px-4 py-8 text-center text-ink-faint">Загрузка…</td>
-          </tr>
-          <tr v-else-if="managers.length === 0">
-            <td colspan="5" class="px-4 py-8 text-center text-ink-faint">Менеджеров пока нет</td>
-          </tr>
           <tr v-for="m in managers" :key="m.id" class="border-b border-border last:border-b-0">
             <td class="px-4 py-3 font-medium">{{ m.full_name }}</td>
             <td class="px-4 py-3">{{ m.email }}</td>
@@ -227,6 +253,12 @@ onMounted(load)
           Активные сессии будут завершены немедленно.
         </p>
         <div v-else class="mb-5" />
+        <UiErrorState
+          v-if="actionError"
+          class="mb-5"
+          title="Не удалось изменить статус менеджера"
+          :description="actionError"
+        />
         <div class="flex justify-end gap-2">
           <button type="button" class="btn-ghost min-h-11" @click="cancelToggle">Отмена</button>
           <button type="button" class="btn-primary min-h-11" :disabled="togglingId !== null" @click="confirmToggle">

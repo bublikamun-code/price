@@ -4,6 +4,7 @@ useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 
 <template>
   <div class="flex min-h-dvh flex-col bg-background text-ink">
+    <AppOfflineBanner />
     <header class="border-b border-border bg-surface">
       <div class="container-app flex h-16 items-center justify-between gap-6">
         <NuxtLink to="/" class="font-bold tracking-tight" aria-label="PricePortal — на главную">

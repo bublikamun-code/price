@@ -50,6 +50,17 @@ class Notification(Base, UUIDPrimaryKey):
             "user_id",
             postgresql_where=text("is_read = FALSE"),
         ),
+        # Лента «новые сверху» (created_at DESC, id DESC) и фильтр по типу
+        # уведомления. Частичный ix_notif_user_unread выше обслуживает только
+        # счётчик непрочитанных и не покрывает ни порядок, ни тип.
+        # Созданы миграцией 0025; объявлены в модели ради alembic check
+        # (аудит 2026-09-06 §3).
+        Index("ix_notifications_created", text("created_at DESC")),
+        Index(
+            "ix_notifications_type_created",
+            "type",
+            text("created_at DESC"),
+        ),
     )
 
 

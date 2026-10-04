@@ -96,7 +96,8 @@
 - Makefile: `prod-up/prod-down/prod-logs/prod-migrate` (DC_PROD + --env-file), gen-self-signed-certs, backup, backup-list.
 - RUNBOOK `docs/RUNBOOK.md`: РБ-VPS (activeby/datacenter.by, §19), первый деплой, обновление/rollback (reversible-миграции), бэкапы (cron 03:15, pg_restore, restore-test 1/мес), TLS (self-signed/certbot), мониторинг (obs-up, алёрты §12 → действия), инциденты.
 - CI `.github/workflows/ci.yml`: lint (ruff+eslint) → api-tests (services postgres/redis, TEST_DB_URL как в make test) → security (bandit+pip-audit) → build (docker build api/web, без push). Раннер недоступен — YAML валидирован, живой прогон при появлении репо на GitHub.
-- Проверки: +27 `test_integrations_1c.py` (501/503/401/403, ip_allowed CIDR/IPv6/пустой/битый, 422 DTO, smoke /api/v1) — все зелёные, ruff чисто; полный suite — 347 passed (exit 0).
+- Проверки: +27 `test_integrations_1c.py` (401/403/501/503, ip_allowed CIDR/IPv6/пустой/битый, 422 DTO, smoke /api/v1) — все зелёные, ruff чисто; полный suite — 347 passed (exit 0).
+- *Приписка 2026-10-02 (история пакета не переписана):* в двух строках выше S3-хранилище названо MinIO — на 2026-08-21 это была точная конфигурация compose. Сейчас в dev/compose сервис называется `rustfs` (образы MinIO удалены с Docker Hub; `mc` → `amazon/aws-cli`), `docker-compose.prod.yml` сохранил `ports: !reset []`, а на VPS-проде по-прежнему нативный MinIO. Приложение ходит в хранилище тем же boto3 по S3 API — API и бэкапы не менялись. См. `docs/MIGRATION.md`.
 
 ## Пакет 2026-08-20 (4): observability + тесты (Этап 10, §16 п.23)
 

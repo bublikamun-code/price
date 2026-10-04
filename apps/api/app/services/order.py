@@ -7,6 +7,11 @@ FSM переходов и инициаторов — см. таблицу в §9
 Сервис НЕ коммитит транзакцию — только ``flush``; коммит выполняет роутер
 (см. существующий паттерн ``manager/prices.py``). Доменные ошибки содержат
 стабильный машинный код и преобразуются роутером в HTTP-ответ.
+
+Деньги — ``Decimal`` насквозь: ``unit_price``/``total_amount`` — цены и сумма
+(2 знака, ROUND_HALF_UP), ``exchange_rate`` — курс (4 знака, точность
+``Numeric(12, 4)``). Никаких ``float(...)``/``round(...)``: смешивание Decimal и
+float в арифметике — это либо TypeError, либо тихая потеря копейки.
 """
 import hashlib
 import json
@@ -32,7 +37,7 @@ from app.services.cart import CartService
 from app.services.cart_v2 import CartQuantityOverflowError, CartV2Service
 from app.services.organizations import OrganizationContextService
 from app.repositories import organizations as organizations_repo
-from app.services.pricing import PricingService
+from app.services.pricing import PricingService, quantize_money, quantize_rate
 
 # Допустимые переходы статусов (см. §9 — таблица инициаторов).
 ALLOWED_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
@@ -299,7 +304,7 @@ class OrderService:
         for item in payload.items:
             product = products[item.product_id]
             quantity = int(item.quantity)
-            unit_price = Decimal(str(prices[product.id]["client_price"]))
+            unit_price = quantize_money(prices[product.id]["client_price"])
             total += unit_price * quantity
             snapshot = {
                 "sku": product.sku,
@@ -348,10 +353,10 @@ class OrderService:
             status=OrderStatus.NEW,
             currency_code=resolved.currency,
             exchange_rate=(
-                float(resolved.rate) if resolved.rate is not None else 1.0
+                quantize_rate(resolved.rate) if resolved.rate is not None else Decimal(1)
             ),
             rate_source=resolved.source,
-            total_amount=total.quantize(Decimal("0.01")),
+            total_amount=quantize_money(total),
             delivery_method=delivery.method.lower(),
             delivery_point=None,
             delivery_address=delivery_address_text,
@@ -387,7 +392,9 @@ class OrderService:
             user, payload.price_calc_mode, organization_id=organization_id
         )
         currency_code = resolved.currency
-        exchange_rate = float(resolved.rate) if resolved.rate is not None else 1.0
+        exchange_rate = (
+            quantize_rate(resolved.rate) if resolved.rate is not None else Decimal(1)
+        )
 
         # 1) Товары одним IN-запросом с FOR UPDATE (аудит 2026-09-06):
         #    проверка остатка ниже и INSERT заявки проходят под блокировкой
@@ -407,7 +414,7 @@ class OrderService:
         )
 
         new_items: list[OrderItem] = []
-        total = 0.0
+        total = Decimal(0)
         for ci in items:
             product = products.get(ci.sku)
             if product is None:
@@ -418,7 +425,7 @@ class OrderService:
             # заказать больше доступного (NULL → остаток не отслеживается).
             if product.stock_qty is not None and ci.quantity > product.stock_qty:
                 raise StockExceededError(ci.sku, product.stock_qty)
-            unit_price = float(prices[product.id]["client_price"])
+            unit_price = quantize_money(prices[product.id]["client_price"])
             total += unit_price * ci.quantity
             snapshot = {
                 "sku": product.sku,
@@ -453,7 +460,7 @@ class OrderService:
             currency_code=currency_code,
             exchange_rate=exchange_rate,
             rate_source=resolved.source,
-            total_amount=round(total, 2),
+            total_amount=quantize_money(total),
             notes=payload.notes,
             delivery_method=delivery_method,
             delivery_point=delivery_point,
@@ -685,7 +692,17 @@ class OrderService:
 
     # -------------------------------------------------------------- cancel
     async def cancel(self, user, order_id: uuid.UUID) -> Order:
+        """Отмена заявки клиентом.
+
+        §6 (строка 855): «Клиент может только отменить СВОЮ заявку». Право
+        видеть заявку организации (can_access в get()) — это доступ на ЧТЕНИЕ:
+        контакт компании видит историю закупок коллег. Но отмена — коммерческое
+        действие, и молчаливый отказ чужой заявки другим контактом не должен
+        проходить. Поэтому владение проверяется отдельно от видимости.
+        """
         order = await self.get(user, order_id, as_manager=False)
+        if order.client_id != user.id:
+            raise OrderNotCancelableError("Отменить можно только свою заявку")
         if order.status not in CLIENT_CANCELABLE:
             raise OrderNotCancelableError("Заявку в этом статусе нельзя отменить")
         return await orders_repo.update_order_status(

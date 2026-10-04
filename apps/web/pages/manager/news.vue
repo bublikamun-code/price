@@ -7,6 +7,9 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAG
 useHead({ title: 'Новости — Менеджер' })
 
 const { request } = useApi()
+// Скрытие/показ и удаление — действия над конкретной записью: их результат
+// показываем тостом, а `error` оставляем только для загрузки списка.
+const { show } = useToast()
 
 // Менеджерский список дополнительно отдаёт флаг активности.
 interface ManagerNewsRead extends NewsRead {
@@ -154,6 +157,7 @@ async function onSubmit() {
     }
     modalOpen.value = false
     await load()
+    show(editingId.value ? 'Новость обновлена' : 'Новость опубликована', { type: 'success' })
   } catch (e) {
     submitError.value = getErrorMessage(e, 'Не удалось сохранить новость')
   } finally {
@@ -166,12 +170,12 @@ const busyId = ref<string | null>(null)
 
 async function toggleActive(n: ManagerNewsRead) {
   busyId.value = n.id
-  error.value = ''
   try {
     await request(`/api/v1/manager/news/${n.id}`, { method: 'PATCH', body: { is_active: !(n.is_active ?? true) } })
     await load()
+    show(`Новость «${n.title}» ${n.is_active ?? true ? 'скрыта' : 'показана'}`, { type: 'success' })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось изменить новость')
+    show(getErrorMessage(e, 'Не удалось изменить новость'), { type: 'error' })
   } finally {
     busyId.value = null
   }
@@ -180,13 +184,13 @@ async function toggleActive(n: ManagerNewsRead) {
 async function remove(n: ManagerNewsRead) {
   if (!window.confirm(`Удалить новость «${n.title}»? Действие необратимо.`)) return
   busyId.value = n.id
-  error.value = ''
   try {
     await request(`/api/v1/manager/news/${n.id}`, { method: 'DELETE' })
     if (news.value.length === 1 && page.value > 1) page.value--
     await load()
+    show(`Новость «${n.title}» удалена`, { type: 'success' })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось удалить новость')
+    show(getErrorMessage(e, 'Не удалось удалить новость'), { type: 'error' })
   } finally {
     busyId.value = null
   }
@@ -207,10 +211,16 @@ onMounted(load)
       </template>
     </PageHeading>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button type="button" class="btn-ghost min-h-11 text-sm" @click="load()">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить новости"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load()">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <!-- Скелетоны -->
     <div v-if="loading" class="border border-border bg-surface p-4">
@@ -218,10 +228,19 @@ onMounted(load)
     </div>
 
     <!-- Пусто -->
-    <div v-else-if="!news.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:newspaper" class="size-8 mb-3 text-ink-faint" />
-      <p>Новостей пока нет</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!news.length"
+      class="border border-border bg-surface"
+      title="Новостей пока нет"
+      description="Опубликуйте новость или новинку — запись появится в ленте на главной странице."
+      icon="heroicons:newspaper"
+    >
+      <template #action>
+        <button type="button" class="btn-primary min-h-11" @click="openCreate">
+          <Icon name="heroicons:plus" class="w-4 h-4" /> Добавить новость
+        </button>
+      </template>
+    </UiEmptyState>
 
     <!-- Таблица -->
     <div v-else class="border border-border bg-surface">
@@ -263,7 +282,7 @@ onMounted(load)
                 >
                   <span
                     v-if="busyId === n.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"
                   />
                   <template v-else>
                     <Icon name="heroicons:trash" class="w-4 h-4" /> Удалить
@@ -287,7 +306,7 @@ onMounted(load)
           v-else
           type="button"
           class="btn-outline size-11 font-medium text-sm"
-          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+          :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
@@ -348,7 +367,7 @@ onMounted(load)
           <div class="sm:col-span-2 flex justify-end gap-3">
             <button type="button" class="btn-ghost min-h-11" @click="closeModal">Отмена</button>
             <button type="submit" class="btn-primary min-h-11" :disabled="submitting">
-              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
               {{ submitting ? 'Сохранение…' : 'Сохранить' }}
             </button>
           </div>

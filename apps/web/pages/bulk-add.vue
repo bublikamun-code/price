@@ -317,7 +317,7 @@ onMounted(() => {
           >
             <span
               v-if="resolving"
-              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"
+              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin motion-reduce:animate-none"
             />
             <Icon v-else name="heroicons:magnifying-glass" class="w-4 h-4" />
             {{ resolving ? 'Проверка…' : 'Проверить' }}
@@ -471,7 +471,7 @@ onMounted(() => {
           >
             <span
               v-if="adding"
-              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"
+              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin motion-reduce:animate-none"
             />
             <Icon v-else name="heroicons:shopping-cart" class="w-4 h-4" />
             {{ adding ? 'Добавление…' : 'Добавить выбранные в заявку' }}

@@ -186,7 +186,7 @@ const roleLabel = computed(() => {
             чтобы получать сообщения об изменении цен и статусах заявок.
           </p>
           <button type="button" class="btn-outline mt-4" :disabled="tgGenerating" @click="generateLinkCode">
-            <span v-if="tgGenerating" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+            <span v-if="tgGenerating" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
             {{ tgGenerating ? 'Создаём код' : 'Создать код связки' }}
           </button>
           <div v-if="tgCode" class="mt-4 border border-border bg-surface-2 p-4" role="status">

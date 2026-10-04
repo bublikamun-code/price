@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field, replace
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +36,7 @@ class ProductPriceChange:
     category: str  # new | up | down | override_reset | unchanged
     old_base: Decimal | None  # None для category="new"
     new_base: Decimal
-    delta_percent: float | None  # None для "new" и "unchanged"
+    delta_percent: Decimal | None  # None для "new" и "unchanged"
     sources: list[str] = field(default_factory=list)
 
 
@@ -79,11 +79,18 @@ def _effective(base: object, override: object | None) -> Decimal:
     return _dec(override) if override is not None else _dec(base)
 
 
-def _delta_percent(old: Decimal, new: Decimal) -> float | None:
-    """Процент изменения, округлённый до 2 знаков (None при old == 0)."""
+def _delta_percent(old: Decimal, new: Decimal) -> Decimal | None:
+    """Процент изменения, округлённый до 2 знаков HALF_UP (None при old == 0).
+
+    Decimal, а не float: 1/3 процента в double даёт 16.666666666666668, и
+    округление «на глаз» разъезжается с дайджестом, который печатает те же
+    числа клиенту.
+    """
     if old == 0:
         return None
-    return round(float((new - old) / old * 100), 2)
+    return ((new - old) / old * Decimal(100)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
 
 
 # ----------------------------- diff версий -----------------------------

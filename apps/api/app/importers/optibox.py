@@ -143,7 +143,7 @@ def row_to_product(row: dict[str, Any]) -> dict[str, Any]:
         "name": name or "",
         "brand": _g(row, "brand") or "KEAZ",
         "series": _g(row, "series") or "OptiBox Pro",
-        "base_price": float(_test_base_price(modules)),
+        "base_price": _test_base_price(modules),
         "photo_url": photo_url,
         "attributes": attributes,
     }

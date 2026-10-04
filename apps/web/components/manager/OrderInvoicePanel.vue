@@ -209,7 +209,7 @@ onUnmounted(() => {
       >
         <span
           v-if="issuing"
-          class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"
+          class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"
         />
         <Icon v-else name="heroicons:document-text" class="w-4 h-4" />
         {{ issuing ? 'Выставляем…' : 'Выставить счёт' }}
@@ -275,7 +275,7 @@ onUnmounted(() => {
           >
             <span
               v-if="savingStatus"
-              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"
+              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"
             />
             <Icon v-else name="heroicons:check" class="w-4 h-4" />
             Применить
@@ -309,7 +309,7 @@ onUnmounted(() => {
         >
           <span
             v-if="downloadActiveId !== null"
-            class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-sm animate-spin"
+            class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-sm animate-spin motion-reduce:animate-none"
           />
           <Icon v-else name="heroicons:document-arrow-down" class="w-4 h-4" />
           {{ downloadActiveId !== null ? 'Скачиваем…' : 'Скачать счёт' }}
@@ -324,7 +324,7 @@ onUnmounted(() => {
         >
           <span
             v-if="regenerating"
-            class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-sm animate-spin"
+            class="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-sm animate-spin motion-reduce:animate-none"
           />
           <Icon v-else name="heroicons:arrow-path" class="w-4 h-4" />
           {{ regenerating ? 'Отправляем…' : 'Перерендерить PDF' }}

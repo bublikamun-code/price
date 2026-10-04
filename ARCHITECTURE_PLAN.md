@@ -32,7 +32,7 @@
 7. [Асинхронный импорт CSV и генерация цен на лету](#7-асинхронный-импорт-csv-и-генерация-цен-на-лету)
 8. [Ценообразование: матрица скидок и мультивалютность](#8-ценообразование-матрица-скидок-и-мультивалютность)
 9. [Модуль заявок и уведомлений](#9-модуль-заявок-и-уведомлений)
-10. [Файловое хранилище (S3/MinIO) и медиа](#10-файловое-хранилище-s3minio-и-медиа)
+10. [Файловое хранилище (S3-совместимое) и медиа](#10-файловое-хранилище-s3-совместимое-и-медиа)
 11. [Безопасность (Security Checklist)](#11-безопасность-security-checklist)
 12. [Observability: логи, метрики, мониторинг](#12-observability-логи-метрики-мониторинг)
 13. [Тестирование](#13-тестирование)
@@ -116,15 +116,15 @@
 |-----------|-------|--------|
 | БД | **PostgreSQL 16** | JSONB (для матрицы скидок), GIN-индексы для поиска, `pg_trgm` для нечёткого поиска, надёжность. |
 | Кэш/Брокер | **Redis 7** | Кэш каталога, брокер Celery, pub/sub для realtime. |
-| Object storage | **MinIO** (S3-совместимый) | Self-hosted S3; seamless миграция на AWS S3/Yandex S3 без изменения кода. |
+| Object storage | **S3-совместимое хранилище** (self-hosted: **RustFS**) | Требование — AWS S3 API; RustFS — конкретная реализация в compose. Смена на AWS S3/Yandex S3 — только `.env`, без изменения кода (boto3, SigV4 + path-style). |
 | Reverse proxy | **Nginx** или **Caddy** (Caddy — авто-TLS) | TLS, static, rate limit. |
 | Контейнеризация | **Docker + docker-compose** (dev), **Docker Swarm / k8s** (prod) | Стандарт. |
 | Monitoring | **Grafana + Prometheus + Loki** | Метрики + логи + трейсинг. Tempo для трейсов (OpenTelemetry). |
-| Бэкапы | **`pgbackrest`** + **MinIO versioning** | PITR для PostgreSQL. |
+| Бэкапы | **`pgbackrest`** + **versioning S3-хранилища** | PITR для PostgreSQL. |
 
 ---
 
-## 3. Дизайн-система Trade (UI/UX)
+## 3. Дизайн-система (UI/UX)
 
 > Канон: `docs/TRADE_DESIGN_SYSTEM.md`. Решение заказчика от 2026-09-24. Предыдущие правила stone/pill/Liquid Glass считаются историческими и не применяются к новой реализации.
 
@@ -179,7 +179,7 @@
 
 ---
 
-## 4. Арххитектура системы (High-Level)
+## 4. Архитектура системы (High-Level)
 
 ```
                          ┌─────────────────────────┐
@@ -201,7 +201,7 @@
         └───────────────┘     └────────────────┘    └───────┬────────┘
                                                               │
                                                       ┌───────▼────────┐
-                                                      │  MinIO (S3)    │
+                                                      │  RustFS (S3)   │
                                                       │ photos, pdfs,  │
                                                       │ generated csv  │
                                                       └────────────────┘
@@ -393,6 +393,12 @@ Organization pricing terms и organization-brand discounts переносятс�
 - `pg_trgm GIN ON (name gin_trgm_ops)` — для поиска «как в Google».
 - `pg_trgm GIN ON (sku gin_trgm_ops)` — поиск каталога `q` идёт по `sku ILIKE '%…%' OR name ILIKE '%…%'`; обе ветки ускоряются bitmap-сканом по trgm-индексам (сама семантика ILIKE-подстроки сохраняется).
 - `GIN (attributes jsonb_path_ops)` — фильтрация по характеристикам через оператор `@>` (JSONB-контейнмент).
+- `btree (name) WHERE deleted_at IS NULL` — сортировка каталога по умолчанию `ORDER BY name ASC, id ASC` (в т.ч. keyset-пагинация `fetch_catalog_page`) идёт по неудалённым товарам; частичный индекс не раздувается архивными строками.
+- `btree (base_price) WHERE deleted_at IS NULL` — сортировка каталога по цене (`ORDER BY base_price`), тот же частичный предикат.
+- `btree (created_at DESC)` — блок «Новинки» клиентского дашборда (`fetch_new_arrivals`).
+- `btree (updated_at DESC)` — блок «Акции» (`fetch_promos`: `override_price IS NOT NULL`).
+
+> **Индексация рантайм-выборок.** Индексы сортировки по датам и прочие btree-индексы, добавленные миграцией `0025_add_missing_indexes`, берут те же колонки, по которым реально фильтрует **и** сортирует слой `repositories/`: `order_items (order_id, created_at)` и `order_items (product_id)`, `series (brand_id)`, `price_list_versions (status, created_at DESC)`, `price_list_versions (created_at DESC)`, `price_history (price_list_version_id)`, `orders (manager_id, created_at DESC)`, `users (role, created_at DESC)`, `notifications (created_at DESC)`, `notifications (type, created_at DESC)`, `file_assets (created_at DESC)`, `file_assets (brand_id, type)`, `file_assets (type)`, `product_photos (product_id, sort_order, created_at)`, `totp_recovery_codes (user_id)`. Принцип: составной индекс покрывает связку «фильтр + сортировка», частичный — под soft-delete (`deleted_at IS NULL`), а не одиночный индекс на каждую колонку.
 
 > **`attributes` (JSONB).** Гибкое хранилище спецификаций товара без жёсткой схемы: цвет, кол-во модулей, IP-рейтинг, габариты, материал и т.п. — состав зависит от категории (электротехника, корпуса, автоматы…). Пример:
 > ```json
@@ -872,7 +878,31 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 
 ---
 
-## 10. Файловое хранилище (S3/MinIO) и медиа
+## 10. Файловое хранилище (S3-совместимое) и медиа
+
+### Требование и реализация
+- **Требование — S3-совместимое объектное хранилище** (AWS S3 API: `HeadBucket`,
+  `PutObject`/`UploadPart`, `GetObject`, `CopyObject`, `DeleteObject`, листинг, presigned URL по SigV4).
+  Приложение обращается к хранилищу **только** через boto3
+  (`apps/api/app/services/storage.py`): `signature_version="s3v4"`,
+  `addressing_style="path"`, `endpoint_url` из `S3_ENDPOINT`. Проприетарных API хранилища
+  в коде нет — поэтому требование, а не конкретный продукт.
+- **Self-hosted реализация — RustFS**: S3-совместимый сервер, один бинарник. В compose —
+  сервис `rustfs` (контейнер `pp-rustfs`, том `rustfs-data`), порты `9000` (S3 API)
+  и `9001` (Web Console); в prod-оверлее порты не публикуются (`ports: !reset []`).
+  Образы всех базовых сервисов закреплены по digest.
+- **Инициализация бакетов:** сервис `s3init` (`amazon/aws-cli`, контейнер `pp-s3-init`)
+  после `healthy`-статуса `rustfs` создаёт 5 бакетов из списка ниже.
+- **Прод (РБ-VPS)** — нативный MinIO, PM2-процесс `pp-minio` на `127.0.0.1:19000`
+  (`docs/PROD-h215691.md`). Приложение ходит в него тем же S3-клиентом.
+- **Смена реализации не требует правок кода.** Переход на AWS S3 или Yandex S3 — это только
+  `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` (и `S3_EXTERNAL_ENDPOINT`, если он задан
+  для presigned URL) в `.env`: бакеты, ключи объектов, конвенции имён, Celery-задачи и API
+  остаются как есть.
+
+> **История (не переписывается):** до 2026-10-02 в dev/compose использовался MinIO. Он заменён
+> на RustFS, потому что образы `minio/minio` и `minio/mc` удалены с Docker Hub (404) и
+> `docker compose up` падал на pull; `mc` заменён на `amazon/aws-cli`. Подробно — `docs/MIGRATION.md`.
 
 ### Бакеты
 - `photos-series/` — фото серий (выдаёт API байтами, §16 п.17).
@@ -952,7 +982,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | Уровень | Инструмент | Покрытие |
 |---|---|---|
 | Unit (domain/services) | `pytest` | логика ценообразования, апсерт-стратегии, edge-cases. |
-| Integration (API+БД) | `pytest` + testcontainers (Postgres/Redis/MinIO) | все эндпоинты, RBAC, импорт CSV. |
+| Integration (API+БД) | `pytest` + testcontainers (Postgres/Redis/S3) | все эндпоинты, RBAC, импорт CSV. |
 | Contract (OpenAPI) | `schemathesis` | fuzzing по спеке. |
 | E2E (frontend) | `Playwright` | ключевые сценарии: логин клиента, фильтр, экспорт, оформление заявки, импорт менеджером. |
 | Нагрузочное | `k6` | 100 RPS на каталог, импорт 50k строк. |
@@ -965,12 +995,14 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 ## 14. Деплой и инфраструктура
 
 ### Среды
-- `local` — docker-compose (БД, Redis, MinIO, ngrok для Telegram webhook).
+- `local` — docker-compose (БД, Redis, S3-хранилище RustFS, ngrok для Telegram webhook).
 - `staging` — зеркало прода, те же данные (анонимизированные).
 - `prod`.
 
 ### Docker-compose (dev) — сервисы
-- `db` (postgres:16), `redis`, `minio`, `api`, `worker`, `frontend`, `bot`, `nginx`.
+- `db` (postgres:16), `redis`, `rustfs` (S3-хранилище), `s3init` (разовое создание бакетов), `api`, `worker`, `beat`, `web` (Nuxt), `bot`, `nginx`.
+- Все базовые образы закреплены по digest (`image: repo@sha256:…`) — при переезде на другую машину поднимается ровно та же версия.
+- Имена сервисов/томов: `rustfs`, `s3init`, `rustfs-data`. Перенос стека на другую машину — `docs/MIGRATION.md`.
 
 ### CI/CD (GitLab CI / GitHub Actions)
 1. `lint` (ruff, eslint, prettier).
@@ -986,7 +1018,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 
 ### Бэкапы
 - PostgreSQL: WAL-G → S3 (PITR). Retention 30 дней. (MVP Этапа 11: nightly `pg_dump -Fc` + retention 30 д. и restore-test по RUNBOOK; WAL-G/PITR — пост-MVP, §16 п.24.)
-- MinIO: versioning + cross-region replication (пост-MVP, §16 п.24).
+- S3-хранилище: versioning + cross-region replication (пост-MVP, §16 п.24).
 
 ---
 
@@ -1075,6 +1107,15 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 
 > Согласовано с заказчиком 2026-08-11.
 
+> **Примечание о терминологии (добавлено 2026-10-02).** Записи ниже — исторические, их смысл и
+> даты не переписываются. Там, где в датированном решении названо конкретное S3-хранилище
+> (MinIO), это описание состояния на момент согласования. **2026-10-02 в dev/compose MinIO
+> заменён на RustFS** — образы `minio/minio` и `minio/mc` удалены с Docker Hub (404), стенд
+> физически не поднимался; `mc` заменён на `amazon/aws-cli`. Приложение ходит в хранилище тем же
+> boto3 по S3 API, поэтому API, бакеты, ключи и конвенции не изменились, и решения ниже остаются
+> в силе — меняется только название сервиса в compose (`minio` → `rustfs`) и реализация на VPS-проде.
+> Актуальное состояние — §2, §10, §14; перенос стека — `docs/MIGRATION.md`.
+
 | # | Вопрос | Решение | Влияние на архитектуру |
 |---|---|---|---|
 | 1 | Базовая и display-валюты | **Базовая BYN.** Доп. для отображения: RUB / USD / EUR. Курс — **НБ РБ, ежедневное автообновление** | Scheduler (Celery beat) `fetch_nbrb_rates` ежедневно в 00:05. Эндпоинт НБ РБ: `https://www.nbrb.by/api/exrates/rates?periodicity=0`. См. §17. |
@@ -1090,7 +1131,7 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 10 | Согласие / политика | **Да, требуется** | Чекбокс согласия при первом входе клиента; страница «Политика конфиденциальности»; лог согласия в `consent_log`. |
 | 11 | Регион хостинга | **Беларусь** | Провайдеры: beCloud, *activeby*, datacenter.by. НБ РБ-курс доступен без Geo-ограничений. Учесть требования Закона РБ «О защите персональных данных» (локализация ПДн в РБ — выполняется автоматически). |
 | 12 | Интеграция с 1С | **Оставить архитектурную возможность** (не реализовывать в MVP) | Спроектировать DTO заказов в формате, близком к 1С (XML/JSON CommerceML 2.x). Эндпоинт-заглушка `POST /integrations/1c/orders/export` под auth-token. См. §18. |
-| 13 | Контейнеризация | **Да, Docker + docker-compose** (dev и prod). 8+ сервисов (API, Celery worker, Celery beat, Nuxt, PostgreSQL, Redis, MinIO, TG-бот, Nginx) — без compose не управляемо. Идентичные среды dev/staging/prod, лёгкий деплой на РБ-VPS, мгновенный rollback версиями образов | `docker-compose.yml` (dev) + `docker-compose.prod.yml` (override). Подробно см. §14. |
+| 13 | Контейнеризация | **Да, Docker + docker-compose** (dev и prod). 10+ сервисов (API, Celery worker, Celery beat, Nuxt (`web`), PostgreSQL, Redis, S3-хранилище (`rustfs`) + `s3init`, TG-бот, Nginx) — без compose не управляемо. Идентичные среды dev/staging/prod, лёгкий деплой на РБ-VPS, мгновенный rollback версиями образов | `docker-compose.yml` (dev) + `docker-compose.prod.yml` (override). Подробно см. §14. |
 | 14 | Семантика rollback версии прайса | **Восстановление + архив новых; откатывать только последнюю DONE-версию** (согласовано 2026-08-16) | `POST /manager/prices/versions/{id}/rollback`: товарам, существовавшим до версии X, возвращаются `base_price`/`override_price` из их последнего снапшота `price_history` до X; товары, впервые появившиеся в X, архивируются (soft-delete, `stock_status=ARCHIVE`). Guards: версия существует (404), статус DONE, последняя DONE, не откачена ранее (иначе 409). Аудит: `price_list_versions.rolled_back_at/rolled_back_by` (§5); кэш каталога инвалидируется тегами импорта. |
 | 15 | Схема хранения JWT-ключей RS256 | **PEM-файлы, смонтированные в контейнеры read-only** (согласовано 2026-08-16) | Dev: HS256 + `SECRET_KEY` (без изменений). Prod: `JWT_ALGORITHM=RS256`; RSA-2048 ключи генерируются на хосте (`make gen-jwt-keys`), лежат в `infra/jwt-keys/` (`.gitignore`), монтируются read-only, пути — `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`. Публичный ключ раздаётся сервисам, проверяющим токены. Vault не входит в MVP-инфраструктуру — §11 скорректирован с «vault» на эту схему. |
 | 16 | Экспорт каталога: метод и форматы | **POST; CSV+XLSX сейчас, PDF отложен** (согласовано 2026-08-17) | Расхождение §6 (GET) и SITEMAP (POST) устранено в пользу POST — запуск генерации создаёт job (side-effect). Форматы: `csv` (UTF-8 BOM) и `xlsx` (openpyxl); `pdf` → 422 с сообщением (weasyprint требует системных deps — отдельной задачей, см. §16.1 F). Job-стейт — Redis (`export:job:{id}`, TTL 24 ч, статусы QUEUED/RUNNING/DONE/FAILED, доступ только владельцу); файлы — S3 `csv-exports/` (TTL 7 дней); rate-limit 10/час на клиента (§11). |
@@ -1101,13 +1142,13 @@ NEW → IN_PROGRESS → SHIPPED → COMPLETED
 | 21 | CSRF: стейл-куки и логин | **Согласовано 2026-08-20** | Фикс edge-кейса «403 на `/auth/login`, если в браузере остаточные `access_token`/`refresh_token`, а `csrf_token`-кука потеряна» (GUI-тест 2026-08-20, README «известный edge»). Решение: (1) `POST /auth/login` освобождён от CSRF-валидации — login-CSRF вне модели double-submit: запрос неаутентифицирован, креды передаются явно в теле, а не через ambient-куки; (2) при неуспешном логине (401) ответ чистит остаточные куки `access_token`/`refresh_token`/`csrf_token` (delete_cookie) — состояние браузера сходится; при успешном логине `_set_auth_cookies` перезаписывает все три (без изменений). Refresh/logout сохраняют CSRF-проверку (§11). |
 | 22 | 2FA (фича H) и журнал сессий (фича I) — детализация контрактов | **Согласовано 2026-08-20** | Дополнен §6 (расхождения §6 ↔ SITEMAP устранены). **2FA (MANAGER-only, фича H)**: deps `pyotp` + `qrcode`. `POST /auth/2fa/setup` — генерирует секрет, НЕ сохраняет, возвращает `{secret, otpauth_uri, qr_png_data_url}`; `POST /auth/2fa/enable` `{secret, code}` — проверка TOTP (window=1), сохраняет `users.totp_secret` (поле уже в §5), генерирует 8 recovery-кодов (hex), в БД — только хэши в новой таблице `totp_recovery_codes(user_id, code_hash, used_at)`, plaintext показывается ровно 1 раз (паттерн temp-пароля п.19); аудит `user.2fa.enable`. Логин при включённой 2FA: 200 `{"data": {"two_fa_required": true, "ticket"}}` без кук, ticket — JWT `typ=2fa` TTL 5 мин (только sub, без ролей); `POST /auth/2fa/verify` `{ticket, code}` — код TOTP ИЛИ одноразовый recovery (при использовании помечается `used_at`, не удаляется), rate-limit 5/15 мин, успех → обычные токены+куки+сессия; как второй шаг логина освобождён от CSRF-валидации (логика §16 п.21). `POST /auth/2fa/disable` `{code}` или `{password}` — чистит секрет и recovery; аудит `user.2fa.disable`. CLIENT на 2fa-эндпоинтах → 403; `GET /auth/me` дополняется полем `totp_enabled` (bool, для экрана `/profile/security`). **Сессии (обе роли, фича I)**: `GET /auth/sessions` — свои активные (не revoked/expired): `id, user_agent, ip, created_at, expires_at, current` (сессия с hash refresh-куки); `DELETE /auth/sessions/{id}` — своя сессия (чужая → 404), текущая — отзыв + очистка кук; `DELETE /auth/sessions` — все кроме текущей. Экраны: `/profile/sessions`, `/profile/security`, ветка 2FA на `/login` — по SITEMAP. |
 | 23 | Этап 10 «Observability и тесты»: рамка MVP | **Согласовано 2026-08-20** | Уточнение §12/§13 (переносы помечены в §12). **Входит в Этап 10:** (1) API-метрики — `prometheus-fastapi-instrumentator`, `/metrics` на app, nginx проксирует `/metrics` (в prod ограничить доступ, Этап 11); (2) Celery-метрики через **Pushgateway**: worker пушит по сигналам длительность/провалы задач (`prometheus_client.push_to_gateway`, fail-open), beat каждые 30 с пушит глубину очереди (`LLEN` Redis); (3) overlay `infra/docker-compose.observability.yml` (`make obs-up`): Prometheus (scrape: api, pushgateway) + Grafana (provisioning: datasource + 2 дашборда «API» и «Celery/Импорты») + Alertmanager (правила §12: error rate >1%/5 мин; очередь >100; провал импорта; рост 5xx; instance down) + Pushgateway; (4) E2E Playwright в `apps/web/e2e` (сценарии §13: логин клиента, фильтр каталога, экспорт, оформление заявки, импорт менеджером), `npm run test:e2e`, host-run против dev-стека :8080; (5) k6-скрипты `infra/k6/` (каталог 100 RPS с порогами; сценарий импорта), запуск опционален при наличии k6 на хосте. **Перенесено в Этап 11:** Loki (JSON-логи уже в stdout), Tempo/OTel, Uptime Kuma, внешний TLS-доступ к мониторингу, CI-пайплайн (§14). |
-| 24 | Этап 11 «Деплой в prod» + Этап 11.5 «1С-заглушки»: рамка | **Согласовано 2026-08-20** | (1) **1С (§18, Этап 11.5)**: subroute `/api/integrations/1c` (вне `/api/v1`, отдельный include на app); 4 эндпоинта §18.2 → `501` + JSON `{detail, schema_version}`; авторизация: заголовок `X-Integration-Token` (constant-time сравнение с `settings.integration_1c_token`) и IP-allowlist (`settings.integration_1c_ip_allowlist`, CSV) → 401/403; пустой токен в настройках → `503` «интеграция не настроена»; попытки логируются structlog, `audit_log` exchange-операций — при реальной реализации (не на заглушках); DTO Pydantic в `app/schemas/commerceml/` (JSON-адаптация CommerceML 2.x; `orders.external_id`/`products.external_1c_guid` уже в §5). (2) **TLS/nginx**: prod — отдельный self-contained `infra/nginx/nginx.prod.conf`: :80 → redirect https, :443 TLS1.3-only + HSTS (§11), `/metrics` allow приватные сети + deny all, `/healthz`/`/readyz` открыты; сертификаты в `infra/nginx/certs/` (gitignore); `make gen-self-signed-certs` для валидации конфига, боевые — Let's Encrypt/вручную (RUNBOOK). (3) **Бэкапы**: MVP — `make backup` (nightly `pg_dump -Fc`) в `infra/backups/` + retention 30 д.; restore-test по RUNBOOK; WAL-G/PITR, MinIO versioning/replication — пост-MVP (разночтение §2/§11/§14 решено). (4) **Prod-харднинг**: db/redis/minio в prod не публикуют порты (ports reset в prod-overlay); вход только через nginx; Makefile `prod-up/prod-down/prod-logs/prod-migrate` через `DC_PROD`. (5) **CI** (`.github/workflows/ci.yml`, §14): lint (ruff+eslint) → test (pytest, сервисы postgres/redis) → security (bandit+pip-audit) → build (docker build api/web; registry — пост-MVP). Playwright-e2e и migrate/deploy вне CI: e2e локально `make test-e2e`, deploy вручную по RUNBOOK (миграции с approve, §14). Выбор РБ-провайдера/домена — при реальном деплое (§19). (6) **RUNBOOK**: `docs/RUNBOOK.md` — deploy/rollback, миграции, бэкап/восстановление + restore-test, TLS-сертификаты, мониторинг (`obs-up`), действия по алёртам §12. |
+| 24 | Этап 11 «Деплой в prod» + Этап 11.5 «1С-заглушки»: рамка | **Согласовано 2026-08-20** | (1) **1С (§18, Этап 11.5)**: subroute `/api/integrations/1c` (вне `/api/v1`, отдельный include на app); 4 эндпоинта §18.2 → `501` + JSON `{detail, schema_version}`; авторизация: заголовок `X-Integration-Token` (constant-time сравнение с `settings.integration_1c_token`) и IP-allowlist (`settings.integration_1c_ip_allowlist`, CSV) → 401/403; пустой токен в настройках → `503` «интеграция не настроена»; попытки логируются structlog, `audit_log` exchange-операций — при реальной реализации (не на заглушках); DTO Pydantic в `app/schemas/commerceml/` (JSON-адаптация CommerceML 2.x; `orders.external_id`/`products.external_1c_guid` уже в §5). (2) **TLS/nginx**: prod — отдельный self-contained `infra/nginx/nginx.prod.conf`: :80 → redirect https, :443 TLS1.3-only + HSTS (§11), `/metrics` allow приватные сети + deny all, `/healthz`/`/readyz` открыты; сертификаты в `infra/nginx/certs/` (gitignore); `make gen-self-signed-certs` для валидации конфига, боевые — Let's Encrypt/вручную (RUNBOOK). (3) **Бэкапы**: MVP — `make backup` (nightly `pg_dump -Fc`) в `infra/backups/` + retention 30 д.; restore-test по RUNBOOK; WAL-G/PITR, MinIO versioning/replication — пост-MVP (разночтение §2/§11/§14 решено). (4) **Prod-харднинг**: db/redis/minio в prod не публикуют порты (ports reset в prod-overlay); вход только через nginx; *приписка 2026-10-02: сервис хранилища в compose переименован `minio` → `rustfs`, `ports: !reset []` сохранён* Makefile `prod-up/prod-down/prod-logs/prod-migrate` через `DC_PROD`. (5) **CI** (`.github/workflows/ci.yml`, §14): lint (ruff+eslint) → test (pytest, сервисы postgres/redis) → security (bandit+pip-audit) → build (docker build api/web; registry — пост-MVP). Playwright-e2e и migrate/deploy вне CI: e2e локально `make test-e2e`, deploy вручную по RUNBOOK (миграции с approve, §14). Выбор РБ-провайдера/домена — при реальном деплое (§19). (6) **RUNBOOK**: `docs/RUNBOOK.md` — deploy/rollback, миграции, бэкап/восстановление + restore-test, TLS-сертификаты, мониторинг (`obs-up`), действия по алёртам §12. |
 | 25 | PDF-экспорт: каталог + заявка (фича F) | **Согласовано 2026-08-21** | Закрывает отложенное п.16 («pdf → 422») и фичу §16.1 F. (1) **Deps**: `weasyprint==62.3` (раскомментирован) + системные Pango/HarfBuzz/шрифты DejaVu в Dockerfile stages base и runtime (после purge build-essential, не удаляются). (2) **Каталог**: `POST /catalog/export?format=pdf` — 422-заглушка снята; таск рендерит HTML (Jinja2-шаблон `app/templates/pdf/catalog.j2`, autoescape) → weasyprint → S3 `export/{job_id}.pdf` (`application/pdf`), job-паттерн п.16 без изменений; rate-limit 10/час общий. (3) **Заявка (F)**: job-паттерн вместо синхронного `GET /orders/{id}/pdf` из SITEMAP (GET с side-effect недопустим): `POST /orders/{id}/pdf` → 202 `{job_id}` + `GET /orders/export/{job_id}` — статус/presigned (SITEMAP исправлен); доступ: клиент-владелец или MANAGER; S3 `export/order-{order_id}-{job_id}.pdf`, TTL те же; rate-limit 10/час. Шаблон `app/templates/pdf/order.j2`: реквизиты клиента (company/full_name/phone/email — УНП/адрес в модели на момент п.25 отсутствовали; они появились в `organizations` вместе с п.40, но в шаблон **заявки** не выводятся: документ с реквизитами юрлица — это счёт на оплату, §16 п.40), позиции из `product_snapshot` (sku/name/brand) + quantity/unit_price (замороженные), total_amount, курс (rate_source/exchange_rate), статус, номер/дата. (4) **Frontend**: в меню «Экспорт» каталога пункт PDF; кнопка «Скачать PDF» на `/orders/[id]` и per-row в `/orders` (poll job → открытие presigned). |
 | 26 | SSE-стрим уведомлений (снятие отложения из п.20) | **Согласовано 2026-08-21** | Supersedes «SSE-stream отложен» в п.20 (pull остаётся fallback). (1) **Транспорт**: `GET /notifications/stream` — `text/event-stream`; авторизация по cookie `access_token` на момент коннекта (query-токен исключён — логи); долгоживущий коннект переживает истечение access (переподключение на drop — EventSource авто-reconnect; при 401 фронт уходит в pull). (2) **Доставка**: Redis pub/sub (§3:118) — `repositories/notifications.create_notification` остаётся чистым, publish в новой точке `services/notification_events.py` `publish_notification(notification)` (fail-open: Redis-ошибка → только лог); каналы `notif:user:{id}` и `notif:broadcast` (user_id=None — менеджерский broadcast: PRICE_CHANGED, RATE_FETCH_FAILED); SSE-подписчик: свой канал + broadcast при role=MANAGER. Вызовы publish добавляются рядом с 4 существующими create_notification (tasks/notifications ×2, fetch_nbrb_rates, services/manager_users) и во все будущие. (3) **Протокол**: событие `notification` (JSON: id/type/title/body/created_at), heartbeat-комментарий `: ping` каждые 20 с; client → закрытие при logout. (4) **nginx**: `location ^~ /api/v1/notifications/stream` (до `/api/`) в обоих конфигах: `proxy_buffering off; proxy_cache off; proxy_read_timeout 3600s; proxy_http_version 1.1; Connection ""`. (5) **Frontend**: `useNotifications` + `startStream()` (EventSource same-origin — куки идут сами): onmessage → `unreadCount++`; onerror → close + возврат к существующему poll (60 с); AppHeader стартует stream, poll — fallback. |
 | 27 | Этап 12 «Telegram Mini App»: рамка | **Согласовано 2026-08-25** | (1) **Линк вместо автосоздания**: публичной регистрации нет (п.4 — аккаунты создаёт менеджер), поэтому `users.telegram_id` (BIGINT, UNIQUE, nullable; миграция) связывается **одноразовым кодом**: клиент в веб-кабинете (`POST /api/v1/auth/telegram/link-code`, 6 цифр, Redis TTL 10 мин, одноразовый) вводит его при первом входе в m-app (`POST /api/m/v1/auth/telegram {init_data, link_code?}`); повторные входы — по `initData` (найден `telegram_id`). `telegram_chat_id` отдельно не хранится (приватный чат: chat_id == user.id) — поле `telegram_id` используется и для будущих клиентских TG-уведомлений (§20.3). MANAGER линк запрещён (m-app — клиентский путь). (2) **Валидация initData**: `secret = HMAC_SHA256("WebAppData", bot_token)`, `hash = HMAC(secret, data_check_string)` constant-time; пустой `telegram_bot_token` → 503 «не настроено»; `auth_date` старше 24 ч → 401 (replay-окно). (3) **Сессия**: после валидации — тот же путь, что при логине (`_issue_new_session`: access+refresh+Session+куки, §16 п.22-паттерн); m-фронт ходит с `Authorization: Bearer` (CSRF не применяется, §11); m-auth-POST — CSRF-exempt (логика п.21: креды = подписанные initData, не ambient-куки). (4) **API**: отдельного подмножества `/m/v1/**` не создаём — m-app потребляет существующие `/api/v1/**` (отклонение от §6-черновика «тонкое подмножество» в пользу DRY; JSON-контракт мобильно-агностичен). (5) **Frontend**: `layouts/miniapp.vue` (mobile-only, safe-area, без шапки/sidebar); SDK telegram-web-app.js; экраны по SITEMAP §8 (каталог-плитка с поиском/брендом, карточка, корзина+checkout, последние 10 заявок, уведомления); `middleware/m-auth` — неаутентифицированному показывается экран связки (не редирект на /login); `/m/**` добавляется в SKIP_PATHS consent.global (consent принимается в вебе, повторно в webview не требуется). (6) **Rate limit**: m-auth 5/15 мин (аналог login, §11). HTTPS для домена m-app — требование Telegram, деплой-вопрос (RUNBOOK). |
 | 28 | Security-hardening бэкенда (по итогам аудита) | **Согласовано 2026-08-26** | Backfill решений, применённых в коде 2026-08-25, + сопутствующие правки техдолга. (1) **Lockout брутфорса**: после `LOGIN_MAX_ATTEMPTS` неудачных логинов по email — блокировка на `LOGIN_LOCKOUT_MINUTES` в Redis; проверка выполняется до rate-limiter. (2) **Кэш сессий**: живость сессии кэшируется в Redis TTL 60 с; отзыв (`invalidate_session`) удаляет ключ немедленно. (3) **Поиск каталога**: LIKE-метасимволы экранируются (`_like_escape` в repositories/catalog.py); pg_trgm GIN-индексы — §5.2. (4) **Health-эндпоинты** (`/healthz`, `/readyz`) не раскрывают env/конфигурацию. (5) **PATCH /auth/me**: whitelist полей — setattr только по разрешённым колонкам User (mass-assignment guard). (6) **App-hardening** (main.py): Swagger/OpenAPI отключаются в prod, CORS из allowlist (без `*`), security-headers, лимит JSON-тела 1 МБ, X-Request-ID + structlog context. Сопровождающие правки пакета: CVE-обновления `python-multipart==0.0.20` (CVE-2024-53981) и `python-jose==3.4.0` (CVE-2024-33663/33664); SQL из `api/miniapp.py` → `repositories/users.get_by_telegram_id`; доменная логика diff/digest перенесена из `repositories/price_changes.py` в новый `services/price_changes.py` (соответствие §4); дедупликация Celery boilerplate → общий `tasks/_common.py`; креды Grafana — через env (`GF_SECURITY_ADMIN_*`, дефолт admin — dev-only). |
 | 29 | Публичная SEO-витрина каталога | **Согласовано 2026-08-26** | Цель — органический трафик Яндекса/Google по бренду/артикулу с конверсией в регистрацию. **Только публичные данные без цен/остатков/скидок/ПДн.** (1) API (read-only, без авторизации, envelope и пагинация §6): `GET /api/v1/public/brands` → `{data: [{id, name, slug}]}` — бренды, имеющие неархивные товары; `GET /api/v1/public/brands/{slug}` → `{data: {id, name, slug, series: [{id, name, slug, photo_thumb}]}}` (404 если бренд пуст); `GET /api/v1/public/series/{slug}/products?page&page_size` → `{data: [{sku, name, photo}]}` — только неархивные (photo: личное фото товара, дополнено 2026-09-08 для витрины лендинга). Кэш Redis тегом `catalog` (инвалидация импортом, §7.2); rate-limit 60/мин на IP; CSRF не применяется (GET). Thumb-фото серий — `GET /api/v1/public/photo?key=` (валидация префикса/суффикса → 200 с байтами thumb). Slug серии — вычисляемый (нормализация имени `_slugify`, без колонки в БД); коллизии нормализованных имён разрешаются детерминированно (первая по алфавиту); физический уникальный slug — при необходимости отдельной миграцией. (2) Frontend (SSR): страницы `/brands` (все бренды, плитки) и `/brands/[slug]` (бренд: серии с фото-thumb + список SKU, CTA «Войти в кабинет» → `/login`); `useSeoMeta` (title/description/OG); анонимный доступ мимо consent/auth-middleware. (3) Индексация: `robots.txt` (Allow `/`, `/brands`; Disallow приватных зон), server-route `/sitemap.xml` (статика + бренды, кэш 24 ч, fail-open), `noindex` в head авторизованных лейаутов (client/manager/miniapp). |
-| 30 | Pre-deploy hardening: куки, CSP, секреты, шифрование at rest, бэкапы как код | **Согласовано 2026-08-26** | (1) **Кука access-токена**: флаг `Secure` при prod (`COOKIE_SECURE=true` в prod-compose/.env); SameSite=Lax уже задан. Полный переход access на httpOnly (BFF-паттерн) — пост-MVP: ломает Bearer-клиентов m-app; остаточный XSS-риск принят осознанно и снижается CSP. (2) **CSP**: заголовок `Content-Security-Policy-Report-Only` из конфига (`CONTENT_SECURITY_POLICY`, дефолт self-политика с unsafe-inline для Nuxt-payload; пусто = выключено); перевод в enforcing — после прогона отчётов на проде. (3) **Секреты**: `.env.prod.template` — чек-лист всех переменных с генерацией через `openssl rand` (SECRET_KEY, пароли БД/MinIO/Grafana), chmod 600, порядок — RUNBOOK. (4) **Шифрование at rest**: требование к VPS — шифрованный диск/LUKS у провайдера или включение шифрования тома (RUNBOOK, шаг деплоя); MinIO versioning/WAL-G — пост-MVP (п.24). (5) **Бэкапы как код**: `infra/scripts/restore_db.sh` + `make restore-test` (проверка дампа восстановлением во временную БД), systemd unit+timer для nightly backup вместо ручного cron. (6) **Healthchecks** api/web/nginx в dev- и prod-compose. |
+| 30 | Pre-deploy hardening: куки, CSP, секреты, шифрование at rest, бэкапы как код | **Согласовано 2026-08-26** | (1) **Кука access-токена**: флаг `Secure` при prod (`COOKIE_SECURE=true` в prod-compose/.env); SameSite=Lax уже задан. Полный переход access на httpOnly (BFF-паттерн) — пост-MVP: ломает Bearer-клиентов m-app; остаточный XSS-риск принят осознанно и снижается CSP. (2) **CSP**: заголовок `Content-Security-Policy-Report-Only` из конфига (`CONTENT_SECURITY_POLICY`, дефолт self-политика с unsafe-inline для Nuxt-payload; пусто = выключено); перевод в enforcing — после прогона отчётов на проде. (3) **Секреты**: `.env.prod.template` — чек-лист всех переменных с генерацией через `openssl rand` (SECRET_KEY, пароли БД/MinIO/Grafana), chmod 600, порядок — RUNBOOK. (4) **Шифрование at rest**: требование к VPS — шифрованный диск/LUKS у провайдера или включение шифрования тома (RUNBOOK, шаг деплоя); MinIO versioning/WAL-G — пост-MVP (п.24) *(приписка 2026-10-02: в compose S3-хранилище называется `rustfs` — см. примечание к §16)*. (5) **Бэкапы как код**: `infra/scripts/restore_db.sh` + `make restore-test` (проверка дампа восстановлением во временную БД), systemd unit+timer для nightly backup вместо ручного cron. (6) **Healthchecks** api/web/nginx в dev- и prod-compose. |
 | 31 | Новая граница работ | **Полная замена всех presentation/page templates существующего Nuxt frontend; backend меняется по продуктовой необходимости** (согласовано 2026-09-24) | Старый static prototype остаётся reference-only. Существующие Nuxt/FastAPI infrastructure и проверенное backend core сохраняются. Новые страницы, layouts, Trade design system и domain layer создаются в `apps/web`; targeted backend changes разрешены для B2B/cross-client contract. `docs/REPLACEMENT_FRONTEND_ARCHITECTURE.md`. |
 | 32 | Дизайн-система | **Trade**: warm light `#f5f2eb`, dark-green service surfaces, terracotta accent, Manrope + IBM Plex Mono, radius 0–2px, light primary + full dark theme; pill/capsule, floating glass, ambient orbs и generic card kit запрещены | Полный visual replacement, а не reskin. Token source — `docs/TRADE_DESIGN_SYSTEM.md`; §3 и historical Stone/Liquid Glass правила больше не применимы к новой системе. |
 | 33 | Версионирование API | **Сосуществование v1/v2; новый web + Mini App + будущий iOS переходят на `/api/v2`** | V1 не переписывается in-place. V2 публикует стабильные errors, money/date/enums, UUID writes, media resources, cursor pagination, search/sort, async jobs и native auth. `docs/API_V2_CONTRACT.md`, `docs/NATIVE_API_CONTRACT.md`. |
@@ -1247,6 +1288,17 @@ ALTER TABLE orders ADD COLUMN rate_source    TEXT;  -- 'FIXED' | 'NBRB_<date>'
 - Поле `orders.external_id` (для связи с номером документа в 1С).
 - Поле `products.external_1c_guid` (для связи номенклатуры).
 - `audit_log` фиксирует все exchange-операции.
+- Слой исходящего обмена — `app/integrations/one_c/`: контракт `OneCClient` (Protocol), реализации `HttpOneCClient` (httpx, таймаут, ленивое соединение) и `StubOneCClient` (сеть не трогает, отвечает `OneCNotConfiguredError` с подсказкой по настройке), выбор реализации — фабрика `create_one_c_client`. Фабрика не бросает исключений: приложение обязано стартовать при любом состоянии настроек.
+
+**Настройки интеграции** (дополняет п.24 §16):
+
+| Переменная | Смысл |
+|---|---|
+| `INTEGRATION_1C_TOKEN` | Секрет для заголовка `X-Integration-Token`; пусто → `503` «не настроена». |
+| `INTEGRATION_1C_IP_ALLOWLIST` | CSV адресов, которым разрешён обмен; пусто — ограничений нет. |
+| `INTEGRATION_1C_ENABLED` | Включает исходящий обмен; без него (или без base URL) работает заглушка. |
+| `INTEGRATION_1C_BASE_URL` | Адрес сервера 1С для исходящего обмена. |
+| `INTEGRATION_1C_TIMEOUT_SEC` | Таймаут исходящего запроса; `0` поднимается до безопасного минимума (в httpx `0` означал бы «ждать вечно»). |
 
 ---
 

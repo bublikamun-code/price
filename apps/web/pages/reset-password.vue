@@ -95,7 +95,7 @@ async function onSubmit() {
       </p>
 
       <button type="submit" class="btn-primary min-h-11 w-full" :disabled="loading || !passwordsValid">
-        <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+        <span v-if="loading" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
         {{ loading ? 'Сохраняем' : 'Сохранить пароль' }}
       </button>
     </form>

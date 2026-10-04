@@ -8,6 +8,7 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAG
 useHead({ title: 'Бренды и серии — Менеджер' })
 
 const { request } = useApi()
+const { show } = useToast()
 /* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
 const overlayDown = ref(false)
 const { thumbOf } = useProductPhoto()
@@ -80,6 +81,7 @@ async function submitCreate() {
     const res = await request<ManagerBrand>('/api/v1/manager/brands', { method: 'POST', body: { name } })
     brands.value.unshift(res)
     showCreate.value = false
+    show(`Бренд «${res.name}» создан`, { type: 'success' })
   } catch (e) {
     createError.value = getErrorMessage(e, 'Не удалось создать бренд')
   } finally {
@@ -112,6 +114,7 @@ async function submitRename() {
     })
     brands.value = brands.value.map((b) => (b.id === res.id ? res : b))
     renaming.value = null
+    show(`Бренд переименован: «${res.name}»`, { type: 'success' })
   } catch (e) {
     renameError.value = getErrorMessage(e, 'Не удалось переименовать бренд')
   } finally {
@@ -137,6 +140,7 @@ async function doDelete(b: ManagerBrand) {
     await request(`/api/v1/manager/brands/${b.id}`, { method: 'DELETE' })
     brands.value = brands.value.filter((x) => x.id !== b.id)
     confirmingId.value = null
+    show(`Бренд «${b.name}» удалён`, { type: 'success' })
   } catch (e) {
     deleteError.value = { id: b.id, msg: getErrorMessage(e, 'Не удалось удалить бренд') }
   } finally {
@@ -191,6 +195,7 @@ async function onPhotoPick(s: SeriesRef, ev: Event) {
       body: fd,
     })
     s.photo_key = res.photo_key // обновляем фото на месте
+    show(`Фото серии «${s.name}» загружено`, { type: 'success' })
   } catch (e) {
     uploadError.value = { id: s.id, msg: getErrorMessage(e, 'Не удалось загрузить фото') }
   } finally {
@@ -206,17 +211,23 @@ onMounted(load)
     <PageHeading
       eyebrow="Сервис менеджера"
       title="Бренды и серии"
-      :description="loading ? 'Загрузка…' : `${brands.length} брендов`"
+      :description="loading ? '' : `${brands.length} брендов`"
     >
       <template #actions>
         <UiButton size="touch" @click="openCreate"><template #leading><Icon name="heroicons:plus" class="size-4" /></template>Создать бренд</UiButton>
       </template>
     </PageHeading>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost min-h-11 text-sm" @click="load">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить бренды"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-if="loading" class="border border-border bg-surface">
       <div v-for="i in 6" :key="i" class="border border-border bg-surface p-4">
@@ -226,13 +237,19 @@ onMounted(load)
       </div>
     </div>
 
-    <div v-else-if="!brands.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:tag" class="size-8 mb-3 text-ink-faint" />
-      <p>Брендов пока нет</p>
-      <button class="btn-primary mt-4" @click="openCreate">
-        <Icon name="heroicons:plus" class="w-4 h-4" /> Создать первый бренд
-      </button>
-    </div>
+    <UiEmptyState
+      v-else-if="!brands.length"
+      class="border border-border bg-surface"
+      title="Брендов пока нет"
+      description="Создайте первый бренд — серии и товары будут привязаны к нему."
+      icon="heroicons:tag"
+    >
+      <template #action>
+        <button type="button" class="btn-primary min-h-11" @click="openCreate">
+          <Icon name="heroicons:plus" class="w-4 h-4" /> Создать первый бренд
+        </button>
+      </template>
+    </UiEmptyState>
 
     <div v-else class="border border-border bg-surface">
       <div v-for="b in brands" :key="b.id" class="border-b border-border p-4 last:border-b-0">
@@ -271,7 +288,7 @@ onMounted(load)
             :disabled="deletingId === b.id"
             @click="doDelete(b)"
           >
-            <span v-if="deletingId === b.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+            <span v-if="deletingId === b.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
             {{ deletingId === b.id ? 'Удаление…' : 'Удалить' }}
           </button>
           <button class="btn-ghost min-h-11 px-3 text-xs" @click="confirmingId = null">Отмена</button>
@@ -306,7 +323,7 @@ onMounted(load)
                     accept=".jpg,.jpeg,.png,.webp"
                     @change="onPhotoPick(s, $event)"
                   >
-                  <span v-if="uploadingId === s.id" class="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-sm animate-spin" />
+                  <span v-if="uploadingId === s.id" class="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-sm animate-spin motion-reduce:animate-none" />
                   <Icon v-else name="heroicons:camera" class="w-3.5 h-3.5" />
                   {{ s.photo_key ? 'Заменить' : 'Загрузить фото' }}
                 </label>
@@ -364,7 +381,7 @@ onMounted(load)
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" class="btn-ghost min-h-11" @click="showCreate = false">Отмена</button>
           <button type="submit" class="btn-primary min-h-11" :disabled="!createName.trim() || creating">
-            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
             {{ creating ? 'Создание…' : 'Создать' }}
           </button>
         </div>
@@ -402,7 +419,7 @@ onMounted(load)
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" class="btn-ghost min-h-11" @click="renaming = null">Отмена</button>
           <button type="submit" class="btn-primary min-h-11" :disabled="!renameName.trim() || renamingBusy">
-            <span v-if="renamingBusy" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+            <span v-if="renamingBusy" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
             {{ renamingBusy ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>

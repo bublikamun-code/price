@@ -27,6 +27,7 @@ function isActive(to: string) {
 
 <template>
   <div class="min-h-screen bg-background text-ink">
+    <AppOfflineBanner />
     <main
       class="mx-auto w-full max-w-md px-4 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))]"
     >
@@ -50,11 +51,11 @@ function isActive(to: string) {
             <Icon :name="item.icon" class="size-5" aria-hidden="true" />
             <span
               v-if="item.to === '/m/cart' && cartCount > 0"
-              class="numeric absolute -right-3 -top-1 min-w-4 bg-action px-1 text-center text-xs font-bold leading-4 text-white"
+              class="numeric absolute -right-3 -top-1 min-w-4 bg-action px-1 text-center text-xs font-bold leading-4 text-action-on"
             >{{ cartCount > 99 ? '99+' : cartCount }}</span>
             <span
               v-else-if="item.to === '/m/notifications' && unreadCount > 0"
-              class="numeric absolute -right-3 -top-1 min-w-4 bg-action px-1 text-center text-xs font-bold leading-4 text-white"
+              class="numeric absolute -right-3 -top-1 min-w-4 bg-action px-1 text-center text-xs font-bold leading-4 text-action-on"
             >{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
           </span>
           <span>{{ item.label }}</span>

@@ -120,7 +120,7 @@ async function onSave() {
           <p v-else-if="saved" class="text-sm font-semibold text-success-text" role="status">Настройки сохранены.</p>
         </div>
         <button type="submit" class="btn-primary sm:min-w-40" :disabled="loading || !dirty">
-          <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+          <span v-if="loading" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
           {{ loading ? 'Сохраняем' : 'Сохранить' }}
         </button>
       </div>

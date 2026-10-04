@@ -192,7 +192,7 @@ onMounted(load)
     <PageHeading
       eyebrow="Сервис менеджера"
       title="Клиенты"
-      :description="loading ? 'Загрузка…' : `${total} клиентов`"
+      :description="loading ? '' : `${total} клиентов`"
     >
       <template #actions>
         <UiButton size="touch" @click="openCreate"><template #leading><Icon name="heroicons:plus" class="size-4" /></template>Создать клиента</UiButton>
@@ -215,19 +215,39 @@ onMounted(load)
       <button type="submit" class="btn-primary min-h-11 shrink-0">Найти</button>
     </form>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить клиентов"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 6" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!sortedUsers.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:users" class="size-8 mb-3 text-ink-faint" />
-      <p>{{ appliedQ ? 'По этому запросу клиентов нет' : 'Клиентов пока нет' }}</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!sortedUsers.length"
+      class="border border-border bg-surface"
+      :title="appliedQ ? 'Ничего не найдено' : 'Клиентов пока нет'"
+      :description="appliedQ
+        ? 'По этому запросу клиентов нет. Измените условия поиска или очистите его.'
+        : 'Создайте клиента — он сможет входить в портал с временным паролем и видеть персональные цены.'"
+      :icon="appliedQ ? 'heroicons:magnifying-glass' : 'heroicons:users'"
+    >
+      <template #action>
+        <button v-if="appliedQ" type="button" class="btn-outline min-h-11" @click="q = ''; applySearch()">
+          Сбросить поиск
+        </button>
+              <UiButton v-else size="touch" @click="openCreate">
+                <template #leading><Icon name="heroicons:plus" class="size-4" /></template>Создать клиента
+                  </UiButton>
+      </template>
+    </UiEmptyState>
 
     <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
@@ -328,7 +348,7 @@ onMounted(load)
         <button
           v-else
           class="btn-outline size-11 font-medium text-sm"
-          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+          :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
@@ -391,7 +411,7 @@ onMounted(load)
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" class="btn-ghost min-h-11" @click="closeCreate">Отмена</button>
           <button type="submit" class="btn-primary min-h-11" :disabled="!createValid || creating">
-            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+            <span v-if="creating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
             {{ creating ? 'Создание…' : 'Создать' }}
           </button>
         </div>

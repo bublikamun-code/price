@@ -7,6 +7,9 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAG
 useHead({ title: 'Заявки — Менеджер' })
 
 const { request } = useApi()
+// Ошибка загрузки списка остаётся в ErrorState, а сбой быстрой смены статуса —
+// это ошибка действия: её показываем тостом, не выдавая за состояние страницы.
+const { show } = useToast()
 const PER_PAGE = 15
 
 const STATUS_TABS = ORDER_STATUS_TABS
@@ -139,7 +142,6 @@ async function load() {
 async function quickChangeStatus(order: OrderRead, next: OrderStatus) {
   if (changingId.value) return
   changingId.value = order.id
-  error.value = ''
   try {
     const updated = await request<OrderRead>(`/api/v1/manager/orders/${order.id}`, {
       method: 'PATCH',
@@ -153,8 +155,9 @@ async function quickChangeStatus(order: OrderRead, next: OrderStatus) {
       orders.value.splice(idx, 1)
       total.value = Math.max(0, total.value - 1)
     }
+    show(`Заявка ${formatOrderNumber(order.seq, order.id)}: ${STATUS_META[updated.status].label}`, { type: 'success' })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось изменить статус')
+    show(getErrorMessage(e, 'Не удалось изменить статус'), { type: 'error' })
   } finally {
     changingId.value = null
   }
@@ -186,18 +189,20 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div data-testid="manager-orders-page">
     <PageHeading
       eyebrow="Сервис менеджера"
       title="Заявки"
-      :description="loading ? 'Загрузка…' : `${total} заявок`"
+      :description="loading ? '' : `${total} заявок`"
     />
 
     <!-- Поиск -->
     <div class="mb-4 max-w-sm">
       <div class="relative">
         <Icon name="heroicons:magnifying-glass" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
+        <label for="manager-orders-search" class="sr-only">Поиск по номеру или клиенту</label>
         <input
+          id="manager-orders-search"
           v-model="searchQuery"
           type="search"
           class="input pl-10"
@@ -213,7 +218,7 @@ onMounted(load)
         v-for="tab in STATUS_TABS"
         :key="tab.value || 'all'"
         class="btn-outline min-h-11 px-3 text-sm"
-        :class="statusFilter === tab.value ? 'border-action bg-action text-white' : 'bg-surface text-ink-muted hover:border-action'"
+        :class="statusFilter === tab.value ? 'border-action bg-action text-action-on' : 'bg-surface text-ink-muted hover:border-action'"
         @click="applyStatus(tab.value)"
       >
         {{ tab.label }}
@@ -223,21 +228,48 @@ onMounted(load)
       </button>
     </div>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить заявки"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
-    <div v-if="loading" class="border border-border bg-surface p-4">
-      <div v-for="i in 5" :key="i" class="skeleton h-14 w-full mb-3 last:mb-0"/>
-    </div>
+    <!-- Осмысленное состояние загрузки (E2E + скринридеры): статус с текстом
+         и aria-busy, а не голые скелетоны без семантики. -->
+    <div
+      v-if="loading"
+      class="border border-border bg-surface p-4"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      data-testid="manager-orders-loading"
+    >
+      <span class="sr-only">Загружаем список заявок…</span>
+      <div
+        v-for="i in 5"
+        :key="i"
+        class="skeleton h-14 w-full mb-3 last:mb-0"
+        aria-hidden="true"
+      />
+      </div>
 
-    <div v-else-if="!displayedRows.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:clipboard-document-list" class="size-8 mb-3 text-ink-faint" />
-      <p>{{ debouncedSearch ? 'По этому запросу ничего не найдено' : 'Заявок по этому фильтру нет' }}</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!displayedRows.length"
+      class="border border-border bg-surface"
+      :title="debouncedSearch ? 'Ничего не найдено' : 'Заявок пока нет'"
+      :description="debouncedSearch
+        ? 'По этому запросу заявок нет. Измените условия поиска.'
+        : 'Как только клиенты оформят заявки, они появятся здесь.'"
+      :icon="debouncedSearch ? 'heroicons:magnifying-glass' : 'heroicons:clipboard-document-list'"
+      data-testid="manager-orders-empty"
+    />
 
-    <div v-else class="border border-border bg-surface">
+    <div v-else class="border border-border bg-surface" data-testid="manager-orders-table">
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -277,7 +309,7 @@ onMounted(load)
                     :disabled="changingId === o.id"
                     @click.prevent="quickChangeStatus(o, QUICK_ACTIONS[o.status]!.next)"
                   >
-                    <span v-if="changingId === o.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+                    <span v-if="changingId === o.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
                     <template v-else>{{ QUICK_ACTIONS[o.status]!.label }}</template>
                   </button>
                   <NuxtLink :to="`/manager/orders/${o.id}`" class="btn-ghost min-h-11 text-sm">
@@ -291,7 +323,11 @@ onMounted(load)
       </div>
     </div>
 
-    <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
+    <nav
+      v-if="!loading && totalPages > 1"
+      class="flex items-center justify-center gap-1 mt-6"
+      aria-label="Пагинация заявок"
+    >
       <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
@@ -300,7 +336,7 @@ onMounted(load)
         <button
           v-else
           class="btn-outline size-11 font-medium text-sm"
-          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+          :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>

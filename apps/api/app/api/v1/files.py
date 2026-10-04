@@ -120,7 +120,8 @@ async def download_file(
 @router.get("/photo")
 async def get_photo(
     key: str = Query(description="S3-ключ фото (например photos-series/serie-a.webp)"),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Фото серии/товара — байтами (§16 п.18).
 
@@ -131,9 +132,19 @@ async def get_photo(
     клиент получает то же самое.
 
     Ключ валидируется ДО чтения: «голый» путь без схемы и без ``..`` — иначе
-    400. Объекта нет → 404, хранилище недоступно → 502.
+    400. Видимость проверяется по записи файла: аутентификации мало, ключ из
+    серии MANAGER_ONLY не должен отдаваться клиенту. Ответ 404, а не 403 —
+    иначе сам факт существования ключа утекает. Объекта нет → 404, хранилище
+    недоступно → 502.
     """
     valid_key = _validate_photo_key(key)
+
+    asset = await file_assets_repo.get_by_s3_key(db, valid_key)
+    if asset is not None and not _can_see(user, asset):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено"
+        )
+
     try:
         data = await run_in_threadpool(
             storage.get_bytes, settings.s3_bucket_photos, valid_key

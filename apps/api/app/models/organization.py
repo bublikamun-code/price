@@ -5,6 +5,7 @@ pricing remain untouched while real memberships are introduced explicitly by a
 manager or a future organization import flow.
 """
 import uuid
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -123,8 +124,8 @@ class OrganizationBrandTerm(Base, TimestampMixin):
         ForeignKey("brands.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    discount_percent: Mapped[float] = mapped_column(
-        Numeric(5, 2), nullable=False, default=0
+    discount_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal(0)
     )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True

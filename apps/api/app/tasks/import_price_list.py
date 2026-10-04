@@ -35,6 +35,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.sanitize import spreadsheet_cell
 from app.importers.csv_price import (
     NormalizedRow,
     RowError,
@@ -360,11 +361,19 @@ async def _reconcile_stuck() -> dict:
 
 
 def _errors_to_csv(errors: Sequence[RowError]) -> bytes:
+    """CSV-отчёт об ошибках импорта (§7.1): номер строки, колонка, сообщение.
+
+    ``column``/``message`` содержат фрагменты присланного CSV — недоверенный
+    ввод, поэтому проходят ``spreadsheet_cell`` (§11), иначе значение из файла
+    отчёта вычислилось бы в Excel. ``row_num`` — число, его оборачивать не
+    нужно; заголовок колонок не трогаем.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["row", "column", "message"])
     for e in errors:
-        writer.writerow([e.row_num, e.column, e.message])
+        writer.writerow([e.row_num, spreadsheet_cell(e.column),
+                         spreadsheet_cell(e.message)])
     return buf.getvalue().encode("utf-8")
 
 

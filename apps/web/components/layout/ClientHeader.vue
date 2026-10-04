@@ -50,7 +50,7 @@ const onCurrencySection = computed(
       </UiIconButton>
       <NuxtLink to="/notifications" class="relative inline-flex size-10 items-center justify-center text-ink-muted hover:text-ink" aria-label="Уведомления">
         <Icon name="heroicons:bell" class="size-5" aria-hidden="true" />
-        <span v-if="notifications.unreadCount.value" class="absolute right-0 top-0 min-w-4 border border-surface bg-danger px-1 text-xs leading-4 text-white">{{ notifications.unreadCount.value > 99 ? '99+' : notifications.unreadCount.value }}</span>
+        <span v-if="notifications.unreadCount.value" class="absolute right-0 top-0 min-w-4 border border-surface bg-danger px-1 text-xs leading-4 text-danger-on">{{ notifications.unreadCount.value > 99 ? '99+' : notifications.unreadCount.value }}</span>
       </NuxtLink>
       <NuxtLink to="/profile" class="inline-flex min-h-10 items-center gap-2 border-l border-border pl-4 text-sm font-semibold text-ink hover:text-action" :aria-label="`Профиль: ${auth.user?.name || ''}`">
         <Icon name="heroicons:user-circle" class="size-7" aria-hidden="true" />

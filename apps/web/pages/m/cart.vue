@@ -148,7 +148,7 @@ onMounted(refresh)
         <label class="label" for="m_notes">Комментарий (необязательно)</label>
         <textarea id="m_notes" v-model="notes" rows="3" class="input mt-1 resize-y" placeholder="Сертификат, сроки доставки…" />
         <button type="button" class="btn-primary mt-4 min-h-11 w-full justify-center" :disabled="submitting" @click="submitOrder">
-          <span v-if="submitting" class="size-4 animate-spin border-2 border-white/40 border-t-white" />
+          <span v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none border-2 border-white/40 border-t-white" />
           {{ submitting ? 'Отправка…' : 'Отправить заявку' }}
         </button>
         <button type="button" class="btn-ghost mt-2 min-h-11 w-full justify-center" @click="backToCart">Назад в корзину</button>

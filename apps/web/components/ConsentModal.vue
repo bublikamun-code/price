@@ -111,7 +111,10 @@ async function accept() {
           class="relative max-h-[90vh] w-full max-w-xl overflow-y-auto border border-border-strong bg-surface p-6 sm:p-8"
           tabindex="-1"
         >
-          <h1 id="consent-modal-title" class="text-2xl font-bold text-center mb-2">Согласие на обработку персональных данных</h1>
+          <!-- h2, а не h1: заголовок модалки не должен забирать структуру
+               документа у самой страницы. Иначе на странице с этим диалогом
+               оказывается два h1, и навигация по заголовкам врёт. -->
+          <h2 id="consent-modal-title" class="text-2xl font-bold text-center mb-2">Согласие на обработку персональных данных</h2>
           <p class="text-sm text-ink-muted text-center mb-6">
             Для работы портала нам нужно ваше согласие. Краткая выжимка политики:
           </p>
@@ -153,7 +156,7 @@ async function accept() {
             </label>
             <div v-if="errorMsg" id="consent-error" role="alert" class="badge-danger w-full justify-center py-2">{{ errorMsg }}</div>
             <button type="submit" class="btn-primary w-full py-3" :disabled="loading || !accepted">
-              <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              <span v-if="loading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin motion-reduce:animate-none" />
               {{ loading ? 'Сохранение...' : 'Продолжить' }}
             </button>
           </form>

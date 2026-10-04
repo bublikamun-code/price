@@ -5,6 +5,7 @@
 """
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Date,
@@ -117,10 +118,17 @@ class Order(Base, TimestampMixin, UUIDPrimaryKey):
     )
 
     currency_code: Mapped[str] = mapped_column(String(3), default="BYN", nullable=False)
-    exchange_rate: Mapped[float] = mapped_column(Numeric(12, 4), default=1, nullable=False)
+    # Денежные поля — Numeric в БД, значит Decimal и в рантайме (§8/§17).
+    # Аннотация обязана совпадать с фактическим типом Numeric: иначе Decimal
+    # из БД смешивается с float в арифметике заявки (Decimal + float → TypeError).
+    exchange_rate: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4), default=Decimal(1), nullable=False
+    )
     rate_source: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 'FIXED' | 'NBRB_<date>'
 
-    total_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    total_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal(0), nullable=False
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Способ получения: 'pickup' (самовывоз) | 'delivery' (доставка).
@@ -158,6 +166,14 @@ class Order(Base, TimestampMixin, UUIDPrimaryKey):
         Index("ix_orders_client_created", "client_id", "created_at"),
         Index("ix_orders_organization_created", "organization_id", "created_at"),
         Index("ix_orders_status", "status"),
+        # Список заявок менеджера фильтрует по manager_id и сортирует
+        # «новые сверху» (repositories/orders.py). Создан миграцией 0025;
+        # объявлен в модели ради alembic check (аудит 2026-09-06 §3).
+        Index(
+            "ix_orders_manager_created",
+            "manager_id",
+            text("created_at DESC"),
+        ),
     )
 
 
@@ -173,10 +189,21 @@ class OrderItem(Base, UUIDPrimaryKey):
     )
     product_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {sku,name,brand,...}
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)  # заморожено
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)  # заморожено
     currency_code: Mapped[str] = mapped_column(String(3), default="BYN", nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)  # фича E
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        # Карточка заявки читает позиции по order_id и сортирует по created_at;
+        # коррелированный EXISTS поиска по позициям (repositories/orders.py)
+        # идёт по тому же индексу. Созданы миграцией 0025; объявлены в модели
+        # ради alembic check (аудит 2026-09-06 §3).
+        Index("ix_order_items_order_created", "order_id", "created_at"),
+        # «Топ товаров» на дашбордах (клиент/менеджер) группирует позиции
+        # по product_id — без индекса агрегат читает всю таблицу.
+        Index("ix_order_items_product", "product_id"),
+    )
 
 
 class OrderIdempotency(Base, UUIDPrimaryKey):

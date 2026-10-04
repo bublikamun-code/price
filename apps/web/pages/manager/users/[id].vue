@@ -328,16 +328,28 @@ onMounted(() => {
       <div class="skeleton h-64 w-full"/>
     </div>
 
-    <div v-else-if="notFound" class="border border-border bg-surface p-6 text-center">
-      <Icon name="heroicons:user" class="size-8 mb-3 text-ink-faint" />
-      <p class="text-ink-muted mb-4">Клиент не найден</p>
-      <NuxtLink to="/manager/users" class="btn-primary">К списку клиентов</NuxtLink>
-    </div>
+    <UiEmptyState
+      v-else-if="notFound"
+      class="border border-border bg-surface"
+      title="Клиент не найден"
+      description="Проверьте ссылку или вернитесь к списку — возможно, клиент был удалён."
+      icon="heroicons:user"
+    >
+      <template #action>
+        <NuxtLink to="/manager/users" class="btn-primary min-h-11 inline-flex items-center">К списку клиентов</NuxtLink>
+      </template>
+    </UiEmptyState>
 
-    <div v-else-if="error && !detail" class="border border-danger/50 bg-danger-soft p-5">
-      <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-outline min-h-11" @click="load">Повторить</button></div>
-    </div>
+    <UiErrorState
+      v-else-if="error && !detail"
+      class="mb-5"
+      title="Клиент недоступен"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <template v-else-if="detail">
       <!-- Шапка -->
@@ -394,12 +406,12 @@ onMounted(() => {
             :disabled="resettingPassword"
             @click="resetPassword"
           >
-            <span v-if="resettingPassword" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"/>
+            <span v-if="resettingPassword" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"/>
             <Icon v-else name="heroicons:key" class="w-4 h-4" />
             Сбросить пароль
           </button>
           <button class="btn-primary min-h-11" :disabled="profileSaving" @click="saveProfile">
-            <span v-if="profileSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+            <span v-if="profileSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
             {{ profileSaving ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>
@@ -452,7 +464,13 @@ onMounted(() => {
             </tbody>
           </table>
         </div>
-        <p v-else class="text-sm text-ink-muted">Брендов пока нет — скидки настраиваются после импорта каталога.</p>
+        <UiEmptyState
+          v-else
+          compact
+          title="Брендов пока нет"
+          description="Скидки настраиваются после импорта каталога."
+          icon="heroicons:tag"
+        />
 
         <div v-if="discountsError" class="badge-danger w-full justify-center py-2 mt-5">{{ discountsError }}</div>
         <div v-if="discountMsg" class="badge-success w-full justify-center py-2 mt-5">
@@ -461,7 +479,7 @@ onMounted(() => {
 
         <div v-if="discountRows.length" class="flex justify-end mt-5">
           <button class="btn-primary min-h-11" :disabled="discountsSaving" @click="saveDiscounts">
-            <span v-if="discountsSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+            <span v-if="discountsSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
             {{ discountsSaving ? 'Сохранение…' : 'Сохранить скидки' }}
           </button>
         </div>
@@ -494,13 +512,13 @@ onMounted(() => {
               <button
                 type="button"
                 class="btn-outline min-h-11 px-3 text-sm"
-                :class="fixMode === 'manual' ? 'border-action bg-action text-white' : 'bg-surface text-ink-muted hover:border-action'"
+                :class="fixMode === 'manual' ? 'border-action bg-action text-action-on' : 'bg-surface text-ink-muted hover:border-action'"
                 @click="fixMode = 'manual'"
               >Вручную</button>
               <button
                 type="button"
                 class="btn-outline min-h-11 px-3 text-sm"
-                :class="fixMode === 'nbrb' ? 'border-action bg-action text-white' : 'bg-surface text-ink-muted hover:border-action'"
+                :class="fixMode === 'nbrb' ? 'border-action bg-action text-action-on' : 'bg-surface text-ink-muted hover:border-action'"
                 @click="fixMode = 'nbrb'"
               >По текущему курсу НБ РБ</button>
             </div>
@@ -523,12 +541,12 @@ onMounted(() => {
             :disabled="unfixing"
             @click="resetFixedRate"
           >
-            <span v-if="unfixing" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"/>
+            <span v-if="unfixing" class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"/>
             <Icon v-else name="heroicons:arrow-uturn-left" class="w-4 h-4" />
             Снять фиксацию
           </button>
           <button class="btn-primary min-h-11" :disabled="fixing" @click="applyFixedRate">
-            <span v-if="fixing" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+            <span v-if="fixing" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
             {{ fixing ? 'Фиксация…' : 'Зафиксировать' }}
           </button>
         </div>
@@ -538,16 +556,28 @@ onMounted(() => {
       <div class="border border-border bg-surface p-5">
         <h2 class="font-semibold mb-4">Последние заказы</h2>
 
-        <div v-if="ordersError" class="flex items-center gap-3 mb-4">
-          <div class="badge-danger">{{ ordersError }}</div>
-          <button class="btn-ghost text-sm" @click="loadOrders">Повторить</button>
-        </div>
+        <UiErrorState
+          v-if="ordersError"
+          class="mb-4"
+          title="Не удалось загрузить заказы"
+          :description="ordersError"
+        >
+          <template #action>
+            <UiButton variant="secondary" size="compact" @click="loadOrders">Повторить</UiButton>
+          </template>
+        </UiErrorState>
 
         <div v-if="ordersLoading" class="space-y-3">
           <div v-for="i in 3" :key="i" class="skeleton h-12 w-full"/>
         </div>
 
-        <p v-else-if="!orders.length" class="text-sm text-ink-muted">Заказов пока нет.</p>
+        <UiEmptyState
+          v-else-if="!orders.length"
+          compact
+          title="Заказов пока нет"
+          description="Клиент ещё не оформлял ни одной заявки."
+          icon="heroicons:clipboard-document-list"
+        />
 
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">

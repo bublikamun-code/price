@@ -4,6 +4,7 @@
 """
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -50,7 +51,7 @@ class BrandVolumeTier(Base, TimestampMixin, UUIDPrimaryKey):
         UUID(as_uuid=True), ForeignKey("brands.id", ondelete="CASCADE"), nullable=False
     )
     min_qty: Mapped[int] = mapped_column(Integer, nullable=False)
-    discount_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
     __table_args__ = (
@@ -82,6 +83,12 @@ class Series(Base, TimestampMixin, UUIDPrimaryKey):
     )
     photo_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
+    # Серии фильтруются по бренду: публичная витрина, счётчики бренда,
+    # upsert по имени+бренду (repositories/public.py, catalog.py,
+    # manager_catalog.py). FK без индекса — создана миграцией 0025;
+    # объявлен в модели ради alembic check (аудит 2026-09-06 §3).
+    __table_args__ = (Index("ix_series_brand", "brand_id"),)
+
 
 class Product(Base, TimestampMixin, UUIDPrimaryKey):
     """Товар. См. §5.
@@ -101,8 +108,8 @@ class Product(Base, TimestampMixin, UUIDPrimaryKey):
     brand_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("brands.id", ondelete="SET NULL"), nullable=True
     )
-    base_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    override_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    override_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
     stock_status: Mapped[StockStatus] = mapped_column(
         pg_enum(StockStatus, "stock_status"),
@@ -165,6 +172,25 @@ class Product(Base, TimestampMixin, UUIDPrimaryKey):
             postgresql_using="gin",
             postgresql_ops={"sku": "gin_trgm_ops"},
         ),
+        # --- Сортировки рантайм-выборок (миграция 0025, §5.2) ---
+        # Список каталога (в т.ч. keyset-пагинация и выгрузка) всегда идёт по
+        # WHERE deleted_at IS NULL AND stock_status <> 'ARCHIVED' и сортируется
+        # по name (по умолчанию) либо по base_price. Частичный предикат
+        # повторяет WHERE: архивные строки в индекс не попадают.
+        Index(
+            "ix_products_active_name",
+            "name",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        Index(
+            "ix_products_active_price",
+            "base_price",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        # «Новинки» (dashboard.fetch_new_arrivals) и «Акции»
+        # (dashboard.fetch_promos) — LIMIT без сортировки по всей таблице.
+        Index("ix_products_created", text("created_at DESC")),
+        Index("ix_products_updated", text("updated_at DESC")),
     )
 
 
@@ -190,6 +216,17 @@ class ProductPhoto(Base, TimestampMixin, UUIDPrimaryKey):
             "product_id", "photo_key", name="uq_product_photos_product_key"
         ),
         Index("ix_product_photos_product", "product_id"),
+        # Первое фото товара выбирается коррелированным подзапросом
+        # ``... WHERE product_id = :id ORDER BY sort_order, created_at LIMIT 1``
+        # на КАЖДУЮ строку каталога и витрины (N+1 на уровне SQL).
+        # Составной индекс даёт index-only scan сразу на первую строку.
+        # Создан миграцией 0025; объявлен в модели ради alembic check.
+        Index(
+            "ix_product_photos_product_sort",
+            "product_id",
+            "sort_order",
+            "created_at",
+        ),
     )
 
 
@@ -218,7 +255,9 @@ class PriceListVersion(Base, UUIDPrimaryKey):
 
     # Курс прайса при импорте (§17.2, Уровень 1)
     base_currency: Mapped[str] = mapped_column(String(3), default="BYN", nullable=False)
-    rate_to_byn: Mapped[float] = mapped_column(Numeric(12, 4), default=1, nullable=False)
+    rate_to_byn: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4), default=Decimal(1), nullable=False
+    )
     rate_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -231,6 +270,18 @@ class PriceListVersion(Base, UUIDPrimaryKey):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
 
+    # Список версий импорта «новые сверху» (без фильтров), предыдущая
+    # завершённая (DONE) версия и счётчик версий по статусам — таблица была
+    # без индексов, кроме PK. Миграция 0025; alembic check (2026-09-06 §3).
+    __table_args__ = (
+        Index("ix_price_list_versions_created", text("created_at DESC")),
+        Index(
+            "ix_price_list_versions_status_created",
+            "status",
+            text("created_at DESC"),
+        ),
+    )
+
 
 class PriceHistory(Base, UUIDPrimaryKey):
     """История изменения цены по SKU (фича J). Пишется при каждом импорте."""
@@ -239,11 +290,16 @@ class PriceHistory(Base, UUIDPrimaryKey):
     product_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
     )
-    base_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    override_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    override_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     price_list_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("price_list_versions.id"), nullable=True
     )
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
-    __table_args__ = (Index("ix_price_history_product_time", "product_id", "changed_at"),)
+    __table_args__ = (
+        Index("ix_price_history_product_time", "product_id", "changed_at"),
+        # Снимок цен версии для дайджеста фильтруется по версии, а не по
+        # товару (repositories/price_changes.py). Миграция 0025; alembic check.
+        Index("ix_price_history_version", "price_list_version_id"),
+    )

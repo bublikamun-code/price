@@ -30,6 +30,7 @@ from openpyxl import Workbook
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.sanitize import spreadsheet_cell
 from app.models.enums import StockStatus
 from app.models.user import User
 from app.repositories import catalog as catalog_repo
@@ -37,9 +38,9 @@ from app.repositories.catalog import CatalogFilters
 from app.services import storage
 from app.services.pricing import (
     PricingService,
-    _q,
     client_price_byn,
     convert_to_currency,
+    quantize_money,
 )
 from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
@@ -137,8 +138,10 @@ async def _run_export(
                 row.brand_name or "",
                 row.series_name or "",
                 product.stock_status.value,
-                float(_q(product.base_price)),
-                float(convert_to_currency(client_byn, resolved.rate, resolved.scale)),
+                # Decimal в ячейках: openpyxl пишет их числом, PDF — «%.2f»,
+                # CSV — канонической строкой с двумя знаками.
+                quantize_money(product.base_price),
+                convert_to_currency(client_byn, resolved.rate, resolved.scale),
                 resolved.currency,
             ])
 
@@ -172,12 +175,23 @@ def _filters_from_json(filters: dict) -> CatalogFilters:
 
 # ----------------------------- файлы -----------------------------
 
+def _safe_rows(records: list[list]) -> list[list]:
+    """Нейтрализовать значения строк выгрузки (CSV/XLSX injection, §11).
+
+    Названия товаров/брендов/серий приходят из каталога — их правит менеджер,
+    то есть это недоверенный ввод: значение ``=cmd|...`` в XLSX openpyxl
+    превратил бы в живую формулу, а в CSV — в вычисляемую ячейку Excel.
+    Заголовки колонок (константы) не трогаем, числа/``None`` проходят как есть.
+    """
+    return [[spreadsheet_cell(value) for value in record] for record in records]
+
+
 def _to_csv_bytes(records: list[list]) -> bytes:
     """CSV для Excel: UTF-8 c BOM, разделитель ``;`` (как у импорта, §7.1)."""
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
     writer.writerow(COLUMNS)
-    writer.writerows(records)
+    writer.writerows(_safe_rows(records))
     return buf.getvalue().encode("utf-8-sig")
 
 
@@ -185,7 +199,8 @@ def _to_xlsx_bytes(records: list[list]) -> bytes:
     """XLSX через openpyxl в память (BytesIO) — без временных файлов.
 
     Форматирование: жирная шапка, числовой формат цен (#,##0.00),
-    авто-подбор ширины колонок по содержимому.
+    авто-подбор ширины колонок по содержимому. Значения ячеек проходят
+    ``spreadsheet_cell`` (§11) — иначе ``=`` в названии стал бы формулой.
     """
     from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
@@ -204,7 +219,7 @@ def _to_xlsx_bytes(records: list[list]) -> bytes:
         cell.alignment = Alignment(horizontal="center")
 
     # Данные.
-    for record in records:
+    for record in _safe_rows(records):
         ws.append(record)
 
     # Числовой формат для ценовых колонок (строки данных, начиная со 2-й).

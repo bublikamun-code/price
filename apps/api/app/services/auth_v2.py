@@ -7,7 +7,7 @@ httpOnly-cookie (docs/NATIVE_API_CONTRACT.md §4). Здесь живёт тол�
 """
 from __future__ import annotations
 
-from app.api.v2.errors import V2ProblemError
+from app.core.problem_errors import V2ProblemError
 from app.schemas.auth import TokenPair
 from app.services.auth import AuthError
 

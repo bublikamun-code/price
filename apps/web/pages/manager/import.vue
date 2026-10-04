@@ -16,6 +16,9 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAG
 useHead({ title: 'Импорт прайс-листа' })
 
 const { request } = useApi()
+// Сбой отката — ошибка действия в истории импортов, а не загрузки страницы,
+// поэтому он уходит в тост и не занимает поле ошибки формы импорта.
+const { show } = useToast()
 /* закрытие модалки по клику на подложку — только если нажатие началось на ней (иначе срабатывает при выделении текста с уводом мыши) */
 const overlayDown = ref(false)
 
@@ -313,7 +316,6 @@ async function confirmRollback() {
   if (!v || rollbackLoadingId.value) return
 
   rollbackLoadingId.value = v.id
-  submitError.value = ''
   try {
     const res = await request<RollbackOut>(
       `/api/v1/manager/prices/versions/${v.id}/rollback`,
@@ -327,7 +329,7 @@ async function confirmRollback() {
     await loadHistory()
     cancelRollback()
   } catch (e) {
-    submitError.value = getErrorMessage(e, 'Не удалось откатить версию')
+    show(getErrorMessage(e, 'Не удалось откатить версию'), { type: 'error' })
   } finally {
     rollbackLoadingId.value = null
   }
@@ -513,7 +515,7 @@ onUnmounted(() => {
         :disabled="submitting || !selectedFile"
         @click="onSubmit"
       >
-        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white  animate-spin"/>
+        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white  animate-spin motion-reduce:animate-none"/>
         {{ submitting ? 'Запуск…' : 'Импортировать' }}
       </button>
     </div>
@@ -541,7 +543,7 @@ onUnmounted(() => {
         <div class="flex gap-2">
           <button class="btn-ghost py-2" :disabled="zipSubmitting" @click="clearZip">Убрать</button>
           <button class="btn-primary py-2.5 px-5" :disabled="zipSubmitting" @click="onZipSubmit">
-            <span v-if="zipSubmitting" class="w-4 h-4 border-2 border-white/40 border-t-white  animate-spin"/>
+            <span v-if="zipSubmitting" class="w-4 h-4 border-2 border-white/40 border-t-white  animate-spin motion-reduce:animate-none"/>
             {{ zipSubmitting ? 'Обработка…' : 'Загрузить и обработать' }}
           </button>
         </div>
@@ -568,19 +570,34 @@ onUnmounted(() => {
     <!-- История импортов -->
     <h2 class="font-semibold mb-4">История импортов</h2>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost min-h-11 text-sm" @click="loadHistory()">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить историю импортов"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="loadHistory()">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 4" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!versions.length" class="border border-border bg-surface p-6 text-center text-ink-muted">
-      <Icon name="heroicons:clock" class="size-8 mb-3 text-ink-faint" />
-      <p>Импортов пока не было</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!versions.length"
+      class="border border-border bg-surface"
+      title="Импортов пока не было"
+      description="Загрузите CSV с ценами в форме выше — импорт выполняется в фоне, а прогресс появится здесь."
+      icon="heroicons:clock"
+    >
+      <template #action>
+        <button type="button" class="btn-primary min-h-11" @click="pickFile">
+          <Icon name="heroicons:arrow-up-tray" class="w-4 h-4" /> Выбрать файл прайса
+        </button>
+      </template>
+    </UiEmptyState>
 
     <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
@@ -642,7 +659,7 @@ onUnmounted(() => {
                 >
                   <span
                     v-if="rollbackLoadingId === v.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current  animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current  animate-spin motion-reduce:animate-none"
                   />
                   <template v-else>Откатить</template>
                 </button>
@@ -669,7 +686,7 @@ onUnmounted(() => {
         <button
           v-else
           class="btn-outline size-11 font-medium text-sm"
-          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+          :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
@@ -792,7 +809,12 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="detailError" class="badge-danger w-full justify-center py-2 mb-4">{{ detailError }}</div>
+          <UiErrorState
+            v-if="detailError"
+            class="mb-4"
+            title="Не удалось получить ссылку на лог ошибок"
+            :description="detailError"
+          />
 
           <div class="flex justify-end gap-2">
             <button
@@ -800,7 +822,7 @@ onUnmounted(() => {
               :disabled="!detail.error_log_key || detail.rows_error === 0 || errorsUrlLoading"
               @click="downloadErrors"
             >
-              <span v-if="errorsUrlLoading" class="w-4 h-4 border-2 border-current/40 border-t-current  animate-spin"/>
+              <span v-if="errorsUrlLoading" class="w-4 h-4 border-2 border-current/40 border-t-current  animate-spin motion-reduce:animate-none"/>
               <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
               Скачать лог ошибок
             </button>
@@ -808,12 +830,16 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <div v-else-if="detailError" class="text-center py-8">
-          <p class="text-danger text-sm">{{ detailError }}</p>
-          <button class="btn-ghost mt-3" @click="selectedVersionId && openDetails(selectedVersionId)">
-            Повторить
-          </button>
-        </div>
+        <UiErrorState
+          v-else-if="detailError"
+          class="border border-border bg-surface"
+          title="Не удалось загрузить версию"
+          :description="detailError"
+        >
+          <template #action>
+            <UiButton variant="secondary" size="compact" @click="selectedVersionId && openDetails(selectedVersionId)">Повторить</UiButton>
+          </template>
+        </UiErrorState>
       </div>
     </div>
   </div>

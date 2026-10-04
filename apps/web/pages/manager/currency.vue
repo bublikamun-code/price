@@ -147,19 +147,35 @@ onUnmounted(() => {
       <Icon name="heroicons:check-circle" class="w-4 h-4" /> {{ refreshMsg }}
     </div>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost min-h-11 text-sm" @click="load">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить курсы валют"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 6" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!sortedRates.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:banknotes" class="size-8 mb-3 text-ink-faint" />
-      <p>Курсов пока нет — обновите курсы НБ РБ или добавьте вручную</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!sortedRates.length"
+      class="border border-border bg-surface"
+      title="Курсов пока нет"
+      description="Обновите курсы НБ РБ или добавьте значение вручную в форме ниже."
+      icon="heroicons:banknotes"
+    >
+      <template #action>
+        <UiButton variant="outline" size="touch" :loading="refreshing" :disabled="refreshing" @click="refreshRates">
+          <template #leading><Icon name="heroicons:arrow-path" class="size-4" /></template>
+          Обновить курсы НБ РБ
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <div v-else class="mb-5 border border-border bg-surface">
       <div class="overflow-x-auto">
@@ -213,7 +229,7 @@ onUnmounted(() => {
           <input id="mc-date" v-model="manualForm.fetched_at" type="date" class="input py-2.5" required>
         </div>
         <button type="submit" class="btn-primary sm:ml-auto shrink-0" :disabled="!manualValid || manualSaving">
-          <span v-if="manualSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+          <span v-if="manualSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
           {{ manualSaving ? 'Добавление…' : 'Добавить' }}
         </button>
       </form>
