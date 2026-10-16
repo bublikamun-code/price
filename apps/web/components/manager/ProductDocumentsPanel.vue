@@ -205,13 +205,11 @@ onMounted(load)
           </div>
           <div>
             <label class="label" :for="`doc-valid-${targetId}`">Действует до</label>
-            <input
+            <UiDatePicker
               :id="`doc-valid-${targetId}`"
               v-model="validUntil"
-              type="date"
-              class="input"
               :data-testid="`manager-document-valid-${scope}`"
-            >
+            />
           </div>
         </div>
         <button

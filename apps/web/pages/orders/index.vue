@@ -234,24 +234,21 @@ onMounted(load)
           </UiField>
         </div>
         <UiField for="orders-filter-date-from" label="Дата с">
-          <input
+          <UiDatePicker
             id="orders-filter-date-from"
-            :value="filters.dateFrom"
-            type="date"
-            class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            :model-value="filters.dateFrom"
             data-testid="orders-filter-date-from"
-            @input="onFilterInput('dateFrom', ($event.target as HTMLInputElement).value)"
-          >
+            @update:model-value="onFilterInput('dateFrom', $event)"
+          />
         </UiField>
         <UiField for="orders-filter-date-to" label="Дата по">
-          <input
+          <UiDatePicker
             id="orders-filter-date-to"
-            :value="filters.dateTo"
-            type="date"
-            class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            :model-value="filters.dateTo"
+            align="end"
             data-testid="orders-filter-date-to"
-            @input="onFilterInput('dateTo', ($event.target as HTMLInputElement).value)"
-          >
+            @update:model-value="onFilterInput('dateTo', $event)"
+          />
         </UiField>
         <UiField for="orders-filter-min-total" label="Сумма от">
           <input

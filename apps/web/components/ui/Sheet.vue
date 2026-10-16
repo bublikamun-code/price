@@ -90,7 +90,7 @@ onUnmounted(() => {
             <Icon name="heroicons:x-mark" class="size-5" aria-hidden="true" />
           </UiIconButton>
         </header>
-        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <div class="scroll-slim min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
           <slot />
         </div>
         <footer v-if="$slots.footer" class="border-t border-border p-4">

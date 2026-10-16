@@ -289,7 +289,7 @@ watch(deliveryMethod, (method) => {
                 <UiInput id="delivery-phone" v-model="deliveryPhone" type="tel" :error="phoneError" :disabled="submitting" placeholder="+375 29 000-00-00" required />
               </UiField>
               <UiField for="delivery-date" label="Желаемая дата" description="Необязательно">
-                <UiInput id="delivery-date" v-model="deliveryDate" type="date" :disabled="submitting" />
+                <UiDatePicker id="delivery-date" v-model="deliveryDate" :disabled="submitting" />
               </UiField>
             </div>
 

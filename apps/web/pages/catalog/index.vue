@@ -375,7 +375,7 @@ onUnmounted(() => {
       <aside
         v-show="!railCollapsed"
         id="catalog-filters"
-        class="hidden w-72 shrink-0 self-start border border-border bg-surface lg:sticky lg:top-24 lg:block"
+        class="hidden w-72 shrink-0 self-start overscroll-contain border border-border bg-surface lg:sticky lg:top-24 lg:block lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:scroll-slim"
         aria-label="Фильтры каталога"
         data-testid="catalog-filters"
       >

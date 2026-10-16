@@ -73,11 +73,11 @@ function toggleGroup(key: keyof typeof collapsed) {
 </script>
 
 <template>
-  <div class="px-4 pb-4">
-    <div v-if="facets.brands.length" class="border-b border-border py-4">
+  <div class="px-4 pb-3">
+    <div v-if="facets.brands.length" class="border-b border-border py-3">
       <button
         type="button"
-        class="flex min-h-11 w-full items-center justify-between text-sm font-semibold text-ink"
+        class="flex min-h-9 w-full items-center justify-between text-sm font-semibold text-ink"
         :aria-expanded="!collapsed.brands"
         @click="toggleGroup('brands')"
       >
@@ -90,11 +90,11 @@ function toggleGroup(key: keyof typeof collapsed) {
           aria-hidden="true"
         />
       </button>
-      <div v-show="!collapsed.brands" class="space-y-1">
+      <div v-show="!collapsed.brands" class="space-y-0.5">
         <label
           v-for="brand in visibleFilterItems(facets.brands, 'brands')"
           :key="brand.id"
-          class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-ink"
+          class="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-ink"
         >
           <input v-model="brands" type="checkbox" :value="brand.id" class="size-4" @change="emit('change')">
           <span class="min-w-0 truncate">{{ brand.name }}</span>
@@ -102,7 +102,7 @@ function toggleGroup(key: keyof typeof collapsed) {
         <button
           v-if="hiddenFilterCount(facets.brands, 'brands')"
           type="button"
-          class="min-h-11 text-xs font-semibold text-action hover:underline"
+          class="min-h-8 text-xs font-semibold text-action hover:underline"
           @click="expanded.brands = true"
         >
           Показать все ({{ facets.brands.length }})
@@ -110,10 +110,10 @@ function toggleGroup(key: keyof typeof collapsed) {
       </div>
     </div>
 
-    <div v-if="facets.series.length" class="border-b border-border py-4">
+    <div v-if="facets.series.length" class="border-b border-border py-3">
       <button
         type="button"
-        class="flex min-h-11 w-full items-center justify-between text-sm font-semibold text-ink"
+        class="flex min-h-9 w-full items-center justify-between text-sm font-semibold text-ink"
         :aria-expanded="!collapsed.series"
         @click="toggleGroup('series')"
       >
@@ -126,11 +126,11 @@ function toggleGroup(key: keyof typeof collapsed) {
           aria-hidden="true"
         />
       </button>
-      <div v-show="!collapsed.series" class="max-h-52 space-y-1 overflow-y-auto">
+      <div v-show="!collapsed.series" class="max-h-56 space-y-0.5 overflow-y-auto overscroll-contain scroll-slim">
         <label
           v-for="series in visibleFilterItems(facets.series, 'series')"
           :key="series.id"
-          class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-ink"
+          class="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-ink"
         >
           <input v-model="seriesSelection" type="checkbox" :value="series.id" class="size-4" @change="emit('change')">
           <span class="min-w-0 truncate">{{ series.name }}</span>
@@ -138,7 +138,7 @@ function toggleGroup(key: keyof typeof collapsed) {
         <button
           v-if="hiddenFilterCount(facets.series, 'series')"
           type="button"
-          class="min-h-11 text-xs font-semibold text-action hover:underline"
+          class="min-h-8 text-xs font-semibold text-action hover:underline"
           @click="expanded.series = true"
         >
           Показать все ({{ facets.series.length }})
@@ -146,23 +146,23 @@ function toggleGroup(key: keyof typeof collapsed) {
       </div>
     </div>
 
-    <div class="border-b border-border py-4">
-      <p class="mb-2 text-sm font-semibold text-ink">Наличие</p>
-      <label class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-ink">
+    <div class="border-b border-border py-3">
+      <p class="mb-1 text-sm font-semibold text-ink">Наличие</p>
+      <label class="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-ink">
         <input v-model="stock" type="radio" value="" :name="stockName" class="size-4" @change="emit('change')">
         Любое наличие
       </label>
       <label
         v-for="status in facets.stockStatuses"
         :key="status"
-        class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-ink"
+        class="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-ink"
       >
         <input v-model="stock" type="radio" :value="status" :name="stockName" class="size-4" @change="emit('change')">
         {{ stockLabel[status] }}
       </label>
     </div>
 
-    <div class="py-4">
+    <div class="py-3">
       <UiField :for="modelId" label="Модель">
         <UiSelect v-model="modelValue" :options="modelOptions" @update:model-value="emit('change')" />
       </UiField>

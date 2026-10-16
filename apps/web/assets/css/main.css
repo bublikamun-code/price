@@ -343,6 +343,25 @@
     display: none;
   }
 
+  /* Тонкий скроллбар в токенах дизайн-системы: внутренние скроллы панелей
+     (рельса фильтров, шторки) не должны выглядеть системными. */
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--color-border-strong)) transparent;
+  }
+
+  .scroll-slim::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--color-border-strong));
+  }
+
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
   .numeric {
     font-family: theme('fontFamily.mono');
     font-variant-numeric: tabular-nums;

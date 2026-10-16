@@ -210,7 +210,7 @@ onUnmounted(() => {
         </div>
         <div class="sm:w-44">
           <label class="label" for="mc-date">Дата</label>
-          <input id="mc-date" v-model="manualForm.fetched_at" type="date" class="input py-2.5" required>
+          <UiDatePicker id="mc-date" v-model="manualForm.fetched_at" />
         </div>
         <button type="submit" class="btn-primary sm:ml-auto shrink-0" :disabled="!manualValid || manualSaving">
           <span v-if="manualSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
