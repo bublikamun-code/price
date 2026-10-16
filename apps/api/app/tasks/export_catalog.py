@@ -241,7 +241,7 @@ def _to_pdf_bytes(records: list[list], *, user, price_calc_mode: str) -> bytes:
     weasyprint импортируется лениво: рендер выполняется только в Celery-воркере,
     API-процессу библиотека не нужна в рантайме (хотя и установлена).
     """
-    from weasyprint import HTML
+    from app.core.pdf import write_pdf
 
     from app.core.templates import render_pdf
 
@@ -253,7 +253,7 @@ def _to_pdf_bytes(records: list[list], *, user, price_calc_mode: str) -> bytes:
         price_mode=_PRICE_MODE_LABELS.get(price_calc_mode, price_calc_mode),
         rows=records,
     )
-    return HTML(string=html).write_pdf()
+    return write_pdf(html)
 
 
 async def _mark_failed(job_id: uuid.UUID, message: str) -> None:

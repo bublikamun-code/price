@@ -122,8 +122,7 @@ async def _render_invoice_pdf(invoice_id: uuid.UUID) -> dict:
 
 def _to_pdf_bytes(*, invoice, order, items: list, organization) -> bytes:
     """invoice.j2 → HTML → A4 (weasyprint). Ленивый импорт — рендер только в воркере."""
-    from weasyprint import HTML
-
+    from app.core.pdf import write_pdf
     from app.core.templates import render_pdf
     from app.schemas.v2.invoices import invoice_buyer, invoice_seller
 
@@ -163,7 +162,7 @@ def _to_pdf_bytes(*, invoice, order, items: list, organization) -> bytes:
         buyer=invoice_buyer(organization),
         seller=invoice_seller(),
     )
-    return HTML(string=html).write_pdf()
+    return write_pdf(html)
 
 
 async def _mark_failed(invoice_id: uuid.UUID, message: str) -> None:

@@ -79,7 +79,7 @@ def settings_bucket() -> str:
 
 def _to_pdf_bytes(*, order, client, items: list[OrderItem]) -> bytes:
     """order.j2 → HTML → A4 (weasyprint). Ленивый импорт — рендер только в воркере."""
-    from weasyprint import HTML
+    from app.core.pdf import write_pdf
 
     from app.core.templates import render_pdf
     from app.services.email import DELIVERY_METHOD_RU, format_order_no
@@ -117,7 +117,7 @@ def _to_pdf_bytes(*, order, client, items: list[OrderItem]) -> bytes:
         total=f"{float(order.total_amount):.2f}",
         rows=rows,
     )
-    return HTML(string=html).write_pdf()
+    return write_pdf(html)
 
 
 async def _mark_failed(job_id: uuid.UUID, message: str) -> None:

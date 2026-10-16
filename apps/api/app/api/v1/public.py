@@ -247,6 +247,7 @@ async def download_catalog_pdf(
                 )
             brands_out.append({"name": brand.name, "series": series_blocks})
 
+        from app.core.pdf import write_pdf
         from app.core.templates import render_pdf
 
         html = render_pdf(
@@ -254,11 +255,10 @@ async def download_catalog_pdf(
             brands=brands_out,
             date=dt.datetime.now(dt.UTC).strftime("%d.%m.%Y"),
         )
-        from weasyprint import HTML  # лениво, как в export_catalog (§16 п.25)
 
         # WeasyPrint выполняет тяжёлое CPU-рендеринг, поэтому его нельзя
         # запускать прямо в event loop async-хендлера.
-        cached = await run_in_threadpool(HTML(string=html).write_pdf)
+        cached = await run_in_threadpool(write_pdf, html)
         _catalog_pdf_cache[cache_key] = cached
 
     return Response(
