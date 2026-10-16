@@ -227,7 +227,7 @@ onMounted(load)
               :value="q"
               type="search"
               placeholder="Номер заявки, SKU, комментарий"
-              class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+              class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus lg:min-h-9"
               data-testid="orders-filter-q"
               @input="onSearchInput(($event.target as HTMLInputElement).value)"
             >
@@ -259,7 +259,7 @@ onMounted(load)
             step="0.01"
             inputmode="decimal"
             placeholder="0.00"
-            class="numeric block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            class="numeric block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus lg:min-h-9"
             data-testid="orders-filter-min-total"
             @input="onFilterInput('minTotal', ($event.target as HTMLInputElement).value)"
           >
@@ -273,7 +273,7 @@ onMounted(load)
             step="0.01"
             inputmode="decimal"
             placeholder="0.00"
-            class="numeric block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+            class="numeric block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus lg:min-h-9"
             data-testid="orders-filter-max-total"
             @input="onFilterInput('maxTotal', ($event.target as HTMLInputElement).value)"
           >
