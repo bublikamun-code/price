@@ -212,7 +212,7 @@ onMounted(load)
           @input="onSearchInput"
         >
       </div>
-      <button type="submit" class="btn-primary min-h-11 shrink-0">Найти</button>
+      <button type="submit" class="btn-primary shrink-0">Найти</button>
     </form>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">

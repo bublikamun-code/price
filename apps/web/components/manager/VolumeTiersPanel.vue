@@ -258,7 +258,7 @@ defineExpose({ reload: load })
             </div>
             <button
               type="button"
-              class="btn-primary min-h-11"
+              class="btn-primary"
               :disabled="saving"
               :data-testid="`volume-tier-save-${tier.id}`"
               @click="submitEdit(tier)"
@@ -266,7 +266,7 @@ defineExpose({ reload: load })
               <span v-if="saving" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
               Сохранить
             </button>
-            <button type="button" class="btn-ghost min-h-11" :disabled="saving" @click="cancelEdit">Отмена</button>
+            <button type="button" class="btn-ghost" :disabled="saving" @click="cancelEdit">Отмена</button>
           </div>
           <p v-if="saveError && editingId === tier.id" class="text-xs text-danger mt-2">{{ saveError }}</p>
 
@@ -323,7 +323,7 @@ defineExpose({ reload: load })
           </div>
           <button
             type="button"
-            class="btn-primary min-h-11"
+            class="btn-primary"
             :disabled="!canCreate || creating"
             data-testid="volume-tier-create"
             @click="submitCreate"

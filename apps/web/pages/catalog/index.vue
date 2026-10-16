@@ -530,7 +530,7 @@ onUnmounted(() => {
                     </div>
                   </td>
                   <td class="px-3 py-2 text-right">
-                    <UiButton size="compact" :loading="addingProductId === product.id" :disabled="product.stockQuantity === 0" :aria-label="`${inCartQty(product.id) ? 'Обновить' : 'Добавить'} товар «${product.name}»`" :data-testid="`catalog-add-${product.id}`" @click="addToCart(product)">
+                    <UiButton :loading="addingProductId === product.id" :disabled="product.stockQuantity === 0" :aria-label="`${inCartQty(product.id) ? 'Обновить' : 'Добавить'} товар «${product.name}»`" :data-testid="`catalog-add-${product.id}`" @click="addToCart(product)">
                       <Icon v-if="!addingProductId" :name="addedProductId === product.id || inCartQty(product.id) ? 'heroicons:check' : 'heroicons:plus'" class="size-4" />
                       {{ addedProductId === product.id ? 'Готово' : inCartQty(product.id) ? 'Обновить' : 'Добавить' }}
                     </UiButton>

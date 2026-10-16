@@ -200,19 +200,19 @@ onUnmounted(() => {
       <form class="flex flex-col sm:flex-row flex-wrap gap-4 sm:items-end" @submit.prevent="submitManual">
         <div class="sm:w-52">
           <label class="label" for="mc-currency">Валюта</label>
-          <select id="mc-currency" v-model="manualForm.currency_code" class="input py-2.5">
+          <select id="mc-currency" v-model="manualForm.currency_code" class="input min-h-11 lg:min-h-9">
             <option v-for="c in FIX_CURRENCIES" :key="c" :value="c">{{ c }}</option>
           </select>
         </div>
         <div class="sm:w-44">
           <label class="label" for="mc-rate">Курс за 1 ед. (в BYN)</label>
-          <input id="mc-rate" v-model="manualForm.rate" type="number" min="0" step="0.0001" class="input" placeholder="Напр. 3.27" required>
+          <input id="mc-rate" v-model="manualForm.rate" type="number" min="0" step="0.0001" class="input min-h-11 lg:min-h-9" placeholder="Напр. 3.27" required>
         </div>
         <div class="sm:w-44">
           <label class="label" for="mc-date">Дата</label>
           <UiDatePicker id="mc-date" v-model="manualForm.fetched_at" />
         </div>
-        <button type="submit" class="btn-primary sm:ml-auto shrink-0" :disabled="!manualValid || manualSaving">
+        <button type="submit" class="btn-primary min-h-11 lg:min-h-9 sm:ml-auto shrink-0" :disabled="!manualValid || manualSaving">
           <span v-if="manualSaving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
           {{ manualSaving ? 'Добавление…' : 'Добавить' }}
         </button>

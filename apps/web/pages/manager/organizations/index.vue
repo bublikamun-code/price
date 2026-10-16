@@ -102,7 +102,7 @@ onMounted(() => {
           </option>
         </select>
       </div>
-      <button type="button" class="btn-primary min-h-11" data-testid="manager-organizations-apply" @click="applyFilters">
+      <button type="button" class="btn-primary" data-testid="manager-organizations-apply" @click="applyFilters">
         Найти
       </button>
     </div>

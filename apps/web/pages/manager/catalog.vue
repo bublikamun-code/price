@@ -341,8 +341,8 @@ onUnmounted(() => {
           <option :value="100">100 / стр.</option>
         </select>
         <div class="flex gap-2 shrink-0">
-          <button type="submit" class="btn-primary min-h-11 flex-1 lg:flex-none">Найти</button>
-          <button type="button" class="btn-ghost min-h-11" @click="resetFilters">Сбросить</button>
+          <button type="submit" class="btn-primary flex-1 lg:flex-none">Найти</button>
+          <button type="button" class="btn-ghost" @click="resetFilters">Сбросить</button>
         </div>
       </div>
     </form>
@@ -464,7 +464,7 @@ onUnmounted(() => {
               type="number"
               min="0"
               step="0.01"
-              class="input"
+              class="input min-h-11 lg:min-h-9"
               placeholder="Напр. 149.90"
               :disabled="editResetPrice"
             >
@@ -482,7 +482,7 @@ onUnmounted(() => {
           </label>
           <div>
             <label class="label" for="pc-stock">Статус остатка</label>
-            <select id="pc-stock" v-model="editStock" class="input">
+            <select id="pc-stock" v-model="editStock" class="input min-h-11 lg:min-h-9">
               <option value="IN_STOCK">В наличии</option>
               <option value="PREORDER">Под заказ</option>
               <option value="ARCHIVED">Архив</option>
@@ -496,7 +496,7 @@ onUnmounted(() => {
               type="number"
               min="0"
               step="1"
-              class="input"
+              class="input min-h-11 lg:min-h-9"
               placeholder="Напр. 12 (пусто — не менять)"
             >
           </div>

@@ -158,7 +158,7 @@ onMounted(load)
           <option v-for="t in TARGET_TYPE_SUGGESTIONS" :key="t" :value="t"/>
         </datalist>
       </div>
-      <button type="submit" class="btn-primary min-h-11 shrink-0">Применить</button>
+      <button type="submit" class="btn-primary shrink-0">Применить</button>
     </form>
 
     <div v-if="error" class="flex items-center gap-3 mb-4">

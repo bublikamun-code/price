@@ -185,7 +185,7 @@ onMounted(load)
             ref="fileInput"
             type="file"
             accept=".pdf,application/pdf"
-            class="input file:mr-3 file:border-0 file:bg-transparent file:px-0 file:text-xs file:font-semibold file:text-primary"
+            class="input min-h-11 lg:min-h-9 file:mr-3 file:border-0 file:bg-transparent file:px-0 file:text-xs file:font-semibold file:text-primary"
             :data-testid="`manager-document-file-${scope}`"
             @change="onFilePick"
           >
@@ -196,7 +196,7 @@ onMounted(load)
             <select
               :id="`doc-type-${targetId}`"
               v-model="docType"
-              class="input"
+              class="input min-h-11 lg:min-h-9"
               :data-testid="`manager-document-type-${scope}`"
             >
               <option value="CERTIFICATE">Сертификат</option>
@@ -214,7 +214,7 @@ onMounted(load)
         </div>
         <button
           type="button"
-          class="btn-primary min-h-11 w-full sm:w-auto"
+          class="btn-primary min-h-11 lg:min-h-9 w-full sm:w-auto"
           :disabled="uploading"
           :data-testid="`manager-document-upload-${scope}`"
           @click="submitUpload"
