@@ -94,10 +94,12 @@ async def list_products(
     total = await repo.count_catalog(db, filters=filters)
 
     pricing = PricingService(db)
+    products = [row[0] for row in rows]
+    prices_by_id = await pricing.price_products(products, user, price_calc_mode)
     cards: list[ProductCard] = []
     for row in rows:
         product = row[0]
-        prices = await pricing.price_product(product, user, price_calc_mode)
+        prices_for_product = prices_by_id[product.id]
         cards.append(
             ProductCard(
                 id=product.id,
@@ -113,7 +115,7 @@ async def list_products(
                 stock_qty=product.stock_qty,
                 photo_key=row.photo_key,
                 attributes=product.attributes or {},
-                **prices,
+                **prices_for_product,
             )
         )
 
@@ -161,6 +163,9 @@ async def resolve_bulk(
     """
     products = await repo.get_by_skus(db, [item.sku for item in payload.items])
     pricing = PricingService(db)
+    # FP-03: батч-резолв цен по найденным SKU — один проход БД на все позиции,
+    # per-item price_product (N+1) убран.
+    prices_by_id = await pricing.price_products(list(products.values()), user, "fixed")
 
     rows: list[BulkResolveRow] = []
     for item in payload.items:
@@ -172,14 +177,14 @@ async def resolve_bulk(
                 )
             )
             continue
-        prices = await pricing.price_product(product, user, "fixed")
+        prices_for_product = prices_by_id[product.id]
         rows.append(
             BulkResolveRow(
                 sku=item.sku,
                 qty=item.qty,
                 found=True,
                 name=product.name,
-                price=ProductPrice(**prices),
+                price=ProductPrice(**prices_for_product),
                 stock_status=(
                     product.stock_status.value
                     if hasattr(product.stock_status, "value")
