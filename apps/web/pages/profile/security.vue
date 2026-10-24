@@ -171,7 +171,7 @@ async function onDisable() {
           <p v-if="errorMsg" id="twofa-enable-error" class="mt-2 text-sm text-danger-text" role="alert">{{ errorMsg }}</p>
           <div class="mt-5 flex flex-wrap gap-3">
             <button type="submit" class="btn-primary" :disabled="loading || code.trim().length < 6">
-              <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+              <span v-if="loading" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
               {{ loading ? 'Проверяем' : 'Включить 2FA' }}
             </button>
             <button type="button" class="btn-outline" :disabled="loading" @click="cancelSetup">Отменить</button>
@@ -217,7 +217,7 @@ async function onDisable() {
         <div v-if="!totpEnabled" class="mt-5">
           <p class="max-w-xl text-sm text-ink-muted">После подтверждения будут выданы коды восстановления для входа без приложения.</p>
           <button type="button" class="btn-primary mt-5" :disabled="loading" @click="startSetup">
-            <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+            <span v-if="loading" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
             {{ loading ? 'Готовим' : 'Включить 2FA' }}
           </button>
           <p v-if="errorMsg" class="mt-3 text-sm text-danger-text" role="alert">{{ errorMsg }}</p>
@@ -251,7 +251,7 @@ async function onDisable() {
           </div>
           <p v-if="errorMsg" class="text-sm text-danger-text" role="alert">{{ errorMsg }}</p>
           <button type="submit" class="btn-outline text-danger-text" :disabled="loading">
-            <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+            <span v-if="loading" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
             {{ loading ? 'Отключаем' : 'Отключить 2FA' }}
           </button>
         </form>

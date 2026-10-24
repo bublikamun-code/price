@@ -10,8 +10,11 @@
 из HTML генерирует задача).
 """
 
+import html
+
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.pricing import quantize_money
 from app.tasks.email import send_email
 
 log = get_logger("app.services.email")
@@ -105,37 +108,56 @@ def _cabinet_url(path: str) -> str:
 
 
 def _field(label: str, value: str) -> str:
-    """Строка «метка: значение» с инлайн-стилями (для сводки по заказу)."""
+    """Строка «метка: значение» с инлайн-стилями (для сводки по заказу).
+
+    Подставляемые значения экранируются (``html.escape``, §11): метки —
+    серверные константы, а вот значение приходит из данных клиента (ФИО,
+    компания, способ получения) и не должно уметь закрыть тег/атрибут.
+    """
     return (
         f'<p style="margin:0 0 8px;font-size:14px;line-height:1.5;">'
-        f'<span style="color:{_INK_MUTED};">{label}:</span> '
-        f"<strong>{value}</strong></p>"
+        f'<span style="color:{_INK_MUTED};">{html.escape(label, quote=True)}:</span> '
+        f"<strong>{html.escape(value, quote=True)}</strong></p>"
     )
 
 
 def _button(url: str, label: str) -> str:
-    """Кнопка-ссылка на кабинет (инлайн-стили, без картинок)."""
+    """Кнопка-ссылка на кабинет (инлайн-стили, без картинок).
+
+    ``url`` — свой, серверный (``_cabinet_url``), но экранируется для
+    атрибута ``href`` с ``quote=True``: кавычка в URL иначе закрыла бы атрибут,
+    а ``&amp;`` в query-строке — корректный HTML (рендерер декодирует сущности,
+    поэтому ссылка остаётся валидной и копируется в исходном виде).
+    Подпись ``label`` — текст, тоже экранируется.
+    """
+    safe_url = html.escape(url, quote=True)
     return (
         f'<p style="margin:20px 0 0;">'
-        f'<a href="{url}" style="display:inline-block;background:{_ACTION};'
+        f'<a href="{safe_url}" style="display:inline-block;background:{_ACTION};'
         f'color:#fffdf8;text-decoration:none;font-size:14px;font-weight:600;'
-        f'padding:10px 18px;border-radius:6px;">{label}</a></p>'
+        f'padding:10px 18px;border-radius:6px;">'
+        f"{html.escape(label, quote=True)}</a></p>"
         f'<p style="margin:12px 0 0;font-size:13px;line-height:1.5;'
         f'color:{_INK_MUTED};">Если кнопка не работает, скопируйте ссылку '
-        f'в браузер:<br>{url}</p>'
+        f"в браузер:<br>{safe_url}</p>"
     )
 
 
-def _money(amount: float, currency_code: str) -> str:
-    """Формат суммы как в выгрузках (tasks/export_order_pdf.py): 1234.56."""
-    return f"{float(amount):.2f} {currency_code}"
+def _money(amount, currency_code: str) -> str:
+    """Формат суммы как в выгрузках (tasks/export_order_pdf.py): 1234.56.
+
+    Decimal + HALF_UP: ``round()``/``:%.2f`` по float округляли бы полу-копейки
+    банкерским правилом и могли показать менеджеру сумму на копейку меньше
+    фактической.
+    """
+    return f"{quantize_money(amount):.2f} {currency_code}"
 
 
 def build_order_created_manager_email(
     order_no: str,
     client_name: str | None,
     client_company: str | None,
-    total_amount: float,
+    total_amount,
     currency_code: str,
     delivery_method: str | None,
     items_count: int,

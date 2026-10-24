@@ -8,6 +8,9 @@ useHead({ title: 'Баннеры — Менеджер' })
 
 const { request } = useApi()
 const { urlOf } = useProductPhoto()
+// Скрытие/показ и удаление — действия над конкретным баннером: их результат
+// показываем тостом, а `error` оставляем только для загрузки списка.
+const { show } = useToast()
 
 const POSITION_META: Record<BannerPosition, { label: string; cls: string }> = {
   PROMO: { label: 'Акции', cls: 'badge-warning' },
@@ -159,6 +162,7 @@ async function onSubmit() {
     }
     modalOpen.value = false
     await load()
+    show(editingId.value ? 'Баннер обновлён' : 'Баннер добавлен', { type: 'success' })
   } catch (e) {
     submitError.value = getErrorMessage(e, 'Не удалось сохранить баннер')
   } finally {
@@ -171,12 +175,12 @@ const busyId = ref<string | null>(null)
 
 async function toggleActive(b: BannerRead) {
   busyId.value = b.id
-  error.value = ''
   try {
     await request(`/api/v1/manager/banners/${b.id}`, { method: 'PATCH', body: { is_active: !b.is_active } })
     await load()
+    show(`Баннер «${b.title}» ${b.is_active ? 'скрыт' : 'показан'}`, { type: 'success' })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось изменить баннер')
+    show(getErrorMessage(e, 'Не удалось изменить баннер'), { type: 'error' })
   } finally {
     busyId.value = null
   }
@@ -185,12 +189,12 @@ async function toggleActive(b: BannerRead) {
 async function remove(b: BannerRead) {
   if (!window.confirm(`Удалить баннер «${b.title}»? Действие необратимо.`)) return
   busyId.value = b.id
-  error.value = ''
   try {
     await request(`/api/v1/manager/banners/${b.id}`, { method: 'DELETE' })
     await load()
+    show(`Баннер «${b.title}» удалён`, { type: 'success' })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось удалить баннер')
+    show(getErrorMessage(e, 'Не удалось удалить баннер'), { type: 'error' })
   } finally {
     busyId.value = null
   }
@@ -211,10 +215,16 @@ onMounted(load)
       </template>
     </PageHeading>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button type="button" class="btn-ghost min-h-11 text-sm" @click="load()">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить баннеры"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load()">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <!-- Скелетоны -->
     <div v-if="loading" class="border border-border bg-surface p-4">
@@ -222,10 +232,19 @@ onMounted(load)
     </div>
 
     <!-- Пусто -->
-    <div v-else-if="!banners.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:rectangle-stack" class="size-8 mb-3 text-ink-faint" />
-      <p>Баннеров пока нет</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!banners.length"
+      class="border border-border bg-surface"
+      title="Баннеров пока нет"
+      description="Добавьте промо-блок для главной страницы — он показывается только активным и с учётом поля sort."
+      icon="heroicons:rectangle-stack"
+    >
+      <template #action>
+        <button type="button" class="btn-primary min-h-11" @click="openCreate">
+          <Icon name="heroicons:plus" class="w-4 h-4" /> Добавить баннер
+        </button>
+      </template>
+    </UiEmptyState>
 
     <!-- Список -->
     <div v-else class="border border-border bg-surface">
@@ -264,7 +283,7 @@ onMounted(load)
           >
             <span
               v-if="busyId === b.id"
-              class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
+              class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"
             />
             <template v-else>
               <Icon name="heroicons:trash" class="w-4 h-4" /> Удалить
@@ -347,7 +366,7 @@ onMounted(load)
               <button type="button" class="btn-outline text-sm py-2" :disabled="uploadingImage" @click="pickImage">
                 <span
                   v-if="uploadingImage"
-                  class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
+                  class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"
                 />
                 <Icon v-else name="heroicons:arrow-up-tray" class="w-4 h-4" />
                 {{ uploadingImage ? 'Загрузка…' : 'Загрузить' }}
@@ -366,7 +385,7 @@ onMounted(load)
           <div class="sm:col-span-2 flex justify-end gap-3">
             <button type="button" class="btn-ghost min-h-11" @click="closeModal">Отмена</button>
             <button type="submit" class="btn-primary min-h-11" :disabled="submitting">
-              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+              <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
               {{ submitting ? 'Сохранение…' : 'Сохранить' }}
             </button>
           </div>

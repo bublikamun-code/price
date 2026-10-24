@@ -2,7 +2,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Date, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,6 +56,17 @@ class FileAsset(Base, TimestampMixin, UUIDPrimaryKey):
         pg_enum(FileVisibility, "file_visibility"),
         nullable=False,
         default=FileVisibility.AUTHED,
+    )
+
+    # Архив файлов фильтрует по типу / бренду / видимости и сортирует «новые
+    # сверху» (repositories/file_assets.py). Индексы на FK (product_id,
+    # series_id, order_id) созданы миграциями 0020/0021/0023; brand_id, type и
+    # порядок ленты оставались неиндексированными. Созданы миграцией 0025;
+    # объявлены в модели ради alembic check (аудит 2026-09-06 §3).
+    __table_args__ = (
+        Index("ix_file_assets_created", text("created_at DESC")),
+        Index("ix_file_assets_brand_type", "brand_id", "type"),
+        Index("ix_file_assets_type", "type"),
     )
 
 

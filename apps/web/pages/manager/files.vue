@@ -16,6 +16,9 @@ definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAG
 useHead({ title: 'Файлы — Менеджер' })
 
 const { request } = useApi()
+// Скачивание и удаление — действия над конкретным файлом: их результат
+// показываем тостом, а `error` оставляем только для загрузки списка.
+const { show } = useToast()
 
 const PER_PAGE = 10
 const MAX_SIZE = 200 * 1024 * 1024 // §16 п.18: лимит 200 МБ
@@ -235,14 +238,14 @@ const deletingId = ref<string | null>(null)
 async function remove(f: FileAsset) {
   if (!window.confirm(`Удалить файл «${f.filename}»? Действие необратимо.`)) return
   deletingId.value = f.id
-  error.value = ''
   try {
     await request<unknown>(`/api/v1/manager/files/${f.id}`, { method: 'DELETE' })
     // если удалили последний элемент не первой страницы — откатываемся назад
     if (files.value.length === 1 && page.value > 1) page.value--
     await load()
+    show(`Файл «${f.filename}» удалён`, { type: 'success' })
   } catch (e) {
-    error.value = getErrorMessage(e, 'Не удалось удалить файл')
+    show(getErrorMessage(e, 'Не удалось удалить файл'), { type: 'error' })
   } finally {
     deletingId.value = null
   }
@@ -354,7 +357,7 @@ onUnmounted(() => {
         :disabled="submitting || !selectedFile"
         @click="onSubmit"
       >
-        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"/>
+        <span v-if="submitting" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
         {{ submitting ? 'Загрузка…' : 'Загрузить' }}
       </button>
     </div>
@@ -382,13 +385,22 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost min-h-11 text-sm" @click="load()">Повторить</button>
-    </div>
-    <div v-if="downloadError" class="badge-danger w-full justify-center py-2 mb-4">
-      {{ downloadError }}
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить список файлов"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load()">Повторить</UiButton>
+      </template>
+    </UiErrorState>
+    <UiErrorState
+      v-if="downloadError"
+      class="mb-4"
+      title="Не удалось получить ссылку на файл"
+      :description="downloadError"
+    />
 
     <!-- Скелетоны -->
     <div v-if="loading" class="border border-border bg-surface p-4">
@@ -396,10 +408,19 @@ onUnmounted(() => {
     </div>
 
     <!-- Пусто -->
-    <div v-else-if="!files.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:folder" class="size-8 mb-3 text-ink-faint" />
-      <p>Файлов пока нет</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!files.length"
+      class="border border-border bg-surface"
+      title="Файлов пока нет"
+      description="Загрузите PDF-каталог бренда, CSV-выгрузку или архив с фото — файлы станут доступны клиентам."
+      icon="heroicons:folder"
+    >
+      <template #action>
+        <button type="button" class="btn-primary min-h-11" @click="pickFile">
+          <Icon name="heroicons:arrow-up-tray" class="w-4 h-4" /> Загрузить файл
+        </button>
+      </template>
+    </UiEmptyState>
 
     <!-- Таблица -->
     <div v-else class="border border-border bg-surface">
@@ -442,7 +463,7 @@ onUnmounted(() => {
                 >
                   <span
                     v-if="downloadingId === f.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"
                   />
                   <Icon v-else name="heroicons:arrow-down-tray" class="w-4 h-4" />
                   Скачать
@@ -454,7 +475,7 @@ onUnmounted(() => {
                 >
                   <span
                     v-if="deletingId === f.id"
-                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin"
+                    class="w-4 h-4 border-2 border-current/40 border-t-current rounded-sm animate-spin motion-reduce:animate-none"
                   />
                   <template v-else>
                     <Icon name="heroicons:trash" class="w-4 h-4" /> Удалить
@@ -477,7 +498,7 @@ onUnmounted(() => {
         <button
           v-else
           class="btn-outline size-11 font-medium text-sm"
-          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+          :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>

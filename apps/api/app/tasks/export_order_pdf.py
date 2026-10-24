@@ -14,11 +14,13 @@ import asyncio
 import io
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from app.core.logging import get_logger
 from app.models.order import Order, OrderItem
 from app.models.user import User
 from app.services import storage
+from app.services.pricing import quantize_money, quantize_rate
 from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
 
@@ -85,12 +87,12 @@ def _to_pdf_bytes(*, order, client, items: list[OrderItem]) -> bytes:
     from app.services.email import DELIVERY_METHOD_RU, format_order_no
 
     rows = []
-    total = 0.0
+    total = Decimal(0)
     for i in items:
         snap = i.product_snapshot or {}
         qty = int(i.quantity)
-        price = float(i.unit_price)
-        amount = round(qty * price, 2)
+        price = quantize_money(i.unit_price)
+        amount = quantize_money(price * qty)
         total += amount
         rows.append({
             "sku": snap.get("sku", ""),
@@ -113,8 +115,9 @@ def _to_pdf_bytes(*, order, client, items: list[OrderItem]) -> bytes:
         delivery=delivery,
         comment=order.notes or "",
         currency=order.currency_code or "BYN",
-        rate=float(order.exchange_rate or 1),
-        total=f"{float(order.total_amount):.2f}",
+        # Курс печатаем с точностью колонки exchange_rates.rate — Numeric(12, 4).
+        rate=f"{quantize_rate(order.exchange_rate or 1):.4f}",
+        total=f"{quantize_money(order.total_amount):.2f}",
         rows=rows,
     )
     return write_pdf(html)

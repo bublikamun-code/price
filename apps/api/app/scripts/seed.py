@@ -28,6 +28,12 @@ from app.models.user import User
 NAME = os.environ.get("SEED_MANAGER_NAME", "Менеджер")
 MIN_PASSWORD_LENGTH = 12
 
+# Зарезервированные и special-use TLD (RFC 2606 / RFC 6761): email-validator
+# отвергает их на входе, поэтому пользователь с таким адресом не сможет войти.
+_RESERVED_EMAIL_DOMAINS = frozenset(
+    {"test", "local", "invalid", "localhost", "example", "internal", "lan"}
+)
+
 
 def _read_credentials() -> tuple[str, str]:
     """Креды только из окружения: дефолтный менеджер с известным паролем —
@@ -45,6 +51,21 @@ def _read_credentials() -> tuple[str, str]:
         # короче 12 символов — это уже не пароль.
         print(
             f"❌ SEED_MANAGER_PASSWORD короче {MIN_PASSWORD_LENGTH} символов.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    # Ловушка: адрес вида `manager@example.test` проходит superficальную
+    # проверку «есть @», создаёт пользователя — и делает его неспособным войти
+    # никогда: валидатор email на логине отвергает зарезервированные/special-use
+    # TLD (.test, .local, .invalid…) и отвечает 422 вместо 401. Пользователь
+    # видит «Не удалось войти» и не понимает почему. Ловим здесь, до создания.
+    domain = email.rpartition("@")[2].lower()
+    if not domain or domain in _RESERVED_EMAIL_DOMAINS:
+        print(
+            f"❌ Домен «{domain or '?'}» зарезервирован и не пройдёт проверку e-mail "
+            "при входе — аккаунт будет создан, но войти не получится.\n"
+            "   Возьмите обычный домен, например manager@example.com.",
             file=sys.stderr,
         )
         raise SystemExit(1)

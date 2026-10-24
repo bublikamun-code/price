@@ -26,7 +26,7 @@ function openGlobalSearch() {
       </UiIconButton>
       <NuxtLink to="/notifications" class="relative inline-flex size-10 items-center justify-center text-ink-muted hover:text-ink" aria-label="Уведомления">
         <Icon name="heroicons:bell" class="size-5" aria-hidden="true" />
-        <span v-if="notifications.unreadCount.value" class="absolute right-1 top-1 min-w-4 border border-surface bg-danger px-1 text-xs leading-4 text-white">{{ notifications.unreadCount.value > 99 ? '99+' : notifications.unreadCount.value }}</span>
+        <span v-if="notifications.unreadCount.value" class="absolute right-1 top-1 min-w-4 border border-surface bg-danger px-1 text-xs leading-4 text-danger-on">{{ notifications.unreadCount.value > 99 ? '99+' : notifications.unreadCount.value }}</span>
       </NuxtLink>
       <NuxtLink to="/cart" class="relative inline-flex size-10 items-center justify-center text-ink-muted hover:text-ink" aria-label="Текущая заявка">
         <Icon name="heroicons:clipboard-document-list" class="size-5" aria-hidden="true" />

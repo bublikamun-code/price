@@ -41,7 +41,12 @@ jobs:
       POSTGRES_USER: price
       POSTGRES_PASSWORD: price_ci
       POSTGRES_DB: price_portal
-      S3_ENDPOINT: http://minio:9000
+      # S3-сервиса в job нет: тесты работают с замоканным storage-слоем
+      # (apps/api/tests), поэтому реальный endpoint не используется. Значения
+      # оставлены для конфигурации/сборки URL и названы так же, как в
+      # infra/docker-compose.yml, где хранилище — RustFS (MinIO удалён с
+      # Docker Hub 2026-10-02). См. docs/MIGRATION.md.
+      S3_ENDPOINT: http://rustfs:9000
       S3_EXTERNAL_ENDPOINT: http://localhost:9000
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin

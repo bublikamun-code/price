@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1 import health
+from app.api.v1.integrations import one_c
 from app.api.v1.router import api_router
 from app.api.v2.errors import (
     from_domain_error,
@@ -36,11 +37,7 @@ from app.api.v2.router import api_router as v2_router
 from app.api.v2.errors import V2ProblemError
 from app.core.config import settings
 from app.core.deps import validate_csrf
-
-try:
-    from app.api.v1.integrations import one_c
-except ImportError:
-    one_c = None  # type: ignore[assignment]
+from app.integrations.one_c import get_one_c_client
 
 try:
     from app.core.http_metrics import PrometheusMiddleware
@@ -57,6 +54,15 @@ async def lifespan(app: FastAPI):
     setup_logging()
     log = get_logger("app.main")
     log.info("app.starting", env=settings.env, app=settings.app_name)
+    one_c_client = getattr(app.state, "one_c_client", None)
+    if one_c_client is not None:
+        # Диагностика стенда: «stub» = обмен с 1С не настроен, ручки
+        # /api/integrations/1c/** отвечают 503/501 (§18).
+        log.info(
+            "one_c.client_ready",
+            transport=one_c_client.transport,
+            configured=one_c_client.configured,
+        )
     yield
     # Корректное закрытие пула соединений БД (P2 §3.2): без dispose uvicorn
     # при остановке шумит «Unclosed connection» и держит сокеты до GC.
@@ -88,6 +94,13 @@ app = FastAPI(
 
 # ---------- Rate limiting (slowapi) ----------
 app.state.limiter = limiter
+
+# ---------- 1С: клиент обмена (§18) ----------
+# Фабрика выбирает реализацию по настройкам: настроено → HttpOneCClient с
+# таймаутом, не настроено → StubOneCClient. Фабрика не бросает исключений,
+# поэтому приложение стартует в обоих случаях; «не настроено» оператор видит
+# в логе старта и в ответах /api/integrations/1c/** (503/501), а не в трейсе.
+app.state.one_c_client = get_one_c_client()
 
 
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
@@ -297,9 +310,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(health.router)          # /healthz, /readyz — на root (вне /api/v1)
 app.include_router(api_router)
 app.include_router(v2_router)
-# 1С: subroute /api/integrations/1c/** — отдельный include на app, вне /api/v1
-if one_c is not None:
+# 1С: subroute /api/integrations/1c/** — отдельный include на app, вне /api/v1.
+# Модуль интеграции — наш собственный код, include не должен быть опциональным
+# (иначе ручки молча исчезли бы из схемы). Но старт приложения важнее: при любой
+# ошибке логируем и едем без ручек, а не падаем.
+try:
     app.include_router(one_c.router, prefix="/api")
+except Exception:  # pragma: no cover - защитный контур старта
+    get_logger("app.main").error("one_c.router_include_failed", exc_info=True)
 # Telegram Mini App: subroute /api/m/v1/** (fail-fast: модуль обязателен)
 from app.api import miniapp  # noqa: E402
 

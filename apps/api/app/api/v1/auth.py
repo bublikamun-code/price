@@ -226,7 +226,9 @@ async def update_me(
 # 2FA (фича H, §16 п.22; только MANAGER, кроме verify)
 # =========================================================
 @router.post("/2fa/setup", response_model=TwoFASetupResponse)
+@limiter.limit(settings.rate_limit_2fa_verify)
 async def setup_2fa(
+    request: Request,
     current_user: User = Depends(require_role(UserRole.MANAGER)),
     db: AsyncSession = Depends(get_db),
 ) -> TwoFASetupResponse:
@@ -239,12 +241,18 @@ async def setup_2fa(
 
 
 @router.post("/2fa/enable", response_model=TwoFAEnableResponse)
+@limiter.limit(settings.rate_limit_2fa_verify)
 async def enable_2fa(
     body: TwoFAEnableRequest,
+    request: Request,
     current_user: User = Depends(require_role(UserRole.MANAGER)),
     db: AsyncSession = Depends(get_db),
 ) -> TwoFAEnableResponse:
-    """Включить 2FA: {secret, code} → recovery-коды (plaintext показывается 1 раз)."""
+    """Включить 2FA: {secret, code} → recovery-коды (plaintext показывается 1 раз).
+
+    Лимит обязателен: код проверяется по реальному секрету пользователя, окно
+    ±30 с даёт 3 валидных значения каждые полминуты (§11).
+    """
     svc = AuthService(db)
     codes = await svc.enable_2fa(current_user, body.secret, body.code)
     return TwoFAEnableResponse(data={"recovery_codes": codes})
@@ -282,12 +290,18 @@ async def verify_2fa(
 
 
 @router.post("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(settings.rate_limit_2fa_verify)
 async def disable_2fa(
     body: TwoFADisableRequest,
+    request: Request,
     current_user: User = Depends(require_role(UserRole.MANAGER)),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Отключить 2FA: подтверждение кодом (TOTP/recovery) или паролем."""
+    """Отключить 2FA: подтверждение кодом (TOTP/recovery) или паролем.
+
+    Лимит обязателен: без него украденный access-токен менеджера перебирает
+    6-значный код без помех, после чего 2FA выключена навсегда (§11).
+    """
     svc = AuthService(db)
     await svc.disable_2fa(current_user, code=body.code, password=body.password)
 

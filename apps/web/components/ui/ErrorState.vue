@@ -28,7 +28,16 @@ const emit = defineEmits<{ retry: [] }>()
         <h3 class="text-sm font-bold text-ink">{{ title }}</h3>
         <p class="mt-1 text-sm leading-5 text-ink-muted">{{ description }}</p>
         <p v-if="code" class="numeric mt-2 text-xs text-ink-muted">Код: {{ code }}</p>
-        <div v-if="$slots.action || $attrs.onRetry" class="mt-3">
+        <!--
+          Кнопка рендерится всегда, если потребитель не подставил свой `#action`.
+          Раньше гейт был `$slots.action || $attrs.onRetry`, но `defineEmits<{retry: []}>`
+          заставляет Vue вырезать `onRetry` из `$attrs` (isEmitListener), поэтому
+          условие всегда было ложно и кнопка «Повторить» не появлялась НИКОГДА —
+          в том числе на клиентских страницах, где уже стоял `@retry="load"`.
+          Теперь вызов emit('retry') без слушателя просто ничего не делает —
+          это безопаснее, чем невидимая кнопка.
+        -->
+        <div class="mt-3">
           <slot name="action">
             <UiButton variant="secondary" size="compact" @click="emit('retry')">
               {{ retryLabel }}

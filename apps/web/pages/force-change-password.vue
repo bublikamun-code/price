@@ -96,7 +96,7 @@ async function onSubmit() {
       <p v-if="errorMsg" id="force-password-error" class="border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger-text" role="alert">{{ errorMsg }}</p>
 
       <button type="submit" class="btn-primary min-h-11 w-full" :disabled="loading || mismatch">
-        <span v-if="loading" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+        <span v-if="loading" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
         {{ loading ? 'Сохраняем' : 'Сохранить пароль' }}
       </button>
     </form>

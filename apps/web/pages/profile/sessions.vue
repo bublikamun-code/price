@@ -162,7 +162,7 @@ onMounted(() => {
                 :disabled="busyId !== null || revokingAll"
                 @click="revoke(session.id)"
               >
-                <span v-if="busyId === session.id" class="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
+                <span v-if="busyId === session.id" class="size-4 animate-spin motion-reduce:animate-none rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
                 {{ busyId === session.id ? 'Завершаем' : 'Завершить' }}
               </button>
               <span v-else class="text-xs text-ink-muted">Текущий вход</span>

@@ -170,7 +170,7 @@ const STOCK_META: Record<string, { label: string; tone: 'success' | 'warning' | 
           <label class="text-xs font-semibold uppercase tracking-wide text-ink-muted" for="m_product_qty">Количество</label>
           <input id="m_product_qty" v-model="qty" type="number" min="1" inputmode="numeric" :aria-label="`Количество товара «${product.name}»`" class="input numeric mt-2 min-h-11 text-center">
           <button type="button" class="btn-primary mt-2 min-h-11 w-full justify-center" :disabled="adding" @click="addToCart">
-            <span v-if="adding" class="size-4 animate-spin border-2 border-white/40 border-t-white" />
+            <span v-if="adding" class="size-4 animate-spin motion-reduce:animate-none border-2 border-white/40 border-t-white" />
             <Icon v-else-if="added" name="heroicons:check" class="size-4" />
             <Icon v-else name="heroicons:shopping-cart" class="size-4" />
             {{ added ? 'Добавлено' : 'В корзину' }}

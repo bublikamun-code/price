@@ -50,7 +50,7 @@ def volume_tier_out(tier: BrandVolumeTier) -> VolumeTierOut:
         id=tier.id,
         brand_id=tier.brand_id,
         min_qty=tier.min_qty,
-        discount_percent=float(tier.discount_percent),
+        discount_percent=tier.discount_percent,  # Decimal → JSON-число полем float
         version=tier.version,
         created_at=tier.created_at,
         updated_at=tier.updated_at,

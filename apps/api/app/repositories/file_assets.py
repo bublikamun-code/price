@@ -80,6 +80,16 @@ async def get_file_asset(db: AsyncSession, file_id: uuid.UUID):
     return (await db.execute(stmt)).first()
 
 
+async def get_by_s3_key(db: AsyncSession, s3_key: str) -> FileAsset | None:
+    """Файл по S3-ключу — для проверки видимости при отдаче байтов.
+
+    Нужен ``GET /files/photo``: аутентификация сама по себе не говорит, можно ли
+    конкретному пользователю видеть этот ключ (§11).
+    """
+    result = await db.execute(select(FileAsset).where(FileAsset.s3_key == s3_key))
+    return result.scalar_one_or_none()
+
+
 async def create_file_asset(
     db: AsyncSession,
     *,

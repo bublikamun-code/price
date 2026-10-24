@@ -15,6 +15,7 @@ rollback — заливка в S3 требует отката версии пр�
 """
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -37,7 +38,7 @@ async def start_import(
     upload: UploadFile,
     mode: ImportMode,
     base_currency: str,
-    rate_to_byn: float,
+    rate_to_byn: Decimal,
 ) -> PriceListVersion:
     """Создать версию прайса (QUEUED), залить CSV в MinIO, запустить задачу.
 

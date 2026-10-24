@@ -94,6 +94,28 @@ async def _session_is_active(db: AsyncSession, sid: uuid.UUID) -> bool:
     return active
 
 
+# Пользователь с must_change_password (временный пароль, выданный менеджером)
+# не должен обходить страницу смены пароля через прямой вызов API: фронт
+# редиректит на /force-change-password, но curl этого не делает. Серверный
+# whitelist — единственная гарантия (§11).
+_PASSWORD_CHANGE_ALLOWED = (
+    "/api/v1/auth/me",
+    "/api/v1/auth/my-terms",
+    "/api/v1/auth/change-password",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/sessions",
+    "/api/v1/auth/2fa/",
+    "/api/v2/session",
+    "/api/v2/auth/sessions",
+    "/api/v2/auth/2fa/",
+    "/api/m/v1/auth",
+)
+
+
+def _password_change_allowed(path: str) -> bool:
+    return path.startswith(_PASSWORD_CHANGE_ALLOWED)
+
+
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -102,6 +124,9 @@ async def get_current_user(
 
     Дополнительно проверяет, что сессия (sid) не отозвана: после logout/revoke
     access-токен перестаёт приниматься сразу, а не по истечении TTL (§11).
+
+    Если у пользователя выставлен must_change_password, доступ ограничен
+    whitelist'ом выше; остальные эндпоинты отвечают 403.
     """
     token = _extract_access_token(request)
     creds_exc = HTTPException(
@@ -135,6 +160,12 @@ async def get_current_user(
     user = await db.get(m.User, user_id)
     if user is None or not user.is_active:
         raise creds_exc
+
+    if user.must_change_password and not _password_change_allowed(request.url.path):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Требуется смена временного пароля",
+        )
     return user
 
 

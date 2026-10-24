@@ -154,7 +154,7 @@ onMounted(load)
             :data-testid="`manager-document-delete-confirm-${doc.id}`"
             @click="doRemove(doc)"
           >
-            <span v-if="deletingId === doc.id" class="w-3 h-3 border-2 border-danger/40 border-t-danger rounded-sm animate-spin" />
+            <span v-if="deletingId === doc.id" class="w-3 h-3 border-2 border-danger/40 border-t-danger rounded-sm animate-spin motion-reduce:animate-none" />
             {{ deletingId === doc.id ? 'Удаление…' : 'Удалить' }}
           </button>
           <button type="button" class="btn-ghost min-h-9 px-2 text-xs" @click="confirmingId = null">Отмена</button>
@@ -219,7 +219,7 @@ onMounted(load)
           :data-testid="`manager-document-upload-${scope}`"
           @click="submitUpload"
         >
-          <span v-if="uploading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+          <span v-if="uploading" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
           <Icon v-else name="heroicons:arrow-up-tray" class="w-4 h-4" />
           {{ uploading ? 'Загрузка…' : 'Загрузить документ' }}
         </button>

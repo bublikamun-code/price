@@ -113,17 +113,30 @@ onMounted(() => {
       <div class="skeleton h-10 w-full" />
     </div>
 
-    <div v-else-if="error" class="border border-danger/50 bg-danger-soft p-5">
-      <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-outline min-h-11" @click="load()">Повторить</button></div>
-    </div>
+    <UiErrorState
+      v-else-if="error"
+      class="mb-4"
+      title="Не удалось загрузить организации"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load()">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
-    <div v-else-if="!organizations.length" class="border border-border bg-surface p-6 text-center">
-      <p class="text-ink-muted mb-4">Организаций не найдено</p>
-      <button v-if="appliedQ" class="btn-outline min-h-11" @click="q = ''; applyFilters()">
-        Сбросить поиск
-      </button>
-    </div>
+    <UiEmptyState
+      v-else-if="!organizations.length"
+      class="border border-border bg-surface"
+      :title="appliedQ ? 'Ничего не найдено' : 'Организаций пока нет'"
+      :description="appliedQ ? 'Измените запрос или сбросьте поиск.' : 'Организации появятся после регистрации клиентов в портале.'"
+      :icon="appliedQ ? 'heroicons:magnifying-glass' : 'heroicons:building-office-2'"
+    >
+      <template v-if="appliedQ" #action>
+        <button type="button" class="btn-outline min-h-11" @click="q = ''; applyFilters()">
+          Сбросить поиск
+        </button>
+      </template>
+    </UiEmptyState>
 
     <template v-else>
       <div class="border border-border bg-surface overflow-x-auto">

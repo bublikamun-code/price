@@ -59,3 +59,33 @@ describe('getDetailedErrorMessage', () => {
     expect(getDetailedErrorMessage({ data: {} }, 'Ошибка')).toBe('Ошибка')
   })
 })
+
+describe('getErrorStatus для ошибок API v2', () => {
+  // Регресс, найденный E2E (e2e/catalog.spec.ts): v2-ошибки приходят
+  // обёрнутыми в AppProblem, который несёт HTTP-статус в .status и не имеет
+  // ни .data, ни .response. Без этой ветки статус терялся, getErrorStatus()
+  // отдавал undefined, и проверки `=== 404` на v2-страницах не срабатывали —
+  // например, карточка товара показывала «Товар недоступен» вместо
+  // «Товар не найден».
+  it('берёт статус из AppProblem-подобной ошибки без data/response', () => {
+    const appProblem = {
+      name: 'AppProblem',
+      message: 'Товар не найден',
+      status: 404,
+      detail: 'Товар не найден',
+      isProblemDetails: true,
+    }
+    expect(getErrorStatus(appProblem)).toBe(404)
+    expect(mapProblemDetails(appProblem, 'fallback').status).toBe(404)
+  })
+
+  it('не ломает приоритет источников: payload/response важнее error.status', () => {
+    expect(getErrorStatus({ data: { status: 422 }, status: 500 })).toBe(422)
+    expect(getErrorStatus({ response: { status: 403 }, status: 500 })).toBe(403)
+  })
+
+  it('остаётся undefined, когда статуса нигде нет', () => {
+    expect(getErrorStatus(new Error('boom'))).toBeUndefined()
+    expect(getErrorStatus({})).toBeUndefined()
+  })
+})

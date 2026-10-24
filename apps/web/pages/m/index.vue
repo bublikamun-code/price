@@ -70,7 +70,7 @@ function submit() {
     />
 
     <div v-if="checking" class="flex min-h-28 items-center gap-3 border border-border bg-surface p-4 text-sm text-ink-muted" role="status">
-      <span class="size-5 shrink-0 animate-spin border-2 border-ink-faint border-t-action" aria-hidden="true" />
+      <span class="size-5 shrink-0 animate-spin motion-reduce:animate-none border-2 border-ink-faint border-t-action" aria-hidden="true" />
       Проверяем данные Telegram…
     </div>
 
@@ -95,7 +95,7 @@ function submit() {
         >
         <p class="mt-1.5 text-xs leading-5 text-ink-muted">Профиль → Telegram в веб-кабинете.</p>
         <button type="submit" class="btn-primary mt-4 min-h-11 w-full justify-center" :disabled="submitting">
-          <span v-if="submitting" class="size-4 animate-spin border-2 border-white/40 border-t-white" aria-hidden="true" />
+          <span v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none border-2 border-white/40 border-t-white" aria-hidden="true" />
           {{ submitting ? 'Вход…' : 'Войти по коду' }}
         </button>
       </form>

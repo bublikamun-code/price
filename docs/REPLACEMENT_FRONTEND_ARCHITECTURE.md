@@ -36,7 +36,7 @@ Backend не заморожен, но его проверенное ядро н�
 
 Сохраняются:
 
-- FastAPI, SQLAlchemy, Alembic, PostgreSQL, Redis, Celery, MinIO;
+- FastAPI, SQLAlchemy, Alembic, PostgreSQL, Redis, Celery, S3-хранилище (RustFS в dev/compose, нативный MinIO на VPS — оба S3-совместимы);
 - refresh rotation и reuse detection;
 - CSRF, session revocation, RBAC, 2FA и consent;
 - pricing formula, fixed/NBRB rate и order snapshots;

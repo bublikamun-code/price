@@ -1,0 +1,375 @@
+# ============================================================
+#  docker-compose.observability — НАБЛЮДАЕМОСТЬ (метрики + алерты)
+#
+#  ДОПОЛНИТЕЛЬНЫЙ overlay. Использование (Makefile: DC_OBS):
+#     docker compose -f infra/docker-compose.yml \
+#                    -f infra/docker-compose.observability.yml --env-file .env \
+#                    --profile observability up -d
+#     make obs-up / make obs-down
+#
+#  Что НЕ делает этот файл:
+#    * не переопределяет ни один сервис из docker-compose.yml (api, worker, beat,
+#      db, redis, rustfs, web, nginx остаются ровно как описаны там);
+#    * не трогает сеть pp-net — новые сервисы просто подключаются к ней;
+#    * не пишет в образы и не монтирует в них ничего, чего не было бы в базовом
+#      compose (дашборды и конфиги — read-only, данные — в именованных томах).
+#
+#  ПОЧЕМУ ИМЕННО ЭТОТ НАБОР (Prometheus + Alertmanager + Pushgateway + Grafana),
+#  а НЕ Loki+Promtail+Grafana:
+#    Канон проекта (ARCHITECTURE_PLAN.md §16 п.23) фиксирует MVP-рамку этапа 10
+#    именно в таком составе, а Loki/Tempo/OTel/Uptime Kuma явно перенесены
+#    в этап 11: «Перенесено в Этап 11: Loki (JSON-логи уже в stdout), Tempo/OTel…».
+#    Причина ровно та же, что и в коде: apps/api уже отдаёт /metrics
+#    (prometheus_client + собственное ASGI-middleware, apps/api/app/core/
+#    http_metrics.py: http_requests_total, http_request_duration_seconds),
+#    поэтому метрики собираются «из коробки», без правок приложения.
+#
+#  ПРО ЛОГИ (проверено в docker-compose.yml на момент 2026-10-02):
+#    API и Celery-воркеры пишут ТОЛЬКО в stdout (structlog JSON, §12) —
+#    файлового лог-тома, logging-driver и разделяемого volume в базовом compose
+#    НЕТ, «подключиться к тому же» не к чему: docker compose -f ... настроек
+#    логирования не имеет. Общего тома с API в этом overlay не создаётся
+#    намеренно: Loki/Promtail соберёт их на этапе 11 через docker.sock
+#    (/var/lib/docker/containers), и для этого НЕ нужно переделывать
+#    сервис api (то есть можно не трогать базовый compose).
+#    Пока логи смотрят так:  docker compose logs -f api worker beat
+#
+#  PUSHGATEWAY_URL: overlay не добавляет переменные в существующие сервисы
+#    (это запрещено его контрактом — см. выше). Когда воркеры дорастут до
+#    push-метрик, достаточно прописать в .env:
+#        PUSHGATEWAY_URL=http://pushgateway:9091
+#    и пересоздать api/worker/beat (make up). Push fail-open (apps/api/app/core/
+#    config.py: пусто = push выключен), так что это безопасно в любом порядке.
+#
+#  ГДЕ СМОТРЕТЬ (порты — через переменные окружения с дефолтами):
+#     Grafana      http://localhost:${OBS_GRAFANA_PORT:-3001}      admin/admin, аноним — Viewer
+#     Prometheus   http://localhost:${OBS_PROMETHEUS_PORT:-9090}  /targets, /alerts, /graph
+#     Alertmanager http://localhost:${OBS_ALERTMANAGER_PORT:-9093} /#/alerts
+#     Pushgateway  http://localhost:${OBS_PUSHGATEWAY_PORT:-9091}
+#
+#  ПОДНЯТЬ / ОСТАНОВИТЬ:
+#     make obs-up                      # поднять метрики-алерты
+#     make obs-down                    # снять только эти 4 сервиса (dev не трогаем)
+#     docker compose -f infra/docker-compose.yml -f infra/docker-compose.observability.yml \
+#       --env-file .env --profile observability logs -f prometheus
+#
+#  Логи сервисов observability (в них пишутся ошибки самого мониторинга):
+#     docker compose -f infra/docker-compose.yml -f infra/docker-compose.observability.yml \
+#       --env-file .env logs -f grafana prometheus alertmanager pushgateway
+# ============================================================
+name: price-portal
+
+services:
+  # ---------- Prometheus: сбор метрик (API /metrics, pushgateway) ----------
+  # Профиль observability: обычный `docker compose up` мониторинг не тянет.
+  prometheus:
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    container_name: pp-prometheus
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus          # именованный том prom-data
+      - --storage.tsdb.retention.time=${OBS_PROMETHEUS_RETENTION:-15d}
+      - --web.enable-lifecycle                    # reload правил без перезапуска
+      - --web.external-url=http://localhost:${OBS_PROMETHEUS_PORT:-9090}
+    depends_on:
+      pushgateway:
+        condition: service_started
+    ports:
+      - "${OBS_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prom-data:/prometheus
+    # configs (не volumes): compose не умеет type: config в томах, только configs:.
+    configs:
+      - source: prometheus-config
+        target: /etc/prometheus/prometheus.yml
+      - source: prometheus-alerts
+        target: /etc/prometheus/rules/alerts.yml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:9090/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [pp-net]
+
+  # ---------- Alertmanager: маршрутизация алертов (§12) ----------
+  # Получателей в dev нет (webhook/TG не настроены) — алерты копятся в UI,
+  # чтобы их было видно, а не терялись молча. Бросать их в /dev/null нельзя.
+  alertmanager:
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    container_name: pp-alertmanager
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager            # именованный том alertmanager-data
+      - --web.external-url=http://localhost:${OBS_ALERTMANAGER_PORT:-9093}
+    ports:
+      - "${OBS_ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - alertmanager-data:/alertmanager
+    configs:
+      - source: alertmanager-config
+        target: /etc/alertmanager/alertmanager.yml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:9093/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [pp-net]
+
+  # ---------- Pushgateway: метрики Celery (push, а не pull) ----------
+  # Воркер отправляет метрики сам (prometheus_client.push_to_gateway): pull
+  # не подходит — задачи короткие, а scrape-окно 15с их просто не увидит.
+  # Сейчас push в коде ещё не реализован (§16 п.23), поэтому job-ов нет,
+  # пока не выставлен PUSHGATEWAY_URL.
+  pushgateway:
+    image: prom/pushgateway:v1.11.2@sha256:c835998819105d84d484918908df132807c78c05f3e0e649df0c0479c6780d98
+    container_name: pp-pushgateway
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - --web.listen-address=:9091
+    ports:
+      - "${OBS_PUSHGATEWAY_PORT:-9091}:9091"
+    volumes:
+      - pushgateway-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:9091/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [pp-net]
+
+  # ---------- Grafana: дашборды «API» и «Celery/Импорты» (§16 п.23) ----------
+  grafana:
+    image: grafana/grafana:11.5.2@sha256:8b37a2f028f164ce7b9889e1765b9d6ee23fec80f871d156fbf436d6198d32b7
+    container_name: pp-grafana
+    restart: unless-stopped
+    profiles: ["observability"]
+    depends_on:
+      prometheus:
+        condition: service_started
+    environment:
+      # Креды админа — из .env (GF_SECURITY_ADMIN_*); дефолт admin/admin только
+      # для dev, в prod обязательно переопределить (§16 п.28).
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Аноним — только Viewer: дашборды смотреть можно, конфиги менять нельзя.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"     # без внешних телеметрий
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_LOG_LEVEL: ${GF_LOG_LEVEL:-info}
+    ports:
+      - "${OBS_GRAFANA_PORT:-3001}:3000"           # хост 3001: порт 3000 занят стеком dev
+    volumes:
+      - grafana-data:/var/lib/grafana
+      # Дашборды из репозитория, read-only: правим JSON → Grafana подхватывает сама.
+      - ./observability/dashboards:/var/lib/grafana/dashboards:ro
+    configs:
+      - source: grafana-datasources
+        target: /etc/grafana/provisioning/datasources/ds.yml
+      - source: grafana-dashboard-provider
+        target: /etc/grafana/provisioning/dashboards/dashboards.yml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [pp-net]
+
+# ------------------------------------------------------------------ конфиги ---
+# Конфиги объявлены через content:, чтобы весь стек мониторинга жил в ОДНОМ
+# файле-оверлее (ради этого файл и нужен) и не зависел от генерации файлов на
+# машине. Данные (TSDB, алерты, дашборды Grafana) — в именованных томах.
+configs:
+  prometheus-config:
+    content: |
+      # Метрики API: /metrics отдаёт prometheus_client из apps/api/app/main.py.
+      # Ходим напрямую в контейнер по внутренней сети — наружу /metrics не выставлен.
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+        external_labels:
+          project: price-portal
+          env: dev
+      rule_files:
+        - /etc/prometheus/rules/*.yml
+      alerting:
+        alertmanagers:
+          - static_configs:
+              - targets: ["alertmanager:9093"]
+      scrape_configs:
+        - job_name: price-api
+          metrics_path: /metrics
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["api:8000"]
+              labels:
+                service: api
+        # Собственные метрики Celery приходят push'ем сюда (§16 п.23).
+        - job_name: pushgateway
+          honor_labels: true
+          static_configs:
+            - targets: ["pushgateway:9091"]
+        - job_name: prometheus
+          static_configs:
+            - targets: ["localhost:9090"]
+
+  prometheus-alerts:
+    content: |
+      # Правила §12 «Observability: логи, метрики, мониторинг».
+      # Пороги error rate > 1% за 5 мин и «инстанс упал» — из канона; p95 1 с —
+      # рабочий порог dev-стека (для прод-профиля latency-алерты заводит §11 SRE).
+      groups:
+        - name: price-api
+          interval: 30s
+          rules:
+            - alert: ApiDown
+              expr: up{job="price-api"} == 0
+              for: 2m
+              labels:
+                severity: critical
+              annotations:
+                summary: "API не отвечает: /metrics недоступен дольше 2 мин"
+                description: "Prometheus не может снять метрики с api:8000/metrics. Проверь: docker compose ps api, docker compose logs api"
+
+            - alert: HighErrorRate
+              # error rate > 1% за 5 мин (§12)
+              expr: |
+                sum(rate(http_requests_total{status=~"5.."}[5m]))
+                  / clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.01
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Доля ответов 5xx > 1% за последние 5 минут"
+                description: "error rate выше порога §12. Смотри Grafana → дашборд «API», разбивку по handler'ам."
+
+            - alert: CriticalErrorRate
+              expr: |
+                sum(rate(http_requests_total{status=~"5.."}[5m]))
+                  / clamp_min(sum(rate(http_requests_total[5m])), 0.001) > 0.05
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Доля ответов 5xx > 5% за последние 5 минут"
+
+            - alert: ErrorResponsesGrowing
+              # «рост 5xx» (§12): не доля, а сам поток ошибок
+              expr: sum(rate(http_requests_total{status=~"5.."}[5m])) > 1
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Больше одного ответа 5xx в секунду на протяжении 10 минут"
+
+            - alert: HighLatencyP95
+              expr: |
+                histogram_quantile(0.95,
+                  sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "p95 ответа API > 1 секунды"
+                description: "Метрика http_request_duration_seconds (apps/api/app/core/http_metrics.py)."
+
+            - alert: NoTraffic
+              # Молчащий API (упал роутер / нет входящих) не должен выглядеть «здоровым»
+              expr: sum(rate(http_requests_total[10m])) == 0
+              for: 15m
+              labels:
+                severity: info
+              annotations:
+                summary: "На API нет ни одного запроса за 15 минут"
+
+      # --- Правила §12 для Celery включаются вместе с push-метриками воркеров ---
+      # (§16 п.23: очередь > 100 и «импорт FAILED»). Пока в apps/api нет
+      # prometheus_client.push_to_gateway, выражения вернули бы пустоту, поэтому
+      # правила оставлены закомментированными, а не «молчащими» алертами.
+      #
+      # groups:
+      #   - name: price-celery
+      #     rules:
+      #       - alert: CeleryQueueBacklog
+      #         expr: max(celery_queue_depth) > 100
+      #         for: 5m
+      #         labels: {severity: warning}
+      #         annotations: {summary: "Очередь Celery > 100 задач (§12)"}
+      #       - alert: ImportFailed
+      #         expr: increase(celery_task_total{status="FAILURE", task=~".*import.*"}[15m]) > 0
+      #         for: 5m
+      #         labels: {severity: critical}
+      #         annotations: {summary: "Импорт прайс-листа упал (§12)"}
+
+  alertmanager-config:
+    content: |
+      # В dev реальных получателей нет (Telegram/webhook не настроены) —
+      # поэтому null-рауты: алерты видно в UI Alertmanager и в Grafana,
+      # а не теряются молча.
+      route:
+        receiver: dev-null
+        group_by: ["alertname", "service"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+      receivers:
+        - name: dev-null
+      inhibit_rules:
+        # Один инстанс упал — не кричим про error rate по тем же лейблам.
+        - source_matchers: [alertname="ApiDown"]
+          target_matchers: [severity=~"warning|critical"]
+          equal: ["service"]
+
+  grafana-datasources:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          # Явный uid: на него ссылаются provisioned-дашборды из ./observability/dashboards
+          uid: prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+          editable: false
+          jsonData:
+            timeInterval: 15s
+            httpMethod: POST
+
+  grafana-dashboard-provider:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: price-portal
+          orgId: 1
+          folder: Price Portal
+          type: file
+          disableDeletion: false
+          allowUiUpdates: false
+          updateIntervalSeconds: 30
+          options:
+            path: /var/lib/grafana/dashboards
+            foldersFromFilesStructure: false
+
+volumes:
+  prom-data:
+  grafana-data:
+  alertmanager-data:
+  pushgateway-data:
+
+# Сеть pp-net приходит из infra/docker-compose.yml — здесь её не переопределяем,
+# только подключаем к ней новые сервисы.
+networks:
+  pp-net:
+    driver: bridge

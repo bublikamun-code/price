@@ -4,6 +4,7 @@
 """
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import (
     Date,
@@ -28,7 +29,7 @@ class ExchangeRate(Base, UUIDPrimaryKey):
     __tablename__ = "exchange_rates"
 
     currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
-    rate: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     scale: Mapped[int] = mapped_column(SmallInteger, default=1, nullable=False)
     fetched_at: Mapped[date] = mapped_column(Date, nullable=False)
     source: Mapped[str] = mapped_column(String(32), default="NBRB", nullable=False)
@@ -56,7 +57,9 @@ class UserBrand(Base, TimestampMixin):
     brand_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("brands.id", ondelete="CASCADE"), primary_key=True
     )
-    discount_percent: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=0)
+    discount_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal(0)
+    )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

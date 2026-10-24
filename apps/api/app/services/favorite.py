@@ -42,9 +42,11 @@ class FavoriteService:
                     stock_status=product.stock_status.value
                     if hasattr(product.stock_status, "value")
                     else str(product.stock_status),
-                    base_price_byn=float(pr["base_price_byn"]),
-                    retail_price=float(pr["retail_price"]),
-                    client_price=float(pr["client_price"]),
+                    # Decimal из PricingService: поле float схемы приводит
+                    # его к JSON-числу (контракт v1 не меняется).
+                    base_price_byn=pr["base_price_byn"],
+                    retail_price=pr["retail_price"],
+                    client_price=pr["client_price"],
                     currency=pr["currency"],
                     has_discount=pr["has_discount"],
                 )

@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import uuid
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, Path, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
@@ -31,6 +30,7 @@ from app.api.v2.errors import (
 from app.core.config import settings
 from app.core.deps import get_current_user, require_role
 from app.core.limiter import limiter
+from app.core.sanitize import content_disposition
 from app.db.session import get_db
 from app.models.enums import FileAssetType, InvoicePdfStatus, UserRole
 from app.models.file import FileAsset
@@ -87,14 +87,11 @@ def _validated_idempotency_key(value: str) -> str:
 
 
 def _content_disposition(filename: str) -> str:
-    """attachment с UTF-8 именем: ASCII-фолбэк + RFC 5987 filename*."""
-    ascii_fallback = (
-        filename.encode("ascii", "ignore").decode("ascii").strip() or "invoice.pdf"
-    )
-    return (
-        f"attachment; filename=\"{ascii_fallback}\"; "
-        f"filename*=UTF-8''{quote(filename)}"
-    )
+    """attachment с UTF-8 именем: ASCII-фолбэк + RFC 5987 filename*.
+
+    Санитизация — в app.core.sanitize (общая с документами, §11).
+    """
+    return content_disposition(filename, default="invoice.pdf")
 
 
 async def _render(

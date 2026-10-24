@@ -30,6 +30,7 @@ from app.models.invoice import Invoice
 from app.repositories import orders as orders_repo
 from app.repositories import organizations as organizations_repo
 from app.services import storage
+from app.services.pricing import quantize_money
 from app.services.invoice import invoice_pdf_asset
 from app.tasks._common import create_worker_db
 from app.workers import celery_app
@@ -130,14 +131,14 @@ def _to_pdf_bytes(*, invoice, order, items: list, organization) -> bytes:
     for item in items:
         snapshot = item.product_snapshot or {}
         quantity = int(item.quantity)
-        price = float(item.unit_price)
+        price = quantize_money(item.unit_price)
         rows.append(
             {
                 "sku": snapshot.get("sku", ""),
                 "name": snapshot.get("name", ""),
                 "qty": quantity,
                 "price": f"{price:.2f}",
-                "amount": f"{quantity * price:.2f}",
+                "amount": f"{quantize_money(price * quantity):.2f}",
             }
         )
 
@@ -156,7 +157,7 @@ def _to_pdf_bytes(*, invoice, order, items: list, organization) -> bytes:
         due_at=invoice.due_at.strftime("%d.%m.%Y") if invoice.due_at else "",
         order_no=f"{order.seq}" if order.seq else "—",
         currency=invoice.currency_code or "BYN",
-        total=f"{float(invoice.total_amount):.2f}",
+        total=f"{quantize_money(invoice.total_amount):.2f}",
         rows=rows,
         delivery=delivery,
         buyer=invoice_buyer(organization),

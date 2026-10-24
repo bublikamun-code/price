@@ -21,6 +21,7 @@ import io
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from openpyxl import Workbook
@@ -29,8 +30,10 @@ from redis.asyncio import Redis
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.sanitize import spreadsheet_cell
 from app.models.user import User
 from app.repositories.catalog import CatalogFilters
+from app.services.pricing import quantize_money
 from app.tasks.export_catalog import run_export
 
 log = get_logger("app.services.export")
@@ -180,6 +183,11 @@ def build_order_xlsx(*, order, client, items) -> bytes:
     ``product_snapshot`` + замороженных ``unit_price``/``quantity`` (§9),
     итоговая строка. Кол-во/цены/суммы — числами (не строками), чтобы 1С
     вставляла их как числа.
+
+    Пользовательские значения (ФИО/компания клиента, ``delivery_point``,
+    артикул и наименование позиции) проходят ``spreadsheet_cell`` (§11):
+    заявка — главный вектор CSV-инъекции, потому что адрес доставки вводит
+    сам клиент, а файл открывают в Excel/1С. Числа не оборачиваем.
     """
     from app.services.email import DELIVERY_METHOD_RU, format_order_no  # lazy
 
@@ -194,30 +202,38 @@ def build_order_xlsx(*, order, client, items) -> bytes:
         "Дата",
         order.created_at.strftime("%d.%m.%Y") if order.created_at else "",
     ])
-    ws.append(["Клиент", client.full_name or ""])
+    ws.append(["Клиент", spreadsheet_cell(client.full_name or "")])
     if client.company:
-        ws.append(["Компания", client.company])
+        ws.append(["Компания", spreadsheet_cell(client.company)])
     delivery = DELIVERY_METHOD_RU.get(order.delivery_method or "", "")
     if order.delivery_method == "delivery" and order.delivery_point:
-        delivery = f"{delivery} ({order.delivery_point})"
+        # Экранируем сам адрес, а не склейку: «Доставка (=cmd|...)» начинается
+        # с «Д» и формулой не станет, но апостроф в адресе — явная метка,
+        # что значение пришло от клиента (§11).
+        delivery = f"{delivery} ({spreadsheet_cell(order.delivery_point)})"
     ws.append(["Способ получения", delivery])
     ws.append([])  # отступ перед таблицей
 
-    # Таблица позиций.
+    # Таблица позиций. Цены — Decimal (openpyxl пишет их числом, не текстом,
+    # поэтому 1С вставляет их как числа), округление — HALF_UP до копеек.
     header_row = ws.max_row + 1
     ws.append(_ORDER_COLUMNS)
-    total = 0.0
+    total = Decimal(0)
     for i in items:
         snap = i.product_snapshot or {}
         qty = int(i.quantity)
-        price = float(i.unit_price)
-        amount = round(qty * price, 2)
+        price = quantize_money(i.unit_price)
+        amount = quantize_money(price * qty)
         total += amount
-        ws.append([snap.get("sku", ""), snap.get("name", ""), qty, price, amount])
+        ws.append([
+            spreadsheet_cell(snap.get("sku", "")),
+            spreadsheet_cell(snap.get("name", "")),
+            qty, price, amount,
+        ])
 
     # Итоговая строка.
     totals_row = ws.max_row + 1
-    ws.append(["", "Итого", "", "", round(float(order.total_amount), 2)])
+    ws.append(["", "Итого", "", "", quantize_money(order.total_amount)])
 
     for row in (header_row, totals_row):
         for cell in ws[row]:

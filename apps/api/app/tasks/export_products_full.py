@@ -37,8 +37,10 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.sanitize import spreadsheet_cell
 from app.models.catalog import Brand, Product, ProductPhoto, Series
 from app.services import storage
+from app.services.pricing import quantize_money
 from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
 
@@ -188,9 +190,9 @@ def build_table(rows, photos_by_product: dict[uuid.UUID, list[str]]):
                 r.series_name or "",
                 product.stock_status.value,
                 "" if product.stock_qty is None else str(product.stock_qty),
-                f"{float(product.base_price):.2f}",
+                f"{quantize_money(product.base_price):.2f}",
                 "" if product.override_price is None
-                else f"{float(product.override_price):.2f}",
+                else f"{quantize_money(product.override_price):.2f}",
             ]
             + [_attr_value(attributes.get(k)) for k in attr_columns]
             + [_photo_url(k) for k in photos]
@@ -202,11 +204,18 @@ def build_table(rows, photos_by_product: dict[uuid.UUID, list[str]]):
 # ----------------------------- файл -----------------------------
 
 def _to_csv_bytes(columns: list[str], records: list[list[str]]) -> bytes:
-    """CSV для Excel: UTF-8 c BOM, разделитель ``;`` (как у импорта, §7.1)."""
+    """CSV для Excel: UTF-8 c BOM, разделитель ``;`` (как у импорта, §7.1).
+
+    Значения строк проходят ``spreadsheet_cell`` (§11): характеристики и
+    названия товаров — недоверенный ввод, ``=``/``+``/``@`` в ячейке Excel
+    вычисляется. Заголовки колонок не трогаем.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
     writer.writerow(columns)
-    writer.writerows(records)
+    writer.writerows(
+        [[spreadsheet_cell(value) for value in record] for record in records]
+    )
     return buf.getvalue().encode("utf-8-sig")
 
 

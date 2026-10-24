@@ -234,7 +234,7 @@ async def get_product(
         photo_key=photos[0] if photos else (series.photo_key if series else None),
         photos=photos,
         attributes=product.attributes or {},
-        override_price=float(product.override_price) if product.override_price is not None else None,
+        override_price=product.override_price,
         **prices,
     )
     await cache.safe_set(
@@ -258,8 +258,8 @@ async def get_price_history(
     rows = await repo.fetch_price_history(db, product.id)
     return [
         PriceHistoryItem(
-            base_price=float(r.base_price),
-            override_price=float(r.override_price) if r.override_price is not None else None,
+            base_price=r.base_price,
+            override_price=r.override_price,
             changed_at=r.changed_at.isoformat(),
         )
         for r in rows

@@ -125,7 +125,7 @@ onMounted(load)
     <PageHeading
       eyebrow="Сервис менеджера"
       title="Журнал аудита"
-      :description="loading ? 'Загрузка…' : `${total} записей`"
+      :description="loading ? '' : `${total} записей`"
     />
 
     <!-- Фильтры -->
@@ -161,19 +161,36 @@ onMounted(load)
       <button type="submit" class="btn-primary shrink-0">Применить</button>
     </form>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить журнал аудита"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 8" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0"/>
     </div>
 
-    <div v-else-if="!items.length" class="border border-border bg-surface p-6 text-ink-muted">
-      <Icon name="heroicons:shield-check" class="size-8 mb-3 text-ink-faint" />
-      <p>Записей нет</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!items.length"
+      class="border border-border bg-surface"
+      :title="appliedAction || appliedTargetType ? 'Ничего не найдено' : 'Записей нет'"
+      :description="appliedAction || appliedTargetType
+        ? 'Под выбранные фильтры события не попали. Измените условия отбора.'
+        : 'Журнал пуст — события появятся здесь после первых действий менеджеров и администраторов.'"
+      :icon="appliedAction || appliedTargetType ? 'heroicons:magnifying-glass' : 'heroicons:shield-check'"
+    >
+      <template v-if="appliedAction || appliedTargetType" #action>
+        <button type="button" class="btn-outline min-h-11" @click="actionInput = ''; targetTypeInput = ''; applyFilters()">
+          Сбросить фильтры
+        </button>
+      </template>
+    </UiEmptyState>
 
     <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
@@ -221,7 +238,7 @@ onMounted(load)
         <button
           v-else
           class="btn-outline size-11 font-medium text-sm"
-          :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+          :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>

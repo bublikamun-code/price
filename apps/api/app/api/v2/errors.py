@@ -15,32 +15,20 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.problem_errors import V2ProblemError
 from app.schemas.v2.common import ProblemDetails, ProblemFieldError
+
+# V2ProblemError живёт в app.core.problem_errors: сервисы бросают эту ошибку, и
+# импортировать её из слоя роутеров было бы зависимостью снизу вверх. Реэкспорт
+# оставлен, чтобы существующие `from app.api.v2.errors import V2ProblemError`
+# продолжали работать без правок.
+
+__all__ = ["PROBLEM_BASE_URL", "PROBLEM_MEDIA_TYPE", "V2ProblemError"]
 
 PROBLEM_BASE_URL = "https://priceweb.local/problems/"
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 _V2_PREFIX = "/api/v2"
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-
-
-class V2ProblemError(Exception):
-    """Domain error that already has a stable v2 code and HTTP status."""
-
-    def __init__(
-        self,
-        *,
-        code: str,
-        status: int,
-        title: str,
-        detail: str,
-        errors: list[ProblemFieldError] | None = None,
-    ) -> None:
-        self.code = code
-        self.status = status
-        self.title = title
-        self.detail = detail
-        self.errors = errors or []
-        super().__init__(detail)
 
 
 def is_v2_request(request: Request) -> bool:

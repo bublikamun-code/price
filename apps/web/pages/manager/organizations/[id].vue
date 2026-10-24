@@ -169,16 +169,28 @@ onMounted(load)
       <div class="skeleton h-64 w-full" />
     </div>
 
-    <div v-else-if="notFound" class="border border-border bg-surface p-6 text-center">
-      <Icon name="heroicons:archive-box-x-mark" class="size-8 mb-3 text-ink-faint" />
-      <p class="text-ink-muted mb-4">Организация не найдена</p>
-      <NuxtLink to="/manager/organizations" class="btn-primary">К списку организаций</NuxtLink>
-    </div>
+    <UiEmptyState
+      v-else-if="notFound"
+      class="border border-border bg-surface"
+      title="Организация не найдена"
+      description="Проверьте ссылку или вернитесь к списку — возможно, организация была удалена."
+      icon="heroicons:archive-box-x-mark"
+    >
+      <template #action>
+        <NuxtLink to="/manager/organizations" class="btn-primary min-h-11 inline-flex items-center">К списку организаций</NuxtLink>
+      </template>
+    </UiEmptyState>
 
-    <div v-else-if="error && !organization" class="border border-danger/50 bg-danger-soft p-5">
-      <div class="badge-danger mb-4 inline-flex">{{ error }}</div>
-      <div><button class="btn-outline min-h-11" @click="load">Повторить</button></div>
-    </div>
+    <UiErrorState
+      v-else-if="error && !organization"
+      class="mb-5"
+      title="Организация недоступна"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-else-if="organization">
       <PageHeading
@@ -288,7 +300,7 @@ onMounted(load)
           >
             <span
               v-if="saving"
-              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin"
+              class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"
             />
             <Icon v-else name="heroicons:check" class="w-4 h-4" />
             {{ saving ? 'Сохраняем…' : 'Сохранить реквизиты' }}
@@ -301,9 +313,13 @@ onMounted(load)
           </p>
         </div>
 
-        <p v-if="saveError" class="badge-danger mt-3" role="alert" data-testid="manager-org-requisites-error">
-          {{ saveError }}
-        </p>
+        <UiErrorState
+          v-if="saveError"
+          class="mt-3"
+          :title="stale ? 'Реквизиты уже изменены' : 'Не удалось сохранить реквизиты'"
+          :description="saveError"
+          data-testid="manager-org-requisites-error"
+        />
         <button
           v-if="stale"
           type="button"

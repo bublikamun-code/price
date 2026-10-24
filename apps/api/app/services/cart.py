@@ -2,7 +2,14 @@
 
 Корзина v1 хранится в legacy USER scope. Актуальные цены считаются через
 ``PricingService`` на лету (в корзине цена НЕ замораживается — только в заказе).
+
+Деньги — ``Decimal`` насквозь (``services.pricing``): цена строки, итог строки и
+сумма корзины округляются ``quantize_money`` (2 знака, ROUND_HALF_UP). В DTO
+уходит Decimal — JSON-число обеспечивает поле ``float`` схемы ``CartRead``
+(Pydantic v2 приводит Decimal → float сам), так что контракт v1 не меняется.
 """
+from decimal import Decimal
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import StockStatus
@@ -16,7 +23,7 @@ from app.schemas.cart import (
     CartItemRead,
     CartRead,
 )
-from app.services.pricing import PricingService
+from app.services.pricing import PricingService, quantize_money
 
 
 class CartService:
@@ -43,7 +50,7 @@ class CartService:
         )
 
         items: list[CartItemRead] = []
-        total = 0.0
+        total = Decimal(0)
         for row in rows:
             item, product = row[0], row[1]
             if product is None:
@@ -51,8 +58,8 @@ class CartService:
                 # но защищаемся): позицию пропускаем в выдаче.
                 continue
             pr = prices[product.id]
-            unit_price = float(pr["client_price"])
-            line_total = round(unit_price * item.quantity, 2)
+            unit_price = quantize_money(pr["client_price"])
+            line_total = quantize_money(unit_price * item.quantity)
             total += line_total
             items.append(
                 CartItemRead(
@@ -72,7 +79,10 @@ class CartService:
                 )
             )
         return CartRead(
-            id=cart.id, items=items, total_amount=round(total, 2), total_items=len(items)
+            id=cart.id,
+            items=items,
+            total_amount=quantize_money(total),
+            total_items=len(items),
         )
 
     async def add(

@@ -6,7 +6,7 @@
 #    - api запускается через gunicorn+uvicorn-workers
 #    - web отдаёт собранный .output (Nitro), без dev-сервера
 #    - nginx на 80/443 с TLS (сертификаты монтируются извне)
-#    - db/redis/minio не публикуют порты наружу (только внутренняя сеть)
+#    - db/redis/rustfs не публикуют порты наружу (только внутренняя сеть)
 #    - рестарты always
 # ============================================================
 
@@ -18,7 +18,7 @@ services:
   redis:
     ports: !reset []            # в dev — 6379
 
-  minio:
+  rustfs:
     ports: !reset []            # в dev — 9000/9001
 
   api:
@@ -26,6 +26,10 @@ services:
       target: runtime
     env_file: ../.env
     environment:
+      # Без этого флага _check_prod_security() в core/config.py выходит на первой
+      # строке (`if self.env != "prod"`), и весь прод-guard остаётся мёртвым кодом:
+      # дефолтный SECRET_KEY и CORS с localhost подняли бы прод молча.
+      ENV: prod
       JWT_ALGORITHM: RS256                        # prod: RS256 + PEM-ключи (§16 п.15)
       JWT_PRIVATE_KEY_PATH: /jwt-keys/jwt_rsa.key
       JWT_PUBLIC_KEY_PATH: /jwt-keys/jwt_rsa.pub

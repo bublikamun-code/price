@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.sanitize import safe_filename
 from app.models.enums import FileAssetType, FileVisibility
 from app.models.file import FileAsset
 from app.repositories import file_assets as file_assets_repo
@@ -164,7 +165,7 @@ async def upload_asset(
             db,
             type=type,
             s3_key=key,
-            filename_display=upload.filename or key,
+            filename_display=safe_filename(upload.filename, default=key),
             content_type=upload.content_type,
             size_bytes=size_bytes,
             brand_id=brand_id,
@@ -255,7 +256,7 @@ async def upload_product_document(
             db,
             type=type,
             s3_key=key,
-            filename_display=upload.filename or key,
+            filename_display=safe_filename(upload.filename, default=key),
             content_type=upload.content_type,
             size_bytes=size_bytes,
             brand_id=None,

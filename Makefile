@@ -5,7 +5,7 @@
 
 DC = docker compose -f infra/docker-compose.yml --env-file .env
 DC_PROD = docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file .env
-DC_OBS = docker compose -f infra/docker-compose.yml -f infra/docker-compose.observability.yml --env-file .env
+DC_OBS = docker compose -f infra/docker-compose.yml -f infra/docker-compose.observability.yml --env-file .env --profile observability
 # Dev-режим фронтенда: базовый compose + override с Nuxt dev server (хот-релоад)
 DC_WEB_DEV = docker compose -f infra/docker-compose.yml -f infra/docker-compose.web-dev.yml --env-file .env
 
@@ -89,7 +89,7 @@ fmt: ## форматирование
 
 db-reset: ## пересоздать БД с нуля (ОСТОРОЖНО: удаляет данные)
 	$(DC) down -v
-	$(DC) up -d db redis minio
+	$(DC) up -d db redis rustfs
 
 gen-jwt-keys: ## сгенерировать RSA-пару для JWT RS256, prod (§16 п.15)
 	@if [ -e infra/jwt-keys/jwt_rsa.key ] || [ -e infra/jwt-keys/jwt_rsa.pub ]; then \
@@ -206,7 +206,7 @@ backup-list: ## список бэкапов
 	@ls -lh infra/backups 2>/dev/null || echo "infra/backups/ пока пуст (make backup)"
 
 restore-test: ## проверить свежий бэкап восстановлением во временную БД (§16 п.30)
-	infra/scripts/restore_db.sh
+	infra/scripts/restore_db.sh --test --yes
 
 ratelimit-reset: ## сбросить dev-счётчики rate-limit (login и др.) в Redis
 	@$(DC) exec -T redis sh -c 'redis-cli --scan --pattern "LIMITS:*" | xargs redis-cli DEL' >/dev/null

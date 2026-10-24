@@ -8,7 +8,7 @@ B2B «Клиентский портал с динамическими прайс
 персональные цены, импорт CSV, заявки, уведомления, Telegram-бот.
 - **Backend:** FastAPI (Python 3.12), SQLAlchemy, Alembic, Celery, Pydantic
 - **Frontend:** Nuxt 3 (Vue 3 + TS + Tailwind)
-- **Infra:** Docker Compose, PostgreSQL, Redis, MinIO, Nginx
+- **Infra:** Docker Compose, PostgreSQL, Redis, RustFS (S3-совместимое хранилище), Nginx
 - **Текущий этап:** см. `README.md` → «Дорожная карта».
 
 ## 🗺️ Карта (читай это, а не дампы папок)
@@ -20,7 +20,7 @@ B2B «Клиентский портал с динамическими прайс
 | Команды dev | `Makefile` (`make up`, `make migrate`, `make test`, …) |
 | Backend | `apps/api/` (FastAPI: `models/`, `schemas/`, `repositories/`, `services/`, `api/v1/`, `tasks/`) |
 | Frontend | `apps/web/` (Nuxt: `pages/`, `layouts/`, `components/`, `middleware/`, `composables/`) |
-| Infra | `infra/` (`docker-compose*.yml`, `nginx/`, `minio/`) |
+| Infra | `infra/` (`docker-compose*.yml`, `nginx/`, `scripts/`) — S3-хранилище: сервис `rustfs` + `s3init` |
 
 ## ⚡ Оптимизация расхода токенов (обязательно к исполнению)
 1. **Не читай `ARCHITECTURE_PLAN.md` / `SITEMAP.md` целиком.** Читай конкретные `§N`-секции через `Grep`/`Read` со смещением. Они большие (~74KB / ~31KB).
@@ -62,7 +62,7 @@ B2B «Клиентский портал с динамическими прайс
 ## 🛑 Docker: поднимать и гасить по необходимости
 Mac греется от фонового Docker — не держи стек поднятым «на всякий случай».
 - **Задача не связана с Docker** ( фронт, доки, канон, чистый TS/Python) → в конце работы: `make docker-stop`.
-- **Задача требует БД/бэкенда/ MinIO/ тестов** → в начале: `make docker-ensure` (поднимет и Docker Desktop, если он выключен).
+- **Задача требует БД/бэкенда/ S3-хранилища/ тестов** → в начале: `make docker-ensure` (поднимет и Docker Desktop, если он выключен).
 - `make docker-check` — покажет, можно ли выключить и **почему** нельзя (работает чужая сессия, свежая активность, vite/playwright на хосте).
 - Механизм: `infra/scripts/docker-idle.sh` + хуки `PostToolUse`/`Stop` в `~/.zcode/cli/config.json`. Решение принимает скрипт, а не агент.
 - Свой след сессии можно исключить: `make docker-check SID=sess_...` (тогда чужие следы учитываются, свои — нет).

@@ -263,7 +263,7 @@ defineExpose({ reload: load })
               :data-testid="`volume-tier-save-${tier.id}`"
               @click="submitEdit(tier)"
             >
-              <span v-if="saving" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+              <span v-if="saving" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
               Сохранить
             </button>
             <button type="button" class="btn-ghost" :disabled="saving" @click="cancelEdit">Отмена</button>
@@ -279,7 +279,7 @@ defineExpose({ reload: load })
               :disabled="deletingId === tier.id"
               @click="doRemove(tier)"
             >
-              <span v-if="deletingId === tier.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+              <span v-if="deletingId === tier.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
               {{ deletingId === tier.id ? 'Удаление…' : 'Удалить' }}
             </button>
             <button type="button" class="btn-ghost min-h-11 px-3 text-xs" @click="confirmingId = null">Отмена</button>
@@ -328,7 +328,7 @@ defineExpose({ reload: load })
             data-testid="volume-tier-create"
             @click="submitCreate"
           >
-            <span v-if="creating" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+            <span v-if="creating" class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
             Добавить
           </button>
         </div>

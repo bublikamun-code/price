@@ -87,6 +87,14 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
         Boolean, default=False, server_default=false(), nullable=False
     )
 
+    # Обе админские выборки фильтруют по роли и сортируют «свежие сверху»:
+    # список клиентов (WHERE role='CLIENT') и список менеджеров
+    # (WHERE role='MANAGER'). Создан миграцией 0025; объявлен в модели
+    # ради alembic check (аудит 2026-09-06 §3).
+    __table_args__ = (
+        Index("ix_users_role_created", "role", text("created_at DESC")),
+    )
+
 
 class Session(Base, UUIDPrimaryKey):
     """Refresh-токены (хэш). См. §11. Один активный токен на устройство."""
@@ -142,6 +150,11 @@ class TotpRecoveryCode(Base, UUIDPrimaryKey):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    # Коды 2FA выбираются по менеджеру при входе и при включении/сбросе 2FA
+    # (services/auth.py). Создан миграцией 0025; объявлен в модели ради
+    # alembic check (аудит 2026-09-06 §3).
+    __table_args__ = (Index("ix_totp_recovery_codes_user", "user_id"),)
 
 
 class ConsentLog(Base, UUIDPrimaryKey):

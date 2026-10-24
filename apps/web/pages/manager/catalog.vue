@@ -296,7 +296,7 @@ onUnmounted(() => {
     <PageHeading
       eyebrow="Сервис менеджера"
       title="Управление каталогом"
-      :description="loading ? 'Загрузка…' : `${total} товаров`"
+      :description="loading ? '' : `${total} товаров`"
     >
       <template #actions>
         <UiButton variant="outline" size="touch" :loading="exporting" :disabled="exporting" @click="startFullExport">
@@ -309,9 +309,16 @@ onUnmounted(() => {
       </template>
     </PageHeading>
 
-    <div v-if="exportError" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ exportError }}</div>
-    </div>
+    <UiErrorState
+      v-if="exportError"
+      class="mb-4"
+      title="Экспорт не удался"
+      :description="exportError"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="startFullExport">Запустить снова</UiButton>
+      </template>
+    </UiErrorState>
 
     <!-- Фильтры -->
     <form class="mb-5 border border-border bg-surface p-3" @submit.prevent="applySearch">
@@ -347,19 +354,48 @@ onUnmounted(() => {
       </div>
     </form>
 
-    <div v-if="error" class="flex items-center gap-3 mb-4">
-      <div class="badge-danger">{{ error }}</div>
-      <button class="btn-ghost text-sm" @click="load">Повторить</button>
-    </div>
+    <UiErrorState
+      v-if="error"
+      class="mb-4"
+      title="Не удалось загрузить товары"
+      :description="error"
+    >
+      <template #action>
+        <UiButton variant="secondary" size="compact" @click="load">Повторить</UiButton>
+      </template>
+    </UiErrorState>
 
     <div v-if="loading" class="border border-border bg-surface p-4">
       <div v-for="i in 8" :key="i" class="skeleton h-12 w-full mb-3 last:mb-0" />
     </div>
 
-    <div v-else-if="!sortedRows.length" class="border border-border bg-surface p-6 text-center text-ink-muted">
-      <Icon name="heroicons:cube" class="size-8 mb-3 text-ink-faint" />
-      <p>{{ appliedQ || brandId || stock ? 'По этим фильтрам товаров нет' : 'Товаров пока нет' }}</p>
-    </div>
+    <UiEmptyState
+      v-else-if="!sortedRows.length"
+      class="border border-border bg-surface"
+      :title="appliedQ || brandId || stock ? 'Ничего не найдено' : 'Товаров пока нет'"
+      :description="appliedQ || brandId || stock
+        ? 'По заданным фильтрам товаров нет. Измените условия или сбросьте фильтры.'
+        : 'Каталог наполняется импортом прайс-листа или загрузкой CSV.'"
+      :icon="appliedQ || brandId || stock ? 'heroicons:magnifying-glass' : 'heroicons:cube'"
+    >
+      <template #action>
+        <button
+          v-if="appliedQ || brandId || stock"
+          type="button"
+          class="btn-outline min-h-11"
+          @click="resetFilters"
+        >
+          Сбросить фильтры
+        </button>
+        <NuxtLink
+          v-else
+          to="/manager/import"
+          class="btn-primary inline-flex min-h-11 items-center gap-2 px-4 text-sm font-semibold"
+        >
+          <Icon name="heroicons:arrow-up-tray" class="size-4" /> Импортировать прайс
+        </NuxtLink>
+      </template>
+    </UiEmptyState>
 
     <div v-else class="border border-border bg-surface">
       <div class="overflow-x-auto">
@@ -428,7 +464,7 @@ onUnmounted(() => {
           <button
             v-else
             class="btn-outline size-11 font-medium text-sm"
-            :class="pgn === page ? 'border-action bg-action text-white' : 'text-ink-muted hover:bg-surface-2'"
+            :class="pgn === page ? 'border-action bg-action text-action-on' : 'text-ink-muted hover:bg-surface-2'"
             @click="goPage(pgn as number)"
           >{{ pgn }}</button>
         </template>
@@ -511,7 +547,7 @@ onUnmounted(() => {
         <div class="flex justify-end gap-2 mt-6">
           <button type="button" class="btn-ghost min-h-11" @click="closeEdit">Закрыть</button>
           <button type="submit" class="btn-primary min-h-11" :disabled="saving || editSuccess">
-            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin" />
+            <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none" />
             {{ saving ? 'Сохранение…' : 'Сохранить' }}
           </button>
         </div>

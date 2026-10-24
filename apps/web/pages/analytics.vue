@@ -210,7 +210,7 @@ onMounted(load)
             :disabled="!data?.quick_actions.repeat_order_id || repeating"
             @click="repeatLast"
           >
-            <span v-if="repeating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            <span v-if="repeating" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin motion-reduce:animate-none" />
             <Icon v-else name="heroicons:arrow-path" class="w-4 h-4" />
             Повторить последнюю заявку
           </button>

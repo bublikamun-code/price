@@ -17,6 +17,12 @@
 Конвертация валюты (§17):
   rate — за `scale` единиц валюты к BYN (НБ РБ: для RUB scale=100).
   amount_currency = amount_byn * scale / rate
+
+Все денежные величины — ``Decimal``. Колонки БД объявлены ``Numeric(...)``, то
+есть драйвер уже отдаёт Decimal; float в этом модуле означал бы тихую потеря
+точности (и ``Decimal + float`` → TypeError в арифметике заявки). Поэтому
+единственная точка приведения — ``_to_decimal``/``quantize_*`` ниже, а наружу
+уходят ``Decimal``; JSON-контракт DTO (v1 — числа, v2 — строки) задаёт Pydantic.
 """
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -36,17 +42,53 @@ from app.repositories import volume_tiers as tiers_repo
 from app.services.cache import VOLUME_TIERS_TAG, cache
 
 TWO_PLACES = Decimal("0.01")
+FOUR_PLACES = Decimal("0.0001")
 
 
 def _to_decimal(v) -> Decimal:
     if v is None:
         return None  # type: ignore[return-value]
+    if isinstance(v, Decimal):
+        return v
     return Decimal(str(v))
 
 
 def _q(value: Decimal) -> Decimal:
     """Округление до копеек (banker's → HALF_UP)."""
     return value.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+
+
+def quantize_money(value) -> Decimal:
+    """Цена/сумма: два знака, ROUND_HALF_UP (0.005 → 0.01, а не 0.00).
+
+    Общая точка округления денег для сервисов: карзина (v1/v2), заявка, счёт,
+    выгрузки и письма считают по одному правилу.
+    """
+    amount = _to_decimal(value)
+    if amount is None:
+        raise ValueError("Денежное значение не может быть None")
+    return amount.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+
+
+def quantize_rate(value) -> Decimal:
+    """Курс валюты: четыре знака — точность колонки ``exchange_rates.rate``."""
+    rate = _to_decimal(value)
+    if rate is None:
+        raise ValueError("Курс валюты не может быть None")
+    return rate.quantize(FOUR_PLACES, rounding=ROUND_HALF_UP)
+
+
+def _cache_safe_ladder(ladder: list[dict]) -> list[dict]:
+    """Лестница для Redis: проценты — канонической строкой.
+
+    JSON не умеет decimal, а ``json.dumps`` не принимает Decimal. Строка
+    «5.00» читается назад без потери точности, а потребители нормализуют её
+    через ``_to_decimal`` (тот же путь, что и для значения из БД).
+    """
+    return [
+        {**tier, "discount_percent": str(_to_decimal(tier["discount_percent"]))}
+        for tier in ladder
+    ]
 
 
 # ---------------- Чистые функции (unit-тестируемые) ----------------
@@ -60,8 +102,8 @@ def client_price_byn(
     if override is not None:
         return _q(override)
 
-    if discount_percent is not None and Decimal(str(discount_percent)) > 0:
-        d = Decimal(str(discount_percent))
+    d = _to_decimal(discount_percent)
+    if d is not None and d > 0:
         return _q(base * (Decimal(1) - d / Decimal(100)))
     return _q(base)
 
@@ -82,7 +124,7 @@ def volume_tier_ladder(
     return [
         {
             "min_qty": tier.min_qty,
-            "discount_percent": float(_to_decimal(tier.discount_percent)),
+            "discount_percent": _to_decimal(tier.discount_percent),
         }
         for tier in tiers
     ]
@@ -98,7 +140,7 @@ def convert_to_currency(amount_byn, rate, scale) -> Decimal:
     amount = _to_decimal(amount_byn)
     if rate is None:
         return _q(amount)
-    r = Decimal(str(rate))
+    r = _to_decimal(rate)
     s = Decimal(str(scale or 1))
     if r == 0:
         return _q(amount)
@@ -153,7 +195,7 @@ class PricingService:
                 result[brand_id] = ladder
                 await cache.safe_set(
                     _tiers_cache_key(brand_id),
-                    ladder,
+                    _cache_safe_ladder(ladder),
                     ttl=settings.cache_ttl_seconds,
                     tags=[VOLUME_TIERS_TAG, f"brand:{brand_id}"],
                 )
@@ -302,9 +344,13 @@ class PricingService:
         )
 
         return {
-            "base_price_byn": float(_q(base_byn)),
-            "retail_price": float(convert_to_currency(base_byn, resolved.rate, resolved.scale)),
-            "client_price": float(convert_to_currency(client_byn, resolved.rate, resolved.scale)),
+            "base_price_byn": _q(base_byn),
+            "retail_price": convert_to_currency(
+                base_byn, resolved.rate, resolved.scale
+            ),
+            "client_price": convert_to_currency(
+                client_byn, resolved.rate, resolved.scale
+            ),
             "currency": resolved.currency,
             "rate_source": resolved.source,
             "has_discount": has_discount(base_byn, client_byn),
@@ -312,9 +358,7 @@ class PricingService:
             # количество ниже первого порога или лестницы нет). Для DTO каталога
             # это поле не публикуется: там количество ещё не выбрано.
             "volume_tier": tier,
-            "discount_percent": (
-                float(effective) if effective is not None else None
-            ),
+            "discount_percent": effective,
         }
 
     async def price_product(

@@ -15,6 +15,7 @@
 """
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     DateTime,
@@ -72,8 +73,8 @@ class Invoice(Base, TimestampMixin, UUIDPrimaryKey):
         nullable=True,
     )
 
-    # Замороженная копия заказа (§16 п.40 п.3).
-    total_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    # Замороженная копия заказа (§16 п.40 п.3). Numeric → Decimal в рантайме.
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     currency_code: Mapped[str] = mapped_column(String(3), nullable=False)
 
     issued_at: Mapped[datetime] = mapped_column(
