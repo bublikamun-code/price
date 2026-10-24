@@ -200,7 +200,7 @@ async def change_password(
     return {"detail": "Пароль изменён"}
 
 
-@router.patch("/me", response_model=UserPublic)
+@router.patch("/me", response_model=UserPublic, dependencies=[Depends(validate_csrf)])
 async def update_me(
     body: UserUpdate,
     request: Request,
@@ -225,7 +225,7 @@ async def update_me(
 # =========================================================
 # 2FA (фича H, §16 п.22; только MANAGER, кроме verify)
 # =========================================================
-@router.post("/2fa/setup", response_model=TwoFASetupResponse)
+@router.post("/2fa/setup", response_model=TwoFASetupResponse, dependencies=[Depends(validate_csrf)])
 @limiter.limit(settings.rate_limit_2fa_verify)
 async def setup_2fa(
     request: Request,
@@ -240,7 +240,7 @@ async def setup_2fa(
     return TwoFASetupResponse(data=svc.setup_2fa(current_user))
 
 
-@router.post("/2fa/enable", response_model=TwoFAEnableResponse)
+@router.post("/2fa/enable", response_model=TwoFAEnableResponse, dependencies=[Depends(validate_csrf)])
 @limiter.limit(settings.rate_limit_2fa_verify)
 async def enable_2fa(
     body: TwoFAEnableRequest,
@@ -289,7 +289,7 @@ async def verify_2fa(
     return tokens
 
 
-@router.post("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(validate_csrf)])
 @limiter.limit(settings.rate_limit_2fa_verify)
 async def disable_2fa(
     body: TwoFADisableRequest,
@@ -324,7 +324,7 @@ async def list_sessions(
     return SessionListResponse(data=items)
 
 
-@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(validate_csrf)])
 async def revoke_session(
     session_id: uuid.UUID,
     request: Request,
@@ -343,7 +343,7 @@ async def revoke_session(
         _clear_auth_cookies(response)
 
 
-@router.delete("/sessions", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/sessions", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(validate_csrf)])
 async def revoke_all_sessions(
     request: Request,
     current_user: User = Depends(get_current_user),
