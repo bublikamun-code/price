@@ -46,7 +46,7 @@ export default <Partial<Config>>{
         primary: {
           DEFAULT: token('action'),
           hover: token('action-hover'),
-          soft: token('info-soft'),
+          soft: token('action-soft'),
         },
         accent: {
           DEFAULT: token('action'),

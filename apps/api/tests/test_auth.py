@@ -603,3 +603,26 @@ async def test_login_rate_limit(api_client, session_factory):
             limiter.reset()
         except Exception:
             pass
+
+
+@pytest.mark.asyncio
+async def test_refresh_rate_limit(api_client):
+    """BE-03 (FIX_PLAN 2026-10-23): refresh без refresh-куки → 401, но каждая
+    попытка расходует лимит 30/15мин; 31-я → 429. До фикса эндпоинт был
+    безлимитным вектором перебора refresh-cookie."""
+    limiter.enabled = True
+    try:
+        statuses = []
+        for _ in range(31):
+            r = await api_client.post("/api/v1/auth/refresh")
+            statuses.append(r.status_code)
+        # первые 30 — 401 (нет refresh-куки, лимит ещё не превышен)
+        assert statuses[:30] == [401] * 30, statuses
+        # 31-я — 429 (rate limit)
+        assert statuses[30] == 429, statuses
+    finally:
+        limiter.enabled = False
+        try:
+            limiter.reset()
+        except Exception:
+            pass

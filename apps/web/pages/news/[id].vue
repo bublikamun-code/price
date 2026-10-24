@@ -12,7 +12,8 @@ const { data: article, status, error, refresh } = await useAsyncData<NewsRead>(
 )
 
 if (getErrorStatus(error.value) === 404) {
-  throw createError({ statusCode: 404, statusMessage: 'Новость не найдена', fatal: true })
+  // message, а не statusMessage: h3 санитизирует кириллицу в HTTP reason phrase.
+  throw createError({ statusCode: 404, message: 'Новость не найдена', fatal: true })
 }
 
 useSeoMeta({

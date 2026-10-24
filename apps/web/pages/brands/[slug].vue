@@ -33,7 +33,8 @@ const { data: brand, status, error, refresh } = useAsyncData('public-brand', asy
 }, { watch: [slug] })
 
 if (getErrorStatus(error.value) === 404) {
-  throw createError({ statusCode: 404, statusMessage: 'Бренд не найден', fatal: true })
+  // message, а не statusMessage: h3 санитизирует кириллицу в HTTP reason phrase.
+  throw createError({ statusCode: 404, message: 'Бренд не найден', fatal: true })
 }
 
 useSeoMeta({

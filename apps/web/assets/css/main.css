@@ -65,7 +65,7 @@
   --color-surface-3: var(--color-surface-2);
   --color-primary: var(--color-action);
   --color-primary-hover: var(--color-action-hover);
-  --color-primary-soft: var(--color-info-soft);
+  --color-primary-soft: var(--color-action-soft);
   --color-secondary: var(--color-ink);
   --color-secondary-soft: var(--color-surface-2);
   --color-destructive: var(--color-danger);

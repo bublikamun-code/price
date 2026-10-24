@@ -118,6 +118,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenPair, dependencies=[Depends(validate_csrf)])
+@limiter.limit(settings.rate_limit_refresh)
 async def refresh(
     request: Request,
     response: Response,

@@ -210,6 +210,9 @@ class Settings(BaseSettings):
     rate_limit_login: str = "5/15minutes"
     # Лимит на запрос сброса пароля (forgot-password) — по IP.
     rate_limit_forgot_password: str = "5/15minutes"
+    # Обновление токенов: авто-refresh открытых вкладок шлёт запросы регулярно,
+    # поэтому лимит мягкий — защита от перебора refresh-cookie, не от пользователя.
+    rate_limit_refresh: str = "30/15minutes"
     # Блокировка аккаунта после N неудачных входов (§16 п.21, H4):
     # попыток до блокировки и длительность блокировки (минуты).
     login_max_attempts: int = 5

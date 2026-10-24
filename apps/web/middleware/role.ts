@@ -15,6 +15,7 @@ export default defineNuxtRouteMiddleware((to) => {
 
   // ADMIN «видит всё» — проходит любой role-гейт.
   if (roles.length > 0 && auth.user.role !== 'ADMIN' && !roles.includes(auth.user.role)) {
-    throw createError({ statusCode: 403, statusMessage: 'Недостаточно прав' })
+    // message, а не statusMessage: h3 санитизирует кириллицу в HTTP reason phrase.
+    throw createError({ statusCode: 403, message: 'Недостаточно прав' })
   }
 })
