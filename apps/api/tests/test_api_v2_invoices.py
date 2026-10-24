@@ -625,6 +625,80 @@ async def test_regenerate_pdf_rejects_concurrent_render(api_client, session_fact
     assert response.json()["code"] == "INVOICE_PDF_IN_PROGRESS"
 
 
+async def test_issue_in_flight_returns_in_progress_code(api_client, session_factory):
+    """BE-01: ключ зарезервирован, order_id ещё не проставлен (первый запрос
+    в этой же транзакции ещё в полёте) → 409 IDEMPOTENCY_IN_PROGRESS —
+    симметрично заказам v2, а не IDEMPOTENCY_KEY_REUSED."""
+    from app.models.order import OrderIdempotency
+    from app.services.invoice import invoice_request_fingerprint
+
+    manager = await create_user(
+        session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD
+    )
+    client = await create_user(
+        session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD
+    )
+    brand = await create_brand(session_factory, name="In-flight Brand")
+    product = await create_product(
+        session_factory,
+        sku="V2-INV-INFLIGHT",
+        name="In-flight product",
+        brand=brand,
+        base_price=10,
+    )
+    order = await _seed_order(session_factory, client=client, product=product)
+    request_hash = invoice_request_fingerprint(user_id=manager.id, order_id=order.id)
+    async with session_factory() as session:
+        session.add(
+            OrderIdempotency(
+                user_id=manager.id,
+                idempotency_key="inv-inflight",
+                request_hash=request_hash,
+            )
+        )
+        await session.commit()
+    await _login(api_client, MANAGER_EMAIL)
+
+    response = await _issue_invoice(api_client, order.id, key="inv-inflight")
+
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "IDEMPOTENCY_IN_PROGRESS"
+
+
+async def test_regenerate_pdf_optimistic_guard_blocks_double_pending(session_factory):
+    """BE-02: guard UPDATE ... WHERE pdf_status != PENDING — второй
+    regenerate в той же транзакции видит PENDING и получает 409-ошибку,
+    двойной enqueue рендера невозможен."""
+    from app.services.invoice import InvoicePdfInProgressError, InvoiceService
+
+    manager = await create_user(
+        session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD
+    )
+    client = await create_user(
+        session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD
+    )
+    brand = await create_brand(session_factory, name="Guard Brand")
+    product = await create_product(
+        session_factory,
+        sku="V2-INV-GUARD",
+        name="Guard product",
+        brand=brand,
+        base_price=10,
+    )
+    order = await _seed_order(session_factory, client=client, product=product)
+    invoice = await _seed_invoice(session_factory, order=order, manager=None, pdf=False)
+    async with session_factory() as session:
+        stored = await session.get(Invoice, invoice.id)
+        stored.pdf_status = InvoicePdfStatus.FAILED
+        await session.commit()
+
+        service = InvoiceService(session)
+        first = await service.regenerate_pdf(manager, invoice.id)
+        assert first.pdf_status == InvoicePdfStatus.PENDING
+        with pytest.raises(InvoicePdfInProgressError):
+            await service.regenerate_pdf(manager, invoice.id)
+
+
 # ===========================================================================
 # Смена статуса счёта (If-Match по версии счёта)
 # ===========================================================================

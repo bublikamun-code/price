@@ -17,6 +17,60 @@ async def fetch_brands(db: AsyncSession) -> list[Brand]:
     return list(res.scalars().all())
 
 
+async def fetch_brands_with_stats(db: AsyncSession) -> list[tuple[Brand, dict]]:
+    """Бренды + витрина-статистика одним запросом (было N+1 fetch_brand_stats).
+
+    Коррелированные подзапросы повторяют семантику ``fetch_brand_stats``
+    один-в-один (включая фолбэк фото серии); сортировка брендов — по имени.
+    """
+    from app.models.catalog import ProductPhoto
+
+    series_count = (
+        select(func.count())
+        .select_from(Series)
+        .where(Series.brand_id == Brand.id)
+        .scalar_subquery()
+    )
+    products_count = (
+        select(func.count())
+        .select_from(Product)
+        .where(Product.brand_id == Brand.id, Product.deleted_at.is_(None))
+        .scalar_subquery()
+    )
+    first_photo = (
+        select(ProductPhoto.photo_key)
+        .join(Product, Product.id == ProductPhoto.product_id)
+        .where(Product.brand_id == Brand.id, Product.deleted_at.is_(None))
+        .order_by(ProductPhoto.sort_order, ProductPhoto.created_at)
+        .limit(1)
+        .scalar_subquery()
+    )
+    series_photo = (
+        select(Series.photo_key)
+        .where(Series.brand_id == Brand.id, Series.photo_key.is_not(None))
+        .limit(1)
+        .scalar_subquery()
+    )
+    stmt = select(
+        Brand,
+        series_count.label("series_count"),
+        products_count.label("products_count"),
+        func.coalesce(first_photo, series_photo).label("photo"),
+    ).order_by(Brand.name)
+    res = await db.execute(stmt)
+    return [
+        (
+            row[0],
+            {
+                "series_count": int(row.series_count or 0),
+                "products_count": int(row.products_count or 0),
+                "photo": row.photo,
+            },
+        )
+        for row in res.all()
+    ]
+
+
 async def get_brand_by_slug(db: AsyncSession, slug: str) -> Brand | None:
     return await db.scalar(select(Brand).where(Brand.slug == slug))
 

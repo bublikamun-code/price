@@ -27,11 +27,15 @@ class FavoriteService:
         total = await fav_repo.count_favorites(self.db, user_id=user.id)
 
         items: list[FavoriteRead] = []
+        # Батч-расчёт цен одним проходом вместо per-item (паттерн v1-каталога).
+        prices_by_id = await self.pricing.price_products(
+            [row[1] for row in rows if row[1] is not None], user, "fixed"
+        )
         for row in rows:
             product = row[1]
             if product is None:
                 continue  # товар удалён — пропускаем в выдаче
-            pr = await self.pricing.price_product(product, user, "fixed")
+            pr = prices_by_id[product.id]
             items.append(
                 FavoriteRead(
                     product_id=product.id,

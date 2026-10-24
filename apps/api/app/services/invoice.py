@@ -20,6 +20,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,6 +105,15 @@ class IdempotencyKeyReusedError(InvoiceError):
     code = "IDEMPOTENCY_KEY_REUSED"
     status_code = 409
     title = "Ключ идемпотентности уже использован"
+
+
+class IdempotencyInProgressError(InvoiceError):
+    """Ключ зарезервирован, первый запрос ещё в полёте — тот же machine-code,
+    что у заказов v2 (services/order.py), а не KEY_REUSED."""
+
+    code = "IDEMPOTENCY_IN_PROGRESS"
+    status_code = 409
+    title = "Выставление счёта уже выполняется"
 
 
 class StaleResourceVersionError(InvoiceError):
@@ -191,8 +201,9 @@ class InvoiceService:
             )
         if record.order_id is None:
             # Ключ забронирован, но заказ ещё не проставлен — конкурентный
-            # запрос в этой же транзакции ещё не завершён.
-            raise IdempotencyKeyReusedError(
+            # запрос в этой же транзакции ещё не завершён. Симметрично заказам
+            # v2: IN_PROGRESS, а не KEY_REUSED.
+            raise IdempotencyInProgressError(
                 "Счёт с этим ключом ещё выставляется; повторите запрос позже"
             )
         invoice = await invoices_repo.get_invoice_by_order(
@@ -297,13 +308,27 @@ class InvoiceService:
     # --------------------------------------------------------- pdf render
     async def regenerate_pdf(self, manager, invoice_id: uuid.UUID) -> Invoice:
         """Перерендерить PDF: после FAILED или после правки реквизитов (§6)."""
-        invoice = await self._require_invoice(invoice_id)
-        if invoice.pdf_status == InvoicePdfStatus.PENDING:
-            raise InvoicePdfInProgressError(
-                "PDF счёта уже рендерится"
+        # Optimistic-guard вместо check-then-set: второй конкурентный
+        # regenerate получает rowcount=0 → один enqueue рендера на счёт.
+        result = await self.db.execute(
+            update(Invoice)
+            .where(
+                Invoice.id == invoice_id,
+                Invoice.pdf_status != InvoicePdfStatus.PENDING,
             )
-        invoice.pdf_status = InvoicePdfStatus.PENDING
-        await self.db.flush()
+            .values(pdf_status=InvoicePdfStatus.PENDING)
+        )
+        if result.rowcount == 0:
+            invoice = await self._require_invoice(invoice_id)
+            if invoice.pdf_status == InvoicePdfStatus.PENDING:
+                raise InvoicePdfInProgressError("PDF счёта уже рендерится")
+        invoice = (
+            await self.db.execute(
+                select(Invoice)
+                .where(Invoice.id == invoice_id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
         return invoice
 
     # ------------------------------------------------------------- status

@@ -223,9 +223,13 @@ class ClientDashboardService:
     async def _new_arrivals(self) -> list[ClientNewArrival]:
         """Последние поступления каталога с клиентской ценой (§8, §17)."""
         rows = await repo.fetch_new_arrivals(self.db, limit=NEW_ARRIVALS_LIMIT)
+        # Батч-расчёт цен одним проходом вместо per-item (паттерн v1-каталога).
+        prices_by_id = await self.pricing.price_products(
+            [product for product, _ in rows], self.user, "fixed"
+        )
         out: list[ClientNewArrival] = []
         for product, photo_key in rows:
-            pr = await self.pricing.price_product(product, self.user, "fixed")
+            pr = prices_by_id[product.id]
             out.append(
                 ClientNewArrival(
                     id=product.id,
@@ -242,9 +246,13 @@ class ClientDashboardService:
     async def _promos(self) -> list[ClientPromo]:
         """Товары со скидкой клиента (персональная цена) для блока «Акции»."""
         rows = await repo.fetch_promos(self.db, limit=PROMOS_LIMIT)
+        # Батч-расчёт цен одним проходом вместо per-item (паттерн v1-каталога).
+        prices_by_id = await self.pricing.price_products(
+            [product for product, _ in rows], self.user, "fixed"
+        )
         out: list[ClientPromo] = []
         for product, photo_key in rows:
-            pr = await self.pricing.price_product(product, self.user, "fixed")
+            pr = prices_by_id[product.id]
             out.append(
                 ClientPromo(
                     id=product.id,

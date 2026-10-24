@@ -40,21 +40,20 @@ class PublicCatalogService:
         self.db = db
 
     async def list_brands(self) -> list[PublicBrandOut]:
-        brands = await public_repo.fetch_brands(self.db)
-        out = []
-        for b in brands:
-            stats = await public_repo.fetch_brand_stats(self.db, b.id)
-            out.append(
-                PublicBrandOut(
-                    id=b.id,
-                    name=b.name,
-                    slug=b.slug,
-                    photo=stats["photo"],
-                    series_count=stats["series_count"],
-                    products_count=stats["products_count"],
-                )
+        # Бренды + статистика одним агрегатом (раньше fetch_brand_stats на
+        # каждый бренд — N+1 на публичном эндпоинте без авторизации).
+        rows = await public_repo.fetch_brands_with_stats(self.db)
+        return [
+            PublicBrandOut(
+                id=b.id,
+                name=b.name,
+                slug=b.slug,
+                photo=stats["photo"],
+                series_count=stats["series_count"],
+                products_count=stats["products_count"],
             )
-        return out
+            for b, stats in rows
+        ]
 
     async def get_brand(self, slug: str) -> PublicBrandDetailOut:
         brand = await public_repo.get_brand_by_slug(self.db, slug)
