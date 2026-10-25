@@ -245,11 +245,11 @@ class Settings(BaseSettings):
     # раньше. В prod пустой токен закрывает ручку в 404 (как /docs), иначе
     # метрики были бы доступны всем, кто достал URL.
     metrics_token: str = ""
-    # HSTS отдаётся только на https-запросах. max-age намеренно короткий:
-    # сайт на shared-хостинге с auto-SSL хостера, и годовой HSTS заблокирует
-    # быстрый откат, если сертификат протухнет. Поднимать до года — после
-    # того как автопродление подтверждено.
-    hsts_max_age: int = 86400
+    # HSTS отдаёт edge-nginx (nginx.prod.conf, max-age=31536000) — приложение
+    # не дублирует заголовок, иначе в проксируемом ответе оказывается два
+    # противоречивых Strict-Transport-Security (DEC-01, FIX_PLAN_2026-10-23).
+    # HSTS_MAX_AGE>0 — только для деплоев, где API торчит наружу без nginx.
+    hsts_max_age: int = 0
     # Функции браузера, которые портал не использует. Пусто = заголовок выключен.
     permissions_policy: str = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     cors_origins: str = "http://localhost:3000,http://localhost:8080"

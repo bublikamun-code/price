@@ -47,7 +47,7 @@ describe('security-headers middleware', () => {
     expect(event.headers['Cross-Origin-Opener-Policy']).toBe('same-origin')
   })
 
-  it('HSTS ставится только на https и по умолчанию равен суткам', async () => {
+  it('HSTS по умолчанию не ставится — владелец заголовка edge-nginx (DEC-01)', async () => {
     const handler = await loadMiddleware()
 
     const plain = makeEvent()
@@ -56,7 +56,20 @@ describe('security-headers middleware', () => {
 
     const proxied = makeEvent({ headers: { 'x-forwarded-proto': 'https' } })
     handler(proxied)
-    expect(proxied.headers['Strict-Transport-Security']).toBe('max-age=86400')
+    expect(proxied.headers['Strict-Transport-Security']).toBeUndefined()
+
+    const direct = makeEvent({ protocol: 'https:' })
+    handler(direct)
+    expect(direct.headers['Strict-Transport-Security']).toBeUndefined()
+  })
+
+  it('с заданным HSTS_MAX_AGE заголовок ставится только на https', async () => {
+    vi.stubEnv('HSTS_MAX_AGE', '86400')
+    const handler = await loadMiddleware()
+
+    const plain = makeEvent()
+    handler(plain)
+    expect(plain.headers['Strict-Transport-Security']).toBeUndefined()
 
     const direct = makeEvent({ protocol: 'https:' })
     handler(direct)
@@ -64,6 +77,7 @@ describe('security-headers middleware', () => {
   })
 
   it('берёт первый протокол из цепочки x-forwarded-proto', async () => {
+    vi.stubEnv('HSTS_MAX_AGE', '86400')
     const handler = await loadMiddleware()
     const event = makeEvent({ headers: { 'x-forwarded-proto': 'https, http' } })
 
@@ -92,14 +106,14 @@ describe('security-headers middleware', () => {
     expect(event.headers['Strict-Transport-Security']).toBeUndefined()
   })
 
-  it('мусор в HSTS_MAX_AGE не ломает заголовок — берётся дефолт', async () => {
+  it('мусор в HSTS_MAX_AGE не включает заголовок — fail-closed', async () => {
     vi.stubEnv('HSTS_MAX_AGE', 'неделя')
     const handler = await loadMiddleware()
     const event = makeEvent({ protocol: 'https:' })
 
     handler(event)
 
-    expect(event.headers['Strict-Transport-Security']).toBe('max-age=86400')
+    expect(event.headers['Strict-Transport-Security']).toBeUndefined()
   })
 
   it('CSP оставляет домены шрифтов и Метрики: сужение списка убьёт вёрстку', async () => {

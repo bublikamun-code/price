@@ -31,26 +31,26 @@ const CSP = [
 
 const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
 
-// Сутки по умолчанию: сайт за edge-nginx хостера с auto-SSL, и годовой HSTS
-// заблокировал бы быстрый откат, если сертификат протухнет.
-const HSTS_DEFAULT_MAX_AGE = 86400
+// HSTS отдаёт edge-nginx (nginx.prod.conf, max-age=31536000). Приложение по
+// умолчанию не дублирует заголовок: два противоречивых Strict-Transport-Security
+// в одном ответе — баг, а не защита (DEC-01, FIX_PLAN_2026-10-23). Включение
+// через HSTS_MAX_AGE — только для деплоев, где Nitro торчит наружу без nginx.
 
 /**
  * max-age в секундах, из окружения в РАНТАЙМЕ — не из nuxt.config.
  *
- * Прод отдаёт заранее собранный .output под PM2, и process.env в nuxt.config
- * там запекается в момент сборки: переменная, добавленная на сервере позже,
- * не дала бы эффекта до новой сборки. Здесь же читается process.env самого
- * Nitro, поэтому одно и то же имя HSTS_MAX_AGE работает и в docker, и под
- * PM2 — и совпадает с переменной на стороне API. 0 = заголовок не слать
- * (аварийный откат политики), мусор в переменной = дефолт.
+ * process.env в nuxt.config запекается в момент сборки: переменная, добавленная
+ * на сервере позже, не дала бы эффекта до новой сборки. Здесь же читается
+ * process.env самого Nitro, поэтому HSTS_MAX_AGE работает без пересборки и
+ * совпадает с переменной на стороне API. Не задан / 0 / мусор = заголовок
+ * не слать (владелец политики — edge-nginx).
  */
 function hstsMaxAge(): number | null {
   const raw = process.env.HSTS_MAX_AGE
-  if (raw === undefined || raw.trim() === '') return HSTS_DEFAULT_MAX_AGE
+  if (raw === undefined || raw.trim() === '') return null
   const parsed = Number.parseInt(raw, 10)
-  if (!Number.isSafeInteger(parsed) || parsed < 0) return HSTS_DEFAULT_MAX_AGE
-  return parsed === 0 ? null : parsed
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null
+  return parsed
 }
 
 function isHttps(event: H3Event): boolean {
