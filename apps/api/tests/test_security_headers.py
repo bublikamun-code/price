@@ -40,3 +40,10 @@ def test_no_store_kept_for_cookie_session(client: TestClient) -> None:
 def test_no_store_absent_for_anonymous(client: TestClient) -> None:
     r = client.get("/healthz")
     assert "no-store" not in r.headers.get("cache-control", "")
+
+
+def test_realip_resilient_to_non_ip_peer(client: TestClient) -> None:
+    """Пир без IP (TestClient даёт 'testclient') — middleware не падает и
+    не подменяет client (подстановка только для приватных IP-пиров)."""
+    r = client.get("/healthz", headers={"X-Real-IP": "9.9.9.9"})
+    assert r.status_code == 200

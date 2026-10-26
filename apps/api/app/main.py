@@ -3,6 +3,7 @@
 См. ARCHITECTURE_PLAN.md §4 (Clean Architecture), §6 (API), §11 (Security).
 """
 import hmac
+import ipaddress
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -46,6 +47,10 @@ except ImportError:
 from app.core.limiter import limiter
 from app.core.logging import get_logger, setup_logging
 from app.schemas import APIError, ErrorResponse
+
+# Модульный логгер для middleware (RealIP): logging настраивается в lifespan,
+# structlog-вызовы до него буферизуются дефолтной конфигурацией.
+log = get_logger("app.main")
 
 
 # ---------- Lifespan (стартовые/завершающие действия) ----------
@@ -225,6 +230,42 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# ---------- Middleware: реальный IP клиента (FP-10b) ----------
+class RealIPMiddleware(BaseHTTPMiddleware):
+    """``request.client`` = реальный адрес клиента из ``X-Real-IP``.
+
+    Uvicorn 0.30 умеет доверять X-Forwarded-For только точным IP
+    (``--forwarded-allow-ips`` — строковое множество, без CIDR), а IP
+    compose-контейнера nginx плавает при пересоздании. Доверие решаем
+    на уровне приложения: заголовок принимается только если ПИР из
+    приватной сети (docker-сеть, loopback). Безопасно: единственный
+    ingress — nginx, который всегда ставит ``X-Real-IP $remote_addr``
+    и перезаписывает клиентские подделки; наружу api не публикуется
+    (compose ports), поэтому приватный пир — это всегда свой прокси.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        client = request.scope.get("client")
+        if client:
+            try:
+                peer_is_private = ipaddress.ip_address(client[0]).is_private
+            except ValueError:
+                peer_is_private = False
+            if peer_is_private:
+                real = request.headers.get("x-real-ip", "").strip()
+                if real:
+                    try:
+                        # Порт теряется сознательно: slowapi/аудит работают
+                        # с адресом, а не с сокетом.
+                        request.scope["client"] = (str(ipaddress.ip_address(real)), 0)
+                    except ValueError:
+                        log.warning("realip.bad_header", value=real[:64])
+        return await call_next(request)
+
+
+app.add_middleware(RealIPMiddleware)
 
 
 # ---------- Middleware: глобальный лимит тела (M6) ----------
