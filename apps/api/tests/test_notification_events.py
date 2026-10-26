@@ -215,3 +215,75 @@ async def test_publish_reaches_sse_subscriber(monkeypatch):
         assert json.loads(data)["id"] == "n2"
     finally:
         await pubsub.aclose()
+
+
+# =========================================================
+# Регрессии аудита 25.10 (исчерпание пула БД на стенде)
+# =========================================================
+async def test_stream_ends_at_ttl(monkeypatch):
+    """Стрим обязан завершаться по TTL — иначе «зомби»-коннект за nginx'ом
+    (клиент ушёл, disconnect не доходит) держит pubsub и сессию навсегда;
+    ~30 таких навигаций исчерпали пул 10+20 и положили API."""
+    import app.api.v1.notifications as notif_api
+
+    stub = _StubPubsub([])
+    monkeypatch.setattr(
+        ne, "create_pubsub_client", lambda: type("C", (), {"pubsub": lambda self: stub, "aclose": lambda self: asyncio.sleep(0)})()
+    )
+    monkeypatch.setattr(notif_api, "_STREAM_TTL_SECONDS", 0)
+
+    gen = _notification_events(type("U", (), {"id": uuid.uuid4(), "role": UserRole.CLIENT})())
+    assert await gen.__anext__() == "retry: 5000\n\n"
+
+    async def _drain(gen):
+        async for _ in gen:  # pragma: no cover — old code никогда не кончается
+            pass
+
+    # Старая версия зависала бы в heartbeat-цикле навсегда — wait_for ловит.
+    await asyncio.wait_for(_drain(gen), timeout=2)
+    assert stub.closed
+
+
+async def test_stream_auth_closes_db_session_before_streaming(session_factory, monkeypatch):
+    """Авторизация SSE не должна держать сессию БД: Depends(get_db) живёт до
+    конца ответа, а SSE-ответ бесконечен — сессия висела «idle in transaction»
+    весь стрим. _auth_user_shortlived закрывает её до старта генератора."""
+    from starlette.requests import Request
+
+    import app.api.v1.notifications as notif_api
+    from app.core.security import create_access_token
+    from app.api.v1.notifications import _auth_user_shortlived
+
+    user = await create_user(
+        session_factory, email="sse-shortlived@example.by", role=UserRole.CLIENT
+    )
+    opened: list = []
+
+    class _RecordingMaker:
+        def __init__(self, factory):
+            self._factory = factory
+
+        def __call__(self):
+            s = self._factory()
+            opened.append(s)
+            return s
+
+    monkeypatch.setattr(notif_api, "AsyncSessionLocal", _RecordingMaker(session_factory))
+
+    token = create_access_token(str(user.id))
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/notifications/stream",
+            "headers": [(b"authorization", f"Bearer {token}".encode())],
+            "query_string": b"",
+        }
+    )
+    resolved = await _auth_user_shortlived(request)
+
+    assert resolved.id == user.id
+    assert opened, "сессия для авторизации не открывалась"
+    assert all(not s.in_transaction() for s in opened), (
+        "сессия авторизации SSE осталась с открытой транзакцией"
+    )

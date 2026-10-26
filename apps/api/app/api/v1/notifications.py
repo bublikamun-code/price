@@ -9,14 +9,15 @@ SSE: GET /notifications/stream — долгоживущий text/event-stream; �
 cookie на момент коннекта; доставка — Redis pub/sub (services/notification_events).
 """
 import asyncio
+import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.notifications import NotificationPage, NotificationRead
@@ -72,9 +73,30 @@ async def mark_notification_read(
 
 # ----------------------------- SSE-стрим (§16 п.26) -----------------------------
 
+# Верхняя граница жизни одного SSE-соединения. Обрыв клиента за nginx'ом не
+# всегда доходит до генератора (апстрим живёт, пока в него пишут heartbeat'ы),
+# поэтому стрим завершается сам: EventSource переподключится по retry: 5000,
+# а «зомби»-коннект перестаёт держать pubsub-клиент максимум через этот срок.
+_STREAM_TTL_SECONDS = 30 * 60
+
+
+async def _auth_user_shortlived(request: Request) -> User:
+    """Аутентификация для SSE: сессия БД закрывается ДО старта генератора.
+
+    Обычный Depends(get_db) живёт до завершения ответа, а SSE-ответ бесконечен:
+    сессия висела бы «idle in transaction» весь стрим, а при незаметном обрыве
+    клиента за nginx'ом — навсегда (аудит 25.10: ~30 навигаций GUI-обхода
+    исчерпали пул 10+20, и API отдавал 500 на все запросы к БД). Пользователь
+    возвращается detached — expire_on_commit=False, загруженные поля (id, role)
+    доступны и после close сессии.
+    """
+    async with AsyncSessionLocal() as db:
+        return await get_current_user(request, db)
+
+
 @router.get("/stream")
 async def stream_notifications(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_auth_user_shortlived),
 ) -> StreamingResponse:
     """SSE-стрим уведомлений: свой канал + notif:broadcast для MANAGER.
 
@@ -82,6 +104,7 @@ async def stream_notifications(
     логи). Долгоживущий коннект переживает истечение access: при drop
     EventSource переподключается (retry), при 401 фронт уходит в pull.
     """
+
     return StreamingResponse(
         _notification_events(current_user),
         media_type="text/event-stream",
@@ -108,7 +131,8 @@ async def _notification_events(user: User):
         await pubsub.subscribe(*channels)
         # reconnect-интервал EventSource (мс) — до входа в цикл ожидания
         yield "retry: 5000\n\n"
-        while True:
+        deadline = time.monotonic() + _STREAM_TTL_SECONDS
+        while time.monotonic() < deadline:
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True,
                 timeout=notification_events.HEARTBEAT_SECONDS,
@@ -121,6 +145,9 @@ async def _notification_events(user: User):
             else:
                 # нет событий за интервал — heartbeat, чтобы коннект не рвался
                 yield ": ping\n\n"
+        # TTL истёк — тихо закрываем стрим; EventSource переподключится по
+        # retry: 5000 (кадр выше), пользователь переподключения не замечает.
+        return
     except asyncio.CancelledError:
         # disconnect клиента — тихо выходим (cleanup в finally)
         return
