@@ -63,3 +63,59 @@ class TestSendTelegram:
 
         with pytest.raises(httpx.HTTPError):
             notif_task.send_telegram("111", "hi")
+
+    def test_429_honors_retry_after(self, monkeypatch):
+        """429 → self.retry(countdown=retry_after) вместо слепого backoff (FP-13)."""
+        monkeypatch.setattr(notif_task.settings, "telegram_bot_token", "tok")
+
+        resp = httpx.Response(
+            429,
+            request=httpx.Request("POST", "https://api.telegram.org/botX/sendMessage"),
+            json={"parameters": {"retry_after": 7}},
+        )
+
+        async def _raises(chat_id, text):
+            raise httpx.HTTPStatusError("too many", request=resp.request, response=resp)
+
+        monkeypatch.setattr(notif_task, "_send_telegram", _raises)
+
+        # self.retry() перекрыт на инстансе задачи: celery-задача — синглтон,
+        # наш фейк просто фиксирует countdown, которым Celery отложит задачу.
+        retries: list = []
+
+        def _fake_retry(*, countdown=0, exc=None):
+            retries.append(countdown)
+            raise RuntimeError("retry")
+
+        monkeypatch.setattr(notif_task.send_telegram, "retry", _fake_retry)
+
+        with pytest.raises(RuntimeError):
+            notif_task.send_telegram("111", "hi")
+        assert retries == [7]
+
+    def test_429_without_parameters_falls_back_to_1s(self, monkeypatch):
+        """429 без parameters.retry_after → минимум 1с, не raw backoff."""
+        monkeypatch.setattr(notif_task.settings, "telegram_bot_token", "tok")
+
+        resp = httpx.Response(
+            429,
+            request=httpx.Request("POST", "https://api.telegram.org/botX/sendMessage"),
+            json={},
+        )
+
+        async def _raises(chat_id, text):
+            raise httpx.HTTPStatusError("too many", request=resp.request, response=resp)
+
+        monkeypatch.setattr(notif_task, "_send_telegram", _raises)
+
+        retries: list = []
+
+        def _fake_retry(*, countdown=0, exc=None):
+            retries.append(countdown)
+            raise RuntimeError("retry")
+
+        monkeypatch.setattr(notif_task.send_telegram, "retry", _fake_retry)
+
+        with pytest.raises(RuntimeError):
+            notif_task.send_telegram("111", "hi")
+        assert retries == [1]

@@ -97,7 +97,7 @@ gen-jwt-keys: ## сгенерировать RSA-пару для JWT RS256, prod 
 		exit 1; \
 	fi
 	mkdir -p infra/jwt-keys
-	openssl genrsa -out infra/jwt-keys/jwt_rsa.key 2048
+	openssl genrsa -out infra/jwt-keys/jwt_rsa.key 3072
 	openssl rsa -in infra/jwt-keys/jwt_rsa.key -pubout -out infra/jwt-keys/jwt_rsa.pub
 	chmod 600 infra/jwt-keys/jwt_rsa.key
 	chmod 644 infra/jwt-keys/jwt_rsa.pub

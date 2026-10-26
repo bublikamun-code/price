@@ -120,7 +120,7 @@ services:
     # Вступает в силу при следующем пересоздании api (make up).
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-      --proxy-headers --forwarded-allow-ips=*
+      --proxy-headers --forwarded-allow-ips=172.16.0.0/12
     healthcheck:                # наследуется prod-overlay'ем (gunicorn на том же порту)
       test: ["CMD", "python", "-c", "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://localhost:8000/healthz', timeout=3).status==200 else 1)"]
       interval: 30s

@@ -195,6 +195,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        # CORP: JSON API не встраивается кросс-сайтом (img/frame) — фронт
+        # ходит same-origin, нативным клиентам CORP безразличен (FP-11).
+        response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
         if settings.permissions_policy:
             response.headers.setdefault("Permissions-Policy", settings.permissions_policy)
         if settings.hsts_max_age > 0 and _is_https(request):
@@ -209,7 +212,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers.setdefault(
                 "Content-Security-Policy", settings.content_security_policy
             )
-        if request.cookies.get("auth_token") or request.cookies.get("access_token"):
+        # no-store для аутентифицированных ответов — и cookie-сессии (web),
+        # и Bearer-клиенты (нативные приложения, FP-11): в общие кэши не должно
+        # попадать ни то, ни другое.
+        if (
+            request.cookies.get("auth_token")
+            or request.cookies.get("access_token")
+            or request.headers.get("authorization")
+        ):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 

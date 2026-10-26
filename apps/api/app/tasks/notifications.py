@@ -48,12 +48,28 @@ def send_telegram(self, chat_id: str, text: str) -> dict:
 
     Если бот не сконфигурирован или ``chat_id`` пуст — no-op (disabled).
     Сетевые ошибки пробрасываются — глобальный ``task_autoretry_for`` ретраит.
+    429 от Telegram обрабатывается отдельно: ждём ``retry_after`` из ответа
+    (FP-13), экспоненциальный backoff вслепую Telegram не прощает.
     """
     if not settings.telegram_bot_token or not chat_id:
         log.warning("tg.disabled")
         return {"status": "disabled"}
     try:
         return asyncio.run(_send_telegram(chat_id, text))
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 429:
+            log.warning("tg.send_failed", chat_id=chat_id, error=str(exc))
+            raise
+        retry_after = 0
+        try:
+            retry_after = int(
+                exc.response.json().get("parameters", {}).get("retry_after", 0)
+            )
+        except ValueError:
+            pass
+        # self.retry() перекрывает глобальный autoretry: Celery откладывает
+        # задачу ровно на секунды, названные Telegram, а не на backoff-кривую.
+        raise self.retry(countdown=max(retry_after, 1), exc=exc) from exc
     except Exception as exc:
         log.warning("tg.send_failed", chat_id=chat_id, error=str(exc))
         raise

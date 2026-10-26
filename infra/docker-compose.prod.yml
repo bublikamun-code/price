@@ -42,7 +42,7 @@ services:
       --worker-class uvicorn.workers.UvicornWorker
       --workers 4 --bind 0.0.0.0:8000
       --timeout 120 --graceful-timeout 30
-      --proxy-headers --forwarded-allow-ips=*
+      --proxy-headers --forwarded-allow-ips=172.16.0.0/12
     volumes: !override            # код внутри образа; только JWT-ключи read-only
       - ./jwt-keys:/jwt-keys:ro   # = infra/jwt-keys (make gen-jwt-keys)
     restart: always
