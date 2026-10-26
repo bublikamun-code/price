@@ -344,7 +344,7 @@ class TestNewOrder:
         assert client.full_name in notif.body
         assert f"#{seq:06d}" in notif.body
         assert "200.00" in notif.body  # 2 × 100.00, quantize_money
-        assert notif.payload["items_count"] == 2
+        assert notif.payload["items_count"] == 1  # позиций (не штук): 1 × qty 2
         # SSE — ровно одно broadcast-событие
         assert len(spy.calls) == 1
         payload, user_id = spy.calls[0]
