@@ -7,6 +7,17 @@ Authorization (нативные клиенты). /healthz — публичный
 """
 from fastapi.testclient import TestClient
 
+import pytest
+
+from app.main import app
+
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
+    # /healthz не трогает БД — TestClient на живом app без оверрайдов,
+    # как в test_health.py. Middleware заголовков один на приложение.
+    return TestClient(app)
+
 
 def test_corp_on_every_response(client: TestClient) -> None:
     r = client.get("/healthz")
