@@ -158,14 +158,14 @@ async def create_order(
     # Email-уведомление менеджеру о новой заявке (fire-and-forget: ошибки
     # постановки в очередь не роняют запрос). Retry с тем же ключом не
     # дублирует уведомление.
-    _notify_manager_order_created(order, user, items_count=len(payload.items))
+    await _notify_manager_order_created(order, user, items_count=len(payload.items))
     # user уже загружен — обогащаем ответ без доп. запроса.
     if record is not None:
         response.headers["X-Idempotency-Replayed"] = "false"
     return await _to_read(db, order, with_items=True, clients={user.id: user})
 
 
-def _notify_manager_order_created(order: Order, client: User, *, items_count: int) -> None:
+async def _notify_manager_order_created(order: Order, client: User, *, items_count: int) -> None:
     """Письмо менеджеру о новой заявке. MANAGER_NOTIFY_EMAIL пуст → не шлём."""
     if not settings.manager_notify_email:
         return
@@ -178,7 +178,7 @@ def _notify_manager_order_created(order: Order, client: User, *, items_count: in
         delivery_method=order.delivery_method,
         items_count=items_count,
     )
-    email_service.queue_email(
+    await email_service.queue_email(
         to=settings.manager_notify_email, subject=subject, html_body=html_body
     )
 

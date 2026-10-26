@@ -104,6 +104,9 @@ async def update_order(
         raise _order_error_to_http(e)
     await db.commit()
     await db.refresh(order)
+    # SSE-событие клиенту о новом статусе — ПОСЛЕ коммита (§16 п.26): событие
+    # не должно обгонять коммит строки в ленте (fail-open, см. сервис).
+    service.publish_status_notification()
     # Email-уведомление клиенту о новом статусе (fire-and-forget, ошибки — в лог).
     clients = await orders_repo.fetch_users_by_ids(db, [order.client_id])
     client = clients.get(order.client_id)
@@ -113,7 +116,7 @@ async def update_order(
             order_no=email_service.format_order_no(order.seq),
             status_ru=status_ru,
         )
-        email_service.queue_email(to=client.email, subject=subject, html_body=html_body)
+        await email_service.queue_email(to=client.email, subject=subject, html_body=html_body)
         # TG-уведомление клиенту о новом статусе (§20): если привязан Telegram —
         # дублируем тем же паттерном fire-and-forget; ошибка брокера не роняет
         # эндпоинт. Менеджеру здесь дублировать не нужно (уведомление адресовано

@@ -172,6 +172,10 @@ async def issue_invoice(
         raise _as_v2_problem(exc) from exc
 
     await db.commit()
+    # SSE-событие клиенту о счёте — ПОСЛЕ коммита (§16 п.26): событие не должно
+    # обгонять коммит строки в ленте (fail-open; replay-путь выше не публикует —
+    # уведомление создаётся один раз на факт выставления).
+    service.publish_status_notification()
     response.headers["X-Idempotency-Replayed"] = "false"
     # Задача рендера — ПОСЛЕ коммита: воркер обязан видеть закоммиченный счёт,
     # иначе он прочитает строку, которой ещё (или уже никогда) не будет.

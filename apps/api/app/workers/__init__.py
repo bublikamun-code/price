@@ -80,6 +80,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.import_price_list.reconcile_stuck_imports",
         "schedule": 900.0,  # каждые 15 минут
     },
+    # Свипер durable-очереди писем (NOTIF-01): PENDING-строки email_outbox
+    # старше 10 мин → повторная постановка send_email. Спасает письма, чья
+    # задача потеряна (брокер упал после коммита строки / воркер умер).
+    "requeue-stuck-emails": {
+        "task": "app.tasks.email.requeue_stuck_emails",
+        "schedule": 300.0,  # каждые 5 минут
+    },
 }
 
 

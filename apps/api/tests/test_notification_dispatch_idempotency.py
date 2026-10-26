@@ -29,7 +29,7 @@ import app.tasks.notifications as notif_task
 from app.core.security import hash_password
 from app.models.catalog import PriceHistory, PriceListVersion
 from app.models.enums import ImportMode, PriceListVersionStatus, UserRole
-from app.models.system import Notification
+from app.models.system import EmailOutbox, Notification
 from app.models.user import Favorite, User
 from tests.conftest import create_brand, create_product, create_user
 
@@ -448,37 +448,143 @@ class TestSendEmailTask:
 
 
 # ===========================================================================
-# 4. services.email.queue_email: диспатч в очередь (fire-and-forget)
+# 4. services.email.queue_email: durable-очередь email_outbox (NOTIF-01)
 # ===========================================================================
 class TestQueueEmail:
-    def test_queue_email_dispatches_task(self, monkeypatch):
+    async def test_queue_email_persists_pending_row_and_dispatches_outbox_id(
+        self, session_factory, monkeypatch
+    ):
+        """PENDING-строка в email_outbox коммитится до постановки задачи."""
         fake = _FakeCeleryTask()
         monkeypatch.setattr(email_service, "send_email", fake)
+        monkeypatch.setattr(email_service, "_session_factory", session_factory)
 
-        email_service.queue_email(
+        await email_service.queue_email(
             to="user@example.by", subject="Тема", html_body="<p>body</p>"
         )
 
-        assert fake.calls == [
-            {"to": "user@example.by", "subject": "Тема", "html_body": "<p>body</p>"}
-        ]
+        assert len(fake.calls) == 1
+        assert set(fake.calls[0]) == {"outbox_id"}
+        async with session_factory() as s:
+            row = await s.get(EmailOutbox, uuid.UUID(fake.calls[0]["outbox_id"]))
+            assert row is not None
+            assert (row.to, row.subject, row.html_body) == (
+                "user@example.by", "Тема", "<p>body</p>"
+            )
+            assert row.status == EmailOutbox.STATUS_PENDING
+            assert row.dedupe_key is None
 
-    def test_queue_email_broker_failure_is_swallowed(self, monkeypatch):
+    async def test_queue_email_dedupe_key_suppresses_duplicate(
+        self, session_factory, monkeypatch
+    ):
+        """Повтор с тем же dedupe_key: без новой строки и без второй задачи."""
+        fake = _FakeCeleryTask()
+        monkeypatch.setattr(email_service, "send_email", fake)
+        monkeypatch.setattr(email_service, "_session_factory", session_factory)
+
+        await email_service.queue_email(
+            to="user@example.by", subject="Тема", html_body="<p>body</p>",
+            dedupe_key="password-reset:42",
+        )
+        await email_service.queue_email(
+            to="user@example.by", subject="Тема", html_body="<p>body</p>",
+            dedupe_key="password-reset:42",
+        )
+
+        assert len(fake.calls) == 1  # вторая задача не ставилась
+        async with session_factory() as s:
+            rows = list((await s.scalars(select(EmailOutbox))).all())
+        assert len(rows) == 1
+        assert rows[0].dedupe_key == "password-reset:42"
+
+    async def test_queue_email_broker_failure_keeps_pending_row(
+        self, session_factory, monkeypatch
+    ):
+        """Брокер упал ПОСЛЕ фиксации строки: строка осталась PENDING (свипер спасёт)."""
         fake = _FakeCeleryTask(fail=True)
         monkeypatch.setattr(email_service, "send_email", fake)
+        monkeypatch.setattr(email_service, "_session_factory", session_factory)
         spy = _LogSpy()
         monkeypatch.setattr(email_service, "log", spy)
 
-        email_service.queue_email(
+        await email_service.queue_email(
             to="user@example.by", subject="Тема", html_body="<p>body</p>"
         )  # не бросает
 
         assert fake.calls == []
-        assert any("email.enqueue_failed" in ev for ev, _ in spy.warnings)
+        async with session_factory() as s:
+            rows = list((await s.scalars(select(EmailOutbox))).all())
+        assert len(rows) == 1 and rows[0].status == EmailOutbox.STATUS_PENDING
+        assert any("email.broker_enqueue_failed" in ev for ev, _ in spy.warnings)
+
+    async def test_queue_email_db_failure_falls_back_to_broker(
+        self, monkeypatch
+    ):
+        """БД недоступна → деградация к прямой постановке в брокер (старое поведение)."""
+
+        class _BrokenFactory:
+            def __call__(self):
+                raise RuntimeError("db down")
+
+        fake = _FakeCeleryTask()
+        monkeypatch.setattr(email_service, "send_email", fake)
+        monkeypatch.setattr(email_service, "_session_factory", _BrokenFactory())
+        spy = _LogSpy()
+        monkeypatch.setattr(email_service, "log", spy)
+
+        await email_service.queue_email(
+            to="user@example.by", subject="Тема", html_body="<p>body</p>"
+        )  # не бросает
+
+        assert fake.calls == [
+            {"to": "user@example.by", "subject": "Тема", "html_body": "<p>body</p>"}
+        ]
+        assert any("email.outbox_write_failed" in ev for ev, _ in spy.warnings)
 
 
 # ===========================================================================
-# 5. TG-доставка клиентам/менеджерам (§20): дайджест + broadcast менеджерам
+# 5. POST /auth/forgot-password: 202 + письмо ставится в durable-очередь
+# ===========================================================================
+class TestForgotPasswordDispatch:
+    async def test_forgot_password_202_and_email_dispatched(
+        self, api_client, session_factory, monkeypatch
+    ):
+        await create_user(
+            session_factory, email="reset@x.by", role=UserRole.CLIENT, password=PASSWORD
+        )
+        fake = _FakeCeleryTask()
+        monkeypatch.setattr(email_service, "send_email", fake)
+
+        resp = await api_client.post(
+            "/api/v1/auth/forgot-password", json={"email": "reset@x.by"}
+        )
+
+        assert resp.status_code == 202
+        assert len(fake.calls) == 1
+        # Письмо фиксируется PENDING-строкой, задача получает только outbox_id.
+        assert set(fake.calls[0]) == {"outbox_id"}
+        async with session_factory() as s:
+            row = await s.get(EmailOutbox, uuid.UUID(fake.calls[0]["outbox_id"]))
+        assert row.to == "reset@x.by"
+        assert "reset-password?token=" in row.html_body
+        assert "парол" in row.subject.lower()
+
+    async def test_forgot_password_unknown_email_silently_202(
+        self, api_client, monkeypatch
+    ):
+        fake = _FakeCeleryTask()
+        monkeypatch.setattr(email_service, "send_email", fake)
+
+        resp = await api_client.post(
+            "/api/v1/auth/forgot-password", json={"email": "ghost@x.by"}
+        )
+
+        assert resp.status_code == 202
+        assert fake.calls == []  # аккаунта нет — письмо не диспатчится
+
+
+# ===========================================================================
+# 6. TG-доставка клиентам/менеджерам (§20): дайджест + broadcast менеджерам
 # ===========================================================================
 class TestTelegramDelivery:
     async def test_digest_sent_to_bound_client(
@@ -616,39 +722,3 @@ class TestTelegramDelivery:
         )
         assert [chat for chat, _ in fake_tg.calls] == ["999"]  # один раз
 
-
-# ===========================================================================
-# 6. POST /auth/forgot-password: 202 + письмо ставится в очередь
-# ===========================================================================
-class TestForgotPasswordDispatch:
-    async def test_forgot_password_202_and_email_dispatched(
-        self, api_client, session_factory, monkeypatch
-    ):
-        await create_user(
-            session_factory, email="reset@x.by", role=UserRole.CLIENT, password=PASSWORD
-        )
-        fake = _FakeCeleryTask()
-        monkeypatch.setattr(email_service, "send_email", fake)
-
-        resp = await api_client.post(
-            "/api/v1/auth/forgot-password", json={"email": "reset@x.by"}
-        )
-
-        assert resp.status_code == 202
-        assert len(fake.calls) == 1
-        assert fake.calls[0]["to"] == "reset@x.by"
-        assert "reset-password?token=" in fake.calls[0]["html_body"]
-        assert "парол" in fake.calls[0]["subject"].lower()
-
-    async def test_forgot_password_unknown_email_silently_202(
-        self, api_client, monkeypatch
-    ):
-        fake = _FakeCeleryTask()
-        monkeypatch.setattr(email_service, "send_email", fake)
-
-        resp = await api_client.post(
-            "/api/v1/auth/forgot-password", json={"email": "ghost@x.by"}
-        )
-
-        assert resp.status_code == 202
-        assert fake.calls == []  # аккаунта нет — письмо не диспатчится

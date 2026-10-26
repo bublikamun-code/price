@@ -119,6 +119,21 @@ async def _isolated_cache():
     await client.aclose()
 
 
+@pytest_asyncio.fixture(autouse=True, loop_scope="function")
+async def _email_outbox_to_test_db(monkeypatch, session_factory):
+    """queue_email пишет outbox-строки в тестовую БД, а не в settings.database_url.
+
+    services.email держит собственную фабрику сессий (durable-очередь живёт
+    вне HTTP-транзакции) — без подмены тесты при доступном сеттингс-URL писали
+    бы в боевую БД, а без неё падали бы на отсутствии таблицы. Подменяем
+    точечно на тестовый session_factory; TRUNCATE между тестами чистит строки.
+    """
+    import app.services.email as email_service
+
+    monkeypatch.setattr(email_service, "_session_factory", session_factory)
+    yield
+
+
 # ---------- helpers ----------
 @pytest_asyncio.fixture
 async def session_factory(engine):

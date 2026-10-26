@@ -167,7 +167,7 @@ async def _detail_with_invoice(db: AsyncSession, order: Order, items) -> OrderDe
     return order_detail(order, items, invoice=invoice, organization=organization)
 
 
-def _notify_manager_order_created(
+async def _notify_manager_order_created(
     order: Order, client: User, *, items_count: int
 ) -> None:
     """Keep the fire-and-forget manager notification compatible with v1."""
@@ -182,7 +182,7 @@ def _notify_manager_order_created(
         delivery_method=order.delivery_method,
         items_count=items_count,
     )
-    email_service.queue_email(
+    await email_service.queue_email(
         to=settings.manager_notify_email, subject=subject, html_body=html_body
     )
 
@@ -365,7 +365,7 @@ async def create_order(
 
     await db.commit()
     response.headers["X-Idempotency-Replayed"] = "false"
-    _notify_manager_order_created(order, user, items_count=len(payload.items))
+    await _notify_manager_order_created(order, user, items_count=len(payload.items))
     return SuccessResponse[OrderDetail](
         data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),

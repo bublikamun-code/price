@@ -24,9 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import OrderStatus, StockStatus
 from app.models.order import Order, OrderIdempotency, OrderItem
-from app.models.system import AuditLog
+from app.models.system import AuditLog, Notification
+from app.services.email import ORDER_STATUS_RU, format_order_no
+from app.services.notifications import build_order_status_changed_text
 from app.repositories import cart as cart_repo
 from app.repositories import catalog as catalog_repo
+from app.repositories import notifications as notifications_repo
 from app.repositories import orders as orders_repo
 from app.schemas.cart import CartRead
 from app.schemas.order import OrderCreate, OrderItemCreate
@@ -35,6 +38,7 @@ from app.schemas.v2.common import MAX_DATABASE_INTEGER
 from app.schemas.v2.orders import OrderCreate as OrderCreateV2
 from app.services.cart import CartService
 from app.services.cart_v2 import CartQuantityOverflowError, CartV2Service
+from app.services.notification_events import notification_payload, publish_notification
 from app.services.organizations import OrganizationContextService
 from app.repositories import organizations as organizations_repo
 from app.services.pricing import PricingService, quantize_money, quantize_rate
@@ -210,6 +214,9 @@ class OrderService:
         self.db = db
         self.pricing = PricingService(db)
         self.organizations = OrganizationContextService(db)
+        # In-app уведомление, созданное в последнем use-case (change_status).
+        # Публикуется в SSE ПОСЛЕ коммита роутером — publish_status_notification().
+        self.status_notification: Notification | None = None
 
     async def request_fingerprint(self, user, payload: OrderCreate) -> str:
         context = await self.organizations.resolve(user)
@@ -756,6 +763,7 @@ class OrderService:
             )
         if new_status == OrderStatus.IN_PROGRESS:
             await self._ensure_available_for_confirmation(order)
+        old_status = order.status
         before = {
             "status": order.status.value,
             "manager_id": str(order.manager_id) if order.manager_id else None,
@@ -777,6 +785,39 @@ class OrderService:
             )
         )
         order.version += 1
-        return await orders_repo.update_order_status(
+        order = await orders_repo.update_order_status(
             self.db, order=order, new_status=new_status, manager_id=manager_id
         )
+        # In-app уведомление клиенту (§20.3 ORDER_STATUS_CHANGED) — в той же
+        # транзакции, что и смена статуса: уведомление атомарно факту (ни
+        # «статус сменился, а уведомления нет», ни наоборот). Уведомление одно
+        # на смену статуса: единственный вызов change_status, каким бы роутером
+        # (v1/v2) его ни делали. Коммитит роутер (см. докстринг модуля).
+        status_ru = ORDER_STATUS_RU.get(new_status.value, new_status.value)
+        self.status_notification = await notifications_repo.create_notification(
+            self.db,
+            type="ORDER_STATUS_CHANGED",
+            title="Статус заявки обновлён",
+            body=build_order_status_changed_text(format_order_no(order.seq), status_ru),
+            user_id=order.client_id,
+            channel=["inapp"],
+            payload={
+                "order_id": str(order.id),
+                "order_number": format_order_no(order.seq),
+                "old_status": old_status.value,
+                "new_status": new_status.value,
+            },
+        )
+        return order
+
+    def publish_status_notification(self) -> None:
+        """SSE-событие уведомления из change_status (fail-open).
+
+        Вызывается роутером ПОСЛЕ коммита: pub/sub-событие не должно обгонять
+        запись в ленте (клиент по SSE читает ленту и не увидел бы ещё
+        незакоммиченную строку). Нет уведомления (метод не звали) — no-op.
+        """
+        notif = self.status_notification
+        if notif is None:
+            return
+        publish_notification(notification_payload(notif), user_id=notif.user_id)

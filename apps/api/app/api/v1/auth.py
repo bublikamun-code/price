@@ -393,7 +393,7 @@ async def forgot_password(
         base = settings.web_app_url.rstrip("/") if settings.web_app_url else ""
         link = f"{base}/reset-password?token={plain}" if base else f"/reset-password?token={plain}"
         subject, html_body = build_password_reset_email(link)
-        queue_email(to=body.email, subject=subject, html_body=html_body)
+        await queue_email(to=body.email, subject=subject, html_body=html_body)
     return {"detail": "Если аккаунт существует, письмо со ссылкой отправлено"}
 
 

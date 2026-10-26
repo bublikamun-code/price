@@ -1,9 +1,17 @@
-"""Email service: рендер писем + постановка в очередь через Celery.
+"""Email service: рендер писем + постановка в durable-очередь (NOTIF-01).
 
 Аудит 2026-09-06: ``queue_email`` был no-op — письма (включая ссылку
-восстановления пароля) никогда не отправлялись. Теперь он диспатчит Celery-задачу
-``app.tasks.email.send_email`` (реальная SMTP-отправка); ошибки брокера
-не роняют вызывающий эндпоинт (fire-and-forget, warning в лог).
+восстановления пароля) никогда не отправлялись. Теперь он пишет PENDING-строку
+в ``email_outbox`` (своя сессия, немедленный коммит — строка переживает любой
+сбой HTTP-запроса и брокера) и диспатчит Celery-задачу ``app.tasks.email.send_email``.
+
+Отказоустойчивость (fire-and-forget, HTTP-запрос не роняется):
+  * БД недоступна / таблицы нет (код раскатан раньше миграции 0026) → fallback
+    к прямой постановке в брокер (старое поведение) + warning;
+  * брокер упал ПОСЛЕ фиксации строки → строка остаётся PENDING, beat-свипер
+    ``requeue_stuck_emails`` реэнквитит её позже — письмо не теряется;
+  * ``dedupe_key`` → INSERT .. ON CONFLICT DO NOTHING: повторный вызов с тем же
+    ключом не создаёт дубль и не ставит вторую задачу.
 
 Шаблоны: каталог ``app/templates/notifications/`` не содержит шаблона письма
 восстановления, поэтому тело строится здесь простым HTML (текстовую версию
@@ -11,13 +19,23 @@
 """
 
 import html
+import uuid
+
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.session import AsyncSessionLocal
+from app.models.system import EmailOutbox
 from app.services.pricing import quantize_money
 from app.tasks.email import send_email
 
 log = get_logger("app.services.email")
+
+# Фабрика сессий — отдельный атрибут модуля (а не прямое использование
+# AsyncSessionLocal): тесты подменяют его на тестовый session_factory, чтобы
+# outbox-строки писались в тестовую БД, а не в settings.database_url.
+_session_factory = AsyncSessionLocal
 
 
 ORDER_STATUS_RU = {
@@ -211,14 +229,76 @@ def build_order_status_changed_email(
     return subject, _order_email_layout(body)
 
 
-def queue_email(to: str, subject: str, html_body: str) -> None:
-    """Поставить письмо в очередь (Celery ``send_email``).
+async def _enqueue_outbox(
+    *, to: str, subject: str, html_body: str, dedupe_key: str | None
+) -> uuid.UUID | None:
+    """Вставить PENDING-строку в email_outbox. None — дедуп: ключ уже занят.
 
-    Fire-and-forget: сбой брокера не роняет HTTP-запрос — пишем warning.
+    Своя короткоживущая сессия + немедленный коммит: строка переживает любой
+    сбой вызывающего HTTP-запроса и брокера. Конкурентная постановка с тем же
+    dedupe_key: ON CONFLICT DO NOTHING даёт ровно одну строку; второй вызов
+    получает None (дубль подавлен, новую задачу ставит только победитель).
     """
+    outbox_id = uuid.uuid4()
+    async with _session_factory() as db:
+        stmt = (
+            postgres_insert(EmailOutbox)
+            .values(
+                id=outbox_id,
+                to=to,
+                subject=subject,
+                html_body=html_body,
+                status=EmailOutbox.STATUS_PENDING,
+                dedupe_key=dedupe_key,
+            )
+            # NULL dedupe_key не конфликтует (NULL != NULL в unique-индексе) —
+            # письма без дедупликации вставляются свободно.
+            .on_conflict_do_nothing(index_elements=["dedupe_key"])
+        )
+        res = await db.execute(stmt)
+        await db.commit()
+        if not res.rowcount:
+            return None
+    return outbox_id
+
+
+async def queue_email(
+    to: str, subject: str, html_body: str, *, dedupe_key: str | None = None
+) -> None:
+    """Поставить письмо в durable-очередь (NOTIF-01): outbox-строка → Celery.
+
+    Fire-and-forget: сбои БД/брокера не роняют HTTP-запрос — warning в лог.
+    Дедупликация опциональна (``dedupe_key``): существующая строка → новую
+    задачу не ставим вовсе.
+    """
+    try:
+        outbox_id = await _enqueue_outbox(
+            to=to, subject=subject, html_body=html_body, dedupe_key=dedupe_key
+        )
+    except Exception as exc:
+        # БД недоступна (или код раскатан раньше миграции 0026): деградируем
+        # к старому поведению «прямо в брокер» — письмо не теряем молча.
+        log.warning(
+            "email.outbox_write_failed", to=to, subject=subject, error=str(exc)
+        )
+        _dispatch_broker_legacy(to=to, subject=subject, html_body=html_body)
+        return
+    if outbox_id is None:
+        log.info("email.duplicate_suppressed", to=to, dedupe_key=dedupe_key)
+        return
+    try:
+        send_email.delay(outbox_id=str(outbox_id))
+    except Exception as exc:
+        # Брокер упал ПОСЛЕ фиксации строки: письмо не потеряно — строка
+        # остаётся PENDING, свипер её реэнквитит (см. tasks/email.py).
+        log.warning(
+            "email.broker_enqueue_failed", outbox_id=str(outbox_id), error=str(exc)
+        )
+
+
+def _dispatch_broker_legacy(to: str, subject: str, html_body: str) -> None:
+    """Прямая постановка в брокер старой сигнатурой (fallback при недоступной БД)."""
     try:
         send_email.delay(to=to, subject=subject, html_body=html_body)
     except Exception as exc:
-        log.warning(
-            "email.enqueue_failed", to=to, subject=subject, error=str(exc)
-        )
+        log.warning("email.enqueue_failed", to=to, subject=subject, error=str(exc))

@@ -36,10 +36,14 @@ from app.models.enums import (
 from app.models.file import FileAsset
 from app.models.invoice import Invoice
 from app.models.order import Order, OrderIdempotency
+from app.models.system import Notification
 from app.repositories import audit as audit_repo
 from app.repositories import invoices as invoices_repo
+from app.repositories import notifications as notifications_repo
 from app.repositories import orders as orders_repo
 from app.repositories import organizations as organizations_repo
+from app.services.notification_events import notification_payload, publish_notification
+from app.services.notifications import build_invoice_issued_text
 from app.services.organizations import OrganizationContextService
 
 log = get_logger("app.services.invoice")
@@ -176,6 +180,9 @@ class InvoiceService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.organizations = OrganizationContextService(db)
+        # In-app уведомление, созданное в issue() — публикуется в SSE ПОСЛЕ
+        # коммита роутером (publish_status_notification, fail-open).
+        self.status_notification: Notification | None = None
 
     # --------------------------------------------------------- idempotency
     # Отдельной таблицы для счёта не заводим: сущность ``OrderIdempotency``
@@ -303,7 +310,39 @@ class InvoiceService:
                 "version": invoice.version,
             },
         )
+        # In-app уведомление клиенту (§20.3 INVOICE_ISSUED) — в той же
+        # транзакции, что и счёт: уведомление атомарно факту выставления.
+        # Публикация в SSE — после коммита роутером (publish_status_notification).
+        self.status_notification = await notifications_repo.create_notification(
+            self.db,
+            type="INVOICE_ISSUED",
+            title="Выставлен счёт",
+            body=build_invoice_issued_text(
+                invoice.number, invoice.total_amount, invoice.currency_code
+            ),
+            user_id=order.client_id,
+            channel=["inapp"],
+            # amount строкой: Decimal не сериализуется в JSONB (§8 — деньги
+            # в payload хранит строкой, как в audit_log).
+            payload={
+                "invoice_id": str(invoice.id),
+                "invoice_number": invoice.number,
+                "order_id": str(order.id),
+                "amount": str(invoice.total_amount),
+                "currency": invoice.currency_code,
+            },
+        )
         return invoice
+
+    def publish_status_notification(self) -> None:
+        """SSE-событие уведомления из issue() (fail-open) — после коммита роутера.
+
+        Нет уведомления (issue не звали / replay-путь) — no-op.
+        """
+        notif = self.status_notification
+        if notif is None:
+            return
+        publish_notification(notification_payload(notif), user_id=notif.user_id)
 
     # --------------------------------------------------------- pdf render
     async def regenerate_pdf(self, manager, invoice_id: uuid.UUID) -> Invoice:

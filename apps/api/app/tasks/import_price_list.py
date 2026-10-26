@@ -53,8 +53,11 @@ from app.repositories.catalog import (
     get_or_create_series,
     upsert_product,
 )
+from app.repositories.notifications import create_notification
 from app.services import storage
 from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
+from app.services.notification_events import notification_payload, publish_notification
+from app.services.notifications import build_import_done_text, build_import_failed_text
 from app.tasks._common import create_worker_db
 from app.workers import celery_app
 
@@ -293,7 +296,27 @@ async def _finalize(db, version, *, ok: int, err: int, total: int,
         storage.put_bytes(settings.s3_bucket_errors, key, _errors_to_csv(errors),
                           content_type="text/csv")
         version.error_log_key = key
+    # In-app уведомление менеджерам (§20.3 IMPORT_DONE, broadcast user_id=None)
+    # — в той же транзакции, что и DONE: уведомление атомарно факту (SchemaError
+    # тоже проходит здесь — это DONE с одной ошибкой схемы). Коммит ниже.
+    notif = await create_notification(
+        db,
+        type="IMPORT_DONE",
+        title="Импорт завершён",
+        body=build_import_done_text(version.filename, ok, err, total),
+        user_id=None,
+        channel=["inapp"],
+        payload={
+            "version_id": str(version.id),
+            "filename": version.filename,
+            "rows_ok": ok,
+            "rows_error": err,
+            "rows_total": total,
+        },
+    )
     await db.commit()
+    # SSE после коммита: событие не должно обгонять запись в ленте (fail-open).
+    publish_notification(notification_payload(notif), user_id=None)
 
 
 async def _mark_failed(version_id: uuid.UUID, message: str) -> None:
@@ -310,7 +333,26 @@ async def _mark_failed(version_id: uuid.UUID, message: str) -> None:
         version.status = PriceListVersionStatus.FAILED
         version.finished_at = datetime.utcnow()
         log.warning("import.marked_failed", version_id=str(version_id), message=message)
+        # In-app алёрт менеджерам (§20.3 IMPORT_FAILED) — в той же транзакции,
+        # что и FAILED. Вызывается и из run_import (крах задачи), и из
+        # beat-reconciler (reconcile_stuck_imports → сюда) — ровно один
+        # broadcast на переход версии в FAILED, дубли исключены ранними return.
+        notif = await create_notification(
+            db,
+            type="IMPORT_FAILED",
+            title="Импорт не удался",
+            body=build_import_failed_text(version.filename, message),
+            user_id=None,
+            channel=["inapp"],
+            payload={
+                "version_id": str(version_id),
+                "filename": version.filename,
+                "reason": message,
+            },
+        )
         await db.commit()
+        # SSE после коммита (fail-open — Redis недоступен не роняет задачу).
+        publish_notification(notification_payload(notif), user_id=None)
 
 
 # ----------------------------- beat-reconciler -----------------------------

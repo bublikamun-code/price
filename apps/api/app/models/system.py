@@ -2,11 +2,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, UUIDPrimaryKey
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 
 
 class AuditLog(Base, UUIDPrimaryKey):
@@ -89,4 +89,48 @@ class NotificationReadState(Base, UUIDPrimaryKey):
     __table_args__ = (
         UniqueConstraint("notification_id", "user_id", name="uq_notification_reads_notif_user"),
         Index("ix_notification_reads_user", "user_id"),
+    )
+
+
+class EmailOutbox(Base, TimestampMixin, UUIDPrimaryKey):
+    """Durable-очередь исходящих писем (NOTIF-01). См. §5.2, §20.1.
+
+    Зачем: раньше ``queue_email`` ставил задачу сразу в Celery-брокер — падение
+    брокера между ответом HTTP и ``.delay()`` теряло письмо безвозвратно.
+    Теперь письмо сначала фиксируется строкой PENDING (свой коммит, не зависит
+    ни от HTTP-транзакции, ни от брокера), затем диспетчится задача. Свипер
+    (beat) периодически реэнквитит зависшие PENDING — «потерянных» писем нет.
+
+    Идемпотентность задачи: статус SENT проверяется перед отправкой (acks_late
+    пере-доставка не шлёт повторно); ``dedupe_key`` (UNIQUE, nullable — NULL не
+    конфликтует) отсекает дубли на уровне постановки.
+
+    Статусы — свободные строки (как ``Notification.type``): PL/PG-enum дал бы
+    миграцию на каждое новое состояние ради 4 значений. ``SKIPPED`` — отдельный
+    терминальный статус «SMTP не сконфигурирован»: это не ошибка письма (FAILED
+    ввёл бы в заблуждение алёрты) и не PENDING (свипер гонял бы его вечно).
+    """
+    __tablename__ = "email_outbox"
+
+    STATUS_PENDING = "PENDING"    # в очереди: ждёт задачу / повтор после сбоя
+    STATUS_SENT = "SENT"          # отправлено (терминальный)
+    STATUS_FAILED = "FAILED"      # ретраи исчерпаны (терминальный; см. свипер)
+    STATUS_SKIPPED = "SKIPPED"    # нет SMTP-транспорта (терминальный, dev/test)
+
+    to: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    html_body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=STATUS_PENDING, server_default=STATUS_PENDING
+    )
+    # Число SMTP-попыток (инкремент в начале каждой попытки — попытка,
+    # прерванная смертью воркера, тоже должна быть видна).
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    __table_args__ = (
+        # UNIQUE, а не обычный индекс: ON CONFLICT (dedupe_key) DO NOTHING —
+        # конкурентная постановка с тем же ключом даёт ровно одну строку.
+        Index("uq_email_outbox_dedupe_key", "dedupe_key", unique=True),
     )
