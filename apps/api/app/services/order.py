@@ -26,7 +26,7 @@ from app.models.enums import OrderStatus, StockStatus
 from app.models.order import Order, OrderIdempotency, OrderItem
 from app.models.system import AuditLog, Notification
 from app.services.email import ORDER_STATUS_RU, format_order_no
-from app.services.notifications import build_order_status_changed_text
+from app.services.notifications import build_new_order_text, build_order_status_changed_text
 from app.repositories import cart as cart_repo
 from app.repositories import catalog as catalog_repo
 from app.repositories import notifications as notifications_repo
@@ -217,6 +217,9 @@ class OrderService:
         # In-app уведомление, созданное в последнем use-case (change_status).
         # Публикуется в SSE ПОСЛЕ коммита роутером — publish_status_notification().
         self.status_notification: Notification | None = None
+        # In-app broadcast менеджерам о новой заявке (create/create_v2);
+        # публикуется роутером после коммита — publish_new_order_notification().
+        self.order_notification: Notification | None = None
 
     async def request_fingerprint(self, user, payload: OrderCreate) -> str:
         context = await self.organizations.resolve(user)
@@ -386,6 +389,7 @@ class OrderService:
         )
         await cart_repo.clear_cart(self.db, cart_id=scoped_cart.id)
         await cart_repo.bump_cart_version(self.db, cart=scoped_cart)
+        await self._create_new_order_notification(user, order, items_count=len(new_items))
         return order
 
     # -------------------------------------------------------------- create
@@ -492,6 +496,7 @@ class OrderService:
         await cart_repo.clear_cart(self.db, cart_id=user_cart.id)
         await cart_repo.bump_cart_version(self.db, cart=user_cart)
 
+        await self._create_new_order_notification(user, order, items_count=len(new_items))
         return order
 
     # --------------------------------------------------------------- lists
@@ -821,3 +826,38 @@ class OrderService:
         if notif is None:
             return
         publish_notification(notification_payload(notif), user_id=notif.user_id)
+
+    async def _create_new_order_notification(self, user, order: Order, *, items_count: int) -> None:
+        """In-app broadcast менеджерам о новой заявке (§20.3 NEW_ORDER) — в той же
+        транзакции, что и создание (уведомление атомарно факту). Email/TG —
+        пост-коммитные side-эффекты роутера, in-app — здесь. user_id=None
+        (broadcast: лента видна всем менеджерам, чит-стейт per-user)."""
+        self.order_notification = await notifications_repo.create_notification(
+            self.db,
+            type="NEW_ORDER",
+            title="Новая заявка",
+            body=build_new_order_text(
+                order_number=format_order_no(order.seq),
+                client_name=user.full_name,
+                items_count=items_count,
+                total=order.total_amount,
+                currency_code=order.currency_code,
+            ),
+            user_id=None,
+            channel=["inapp"],
+            payload={
+                "order_id": str(order.id),
+                "order_number": format_order_no(order.seq),
+                "client_name": user.full_name,
+                "items_count": items_count,
+                "total_amount": str(order.total_amount),
+                "currency_code": order.currency_code,
+            },
+        )
+
+    def publish_new_order_notification(self) -> None:
+        """SSE-событие broadcast о новой заявке — ПОСЛЕ коммита (fail-open)."""
+        notif = self.order_notification
+        if notif is None:
+            return
+        publish_notification(notification_payload(notif), user_id=None)

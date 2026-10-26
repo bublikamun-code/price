@@ -366,6 +366,8 @@ async def create_order(
     await db.commit()
     response.headers["X-Idempotency-Replayed"] = "false"
     await _notify_manager_order_created(order, user, items_count=len(payload.items))
+    # In-app broadcast менеджерам (NEW_ORDER создан в транзакции service.create_v2).
+    service.publish_new_order_notification()
     return SuccessResponse[OrderDetail](
         data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),

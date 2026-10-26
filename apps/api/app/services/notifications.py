@@ -65,6 +65,22 @@ def build_import_failed_text(filename: str | None, reason: str) -> str:
     return render_notification("import_failed.j2", filename=filename, reason=reason)
 
 
+def build_new_order_text(order_number: str, client_name: str, items_count: int, total, currency_code: str) -> str:
+    """Текст менеджерам о новой заявке клиента (§20.3 NEW_ORDER).
+
+    ``total`` — Decimal из orders.total_amount; формат как в письмах/выгрузках
+    (quantize_money HALF_UP — иначе float-округление теряло бы копейку).
+    """
+    return render_notification(
+        "new_order.j2",
+        order_number=order_number,
+        client_name=client_name,
+        items_count=items_count,
+        total=f"{quantize_money(total):.2f}",
+        currency=currency_code,
+    )
+
+
 def build_manager_price_changed_text(diff: VersionDiff) -> str:
     """Сводный текст для менеджера (§20.3 PRICE_CHANGED)."""
     return render_notification("price_changed_manager.j2", diff=diff)

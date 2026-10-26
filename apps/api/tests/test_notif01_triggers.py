@@ -308,3 +308,46 @@ class TestImportNotifications:
         assert notifs[0].user_id is None
         assert notifs[0].payload["version_id"] == str(version.id)
         assert "воркер" in notifs[0].payload["reason"]
+
+
+# ===========================================================================
+# 5. NEW_ORDER — broadcast менеджерам при создании заявки (§20.3)
+# ===========================================================================
+class TestNewOrder:
+    async def test_create_notifies_managers_broadcast(
+        self, api_client, session_factory, monkeypatch
+    ):
+        sf = session_factory
+        brand = await create_brand(sf, name="NewOrderBrand")
+        series = await create_series(sf, brand=brand, name="NewOrderSerie")
+        await create_product(sf, sku="NO-1", name="Widget", brand=brand, series=series, base_price=100)
+        client = await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+        await create_user(sf, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
+
+        await _login(api_client, CLIENT_EMAIL)
+        spy = _PublishSpy()
+        monkeypatch.setattr(order_service_module, "publish_notification", spy)
+
+        r = await api_client.post(
+            "/api/v1/orders",
+            json={"items": [{"sku": "NO-1", "quantity": 2}],
+                  "delivery_point": "Склад Минск"},
+        )
+        assert r.status_code == 201, r.text
+        seq = r.json()["seq"]
+
+        notifs = await _notifications_of_type(sf, "NEW_ORDER")
+        assert len(notifs) == 1
+        notif = notifs[0]
+        assert notif.user_id is None  # broadcast: видят все менеджеры
+        # create_user строит full_name из email → "Client"
+        assert client.full_name in notif.body
+        assert f"#{seq:06d}" in notif.body
+        assert "200.00" in notif.body  # 2 × 100.00, quantize_money
+        assert notif.payload["items_count"] == 2
+        # SSE — ровно одно broadcast-событие
+        assert len(spy.calls) == 1
+        payload, user_id = spy.calls[0]
+        assert user_id is None
+        assert payload["type"] == "NEW_ORDER"
+        assert payload["id"] == str(notif.id)

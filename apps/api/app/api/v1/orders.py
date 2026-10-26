@@ -159,6 +159,8 @@ async def create_order(
     # постановки в очередь не роняют запрос). Retry с тем же ключом не
     # дублирует уведомление.
     await _notify_manager_order_created(order, user, items_count=len(payload.items))
+    # In-app broadcast менеджерам (NEW_ORDER создан в транзакции service.create).
+    service.publish_new_order_notification()
     # user уже загружен — обогащаем ответ без доп. запроса.
     if record is not None:
         response.headers["X-Idempotency-Replayed"] = "false"
