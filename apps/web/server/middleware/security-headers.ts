@@ -4,30 +4,100 @@
 // конфига nginx в репозитории на сервере нет — поэтому единственное место, где
 // браузер гарантированно получит эти заголовки, это само приложение.
 //
-// CSP enforcing, а не report-only. 'unsafe-inline' в script/style нужен Nuxt
-// SSR: гидратация и payload лежат в инлайн-скрипте, nonce-вариант здесь
-// потребовал бы проброса nonce в unhead и легко ломает оживление страницы.
-// Реальный вектор XSS при этом закрыт валидацией NUXT_PUBLIC_METRIKA_ID в
-// nuxt.config.ts. Шрифты приходят @import'ом с Google Fonts (assets/css/main.css),
-// поэтому fonts.googleapis.com в style-src и fonts.gstatic.com в font-src
-// обязательны — без них портал потеряет Manrope и IBM Plex Mono.
+// CSP (DEC-02): в prod script-src без 'unsafe-inline' — вместо него
+// per-request nonce. Middleware на каждом запросе генерирует nonce, кладёт его
+// в event.context и шлёт CSP-заголовок; глобальный хук render:html (см. ниже)
+// проставляет этот nonce в инлайн-<script>-теги SSR-разметки — гидратация и
+// payload Nuxt, Метрика, color-mode все попадают в SSR HTML и накрываются
+// инъекцией. Владелец CSP — только этот middleware: статическая копия в
+// nginx.prod.conf убрана, т.к. политика с unsafe-inline пересекалась бы с
+// nonce-политикой и блокировала бы все инлайн-скрипты (единый владелец — по
+// образцу DEC-01: HSTS у nginx, CSP у приложения).
+//
+// 'unsafe-inline' в style-src сохранён намеренно: компоненты красятся
+// динамическими :style-биндингами (style-атрибуты), а не инлайн-<style> —
+// миграция на style-src-attr hashes осознанно отложена (§16 п.30(2)).
+// Шрифты приходят @import'ом с Google Fonts (assets/css/main.css), поэтому
+// fonts.googleapis.com в style-src и fonts.gstatic.com в font-src обязательны —
+// без них портал потеряет Manrope и IBM Plex Mono.
 
+import { randomBytes } from 'node:crypto'
 import type { H3Event } from 'h3'
 
-const CSP = [
-  "default-src 'self'",
-  // Метрика подключается через innerHTML в nuxt.config.ts и грузит tag.js.
-  "script-src 'self' 'unsafe-inline' https://mc.yandex.ru",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' data: https://fonts.gstatic.com",
-  // Фото товаров приходят из внешнего хранилища, отсюда широкий img-src.
-  "img-src 'self' data: blob: https:",
-  "connect-src 'self' https://mc.yandex.ru",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "object-src 'none'",
-].join('; ')
+function csp(scriptSrc: string): string {
+  return [
+    "default-src 'self'",
+    scriptSrc,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    // Фото товаров приходят из внешнего хранилища, отсюда широкий img-src.
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https://mc.yandex.ru",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join('; ')
+}
+
+// Dev: nonce-политика несовместима с vite-режимом (HMR и клиентские вставки
+// идут без nonce), поэтому здесь остаётся прежний статический CSP.
+const CSP_DEV = csp("script-src 'self' 'unsafe-inline' https://mc.yandex.ru")
+
+// Ключ в event.context, через который middleware передаёт nonce хуку
+// render:html. Контекст живёт в рамках одного запроса — утечки между
+// запросами нет.
+const CONTEXT_KEY = '__cspNonce'
+
+/**
+ * Проставляет nonce инлайн-<script>-тегам (тегам без src — включая
+ * type="application/json", это безвредно). Внешние скрипты с src авторизуются
+ * в CSP по origin и атрибут не получают. Уже проставленный nonce не дублируем —
+ * инъекция должна быть идемпотентной. Чистая функция без зависимости от Nitro —
+ * покрывается юнит-тестами напрямую.
+ */
+export function injectScriptNonce(html: string, nonce: string): string {
+  return html.replace(/<(script\b)([^>]*)>/gi, (tag, name: string, attrs: string) => {
+    // (^|\s)src — иначе зацепим data-src; регэксп по паре атрибутов, а не по
+    // полному разбору тега: Nuxt сам разметку не портил и здесь не начнёт.
+    if (/(^|\s)src\s*=/i.test(attrs) || /(^|\s)nonce\s*=/i.test(attrs)) return tag
+    return `<${name} nonce="${nonce}"${attrs}>`
+  })
+}
+
+/** Поля контекста render:html на самом деле бывают и строкой, и массивом строк. */
+type HtmlChunks = {
+  head?: string[] | string
+  body?: string[] | string
+  bodyPrepend?: string[] | string
+  bodyAppend?: string[] | string
+}
+
+// Хук обязан быть зарегистрирован один раз за жизнь процесса: server middleware
+// выполняется на каждый запрос, и повторная регистрация копила бы обработчики.
+let renderHookRegistered = false
+
+function ensureRenderHook(): void {
+  if (renderHookRegistered) return
+  renderHookRegistered = true
+
+  useNitroApp().hooks.hook('render:html', (html, { event }) => {
+    const nonce = event.context[CONTEXT_KEY]
+    if (typeof nonce !== 'string') return // dev или ответ без SSR-разметки
+
+    const chunks = html as unknown as HtmlChunks
+    for (const key of ['head', 'body', 'bodyPrepend', 'bodyAppend'] as const) {
+      const chunk = chunks[key]
+      if (Array.isArray(chunk)) {
+        for (let i = 0; i < chunk.length; i++) {
+          chunk[i] = injectScriptNonce(chunk[i]!, nonce)
+        }
+      } else if (typeof chunk === 'string') {
+        chunks[key] = injectScriptNonce(chunk, nonce)
+      }
+    }
+  })
+}
 
 const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
 
@@ -72,5 +142,18 @@ export default defineEventHandler((event) => {
   if (maxAge !== null && isHttps(event)) {
     setResponseHeader(event, 'Strict-Transport-Security', `max-age=${maxAge}`)
   }
-  setResponseHeader(event, 'Content-Security-Policy', CSP)
+
+  if (process.env.NODE_ENV === 'production') {
+    ensureRenderHook()
+    const nonce = randomBytes(16).toString('base64')
+    event.context[CONTEXT_KEY] = nonce
+    // telegram.org — внешний скрипт Telegram Web App (layouts/miniapp.vue).
+    setResponseHeader(
+      event,
+      'Content-Security-Policy',
+      csp(`script-src 'self' 'nonce-${nonce}' https://mc.yandex.ru https://telegram.org`),
+    )
+  } else {
+    setResponseHeader(event, 'Content-Security-Policy', CSP_DEV)
+  }
 })
