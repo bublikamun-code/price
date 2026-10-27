@@ -80,6 +80,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.import_price_list.reconcile_stuck_imports",
         "schedule": 900.0,  # каждые 15 минут
     },
+    # Чистка артефактов импорта (FP-12): tmp-uploads старше 7 д (утечка при
+    # смерти воркера) и error-logs старше 90 д → удалить.
+    "cleanup-import-artifacts": {
+        "task": "app.tasks.import_price_list.cleanup_import_artifacts",
+        "schedule": crontab(minute=30, hour=3),  # 03:30 Europe/Minsk
+    },
     # Свипер durable-очереди писем (NOTIF-01): PENDING-строки email_outbox
     # старше 10 мин → повторная постановка send_email. Спасает письма, чья
     # задача потеряна (брокер упал после коммита строки / воркер умер).

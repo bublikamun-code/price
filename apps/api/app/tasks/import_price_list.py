@@ -7,24 +7,33 @@
   Вход:  ``version_id`` — ``PriceListVersion`` в статусе ``QUEUED``, файл уже в
          S3 ``tmp-uploads/{version_id}/{filename}``.
   Шаги:
-    1. скачать CSV из S3;
-    2. ``polars.read_csv`` + сопоставление колонок (§7.1);
-    3. нормализация всех строк (без БД) → точная нумерация для отчёта ошибок;
-    4. батчами по ``BATCH_SIZE``: upsert товаров + запись PriceHistory, конвертация
-       цены в BYN по ``rate_to_byn``; при DB-ошибке батча строки идут в отчёт;
-    5. ``ARCHIVE_MISSING``/``REPLACE`` → soft-delete отсутствующих;
-    6. ``status=DONE``, счётчики ``rows_ok/rows_error``;
-    7. ошибки → CSV-отчёт в S3 ``error-logs/`` (ключ в ``error_log_key``).
+    1. скачать CSV из S3 (transient-сбой хранилища → ограниченный ретрай);
+    2. сполить во временный файл, сопоставление колонок (§7.1);
+    3. нормализация батча, upsert батчами по ``BATCH_SIZE``: товары + запись
+       PriceHistory, конвертация цены в BYN по ``rate_to_byn``; при DB-ошибке
+       батча строки идут в отчёт. Файл читается батчами: в памяти держится
+       ~одна копия файла, а не весь DataFrame + все нормализованные строки;
+    4. ``ARCHIVE_MISSING``/``REPLACE`` → soft-delete отсутствующих;
+    5. ``status=DONE``, счётчики ``rows_ok/rows_error``;
+    6. ошибки → CSV-отчёт в S3 ``error-logs/`` (ключ в ``error_log_key``).
 
 Идемпотентность: задача стартует только при ``status=QUEUED`` (иначе no-op);
 слепой авто-ретрай отключён (``autoretry_for=()``) — критическая ошибка фиксирует
-``status=FAILED`` и пишется в лог, без риска двойного прогона.
+``status=FAILED`` и пишется в лог, без риска двойного прогона. Единственное
+исключение — transient-сбой S3 (``TransientImportError``): ограниченный ретрай
+(3 попытки, экспоненциальный backoff 30/60/120 с) с ресетом PROCESSING→QUEUED
+перед повторной доставкой; после исчерпания ретраев версия фиксируется как
+FAILED (DLQ в БД, ``_mark_failed``). Ошибки БД сознательно НЕ ретраятся: батчи
+upsert/PriceHistory уже закоммичены, повторный запуск импорта прошёл бы заново
+и задублировал записи.
 """
 from __future__ import annotations
 
 import asyncio
 import csv
 import io
+import os
+import tempfile
 import uuid
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
@@ -66,23 +75,62 @@ log = get_logger("app.tasks.import_price_list")
 BATCH_SIZE = 2000
 TWO_PLACES = Decimal("0.01")
 
+# База экспоненциального backoff ретраев transient-сбоя (30/60/120 с).
+RETRY_BACKOFF_BASE = 30
+
+
+class TransientImportError(Exception):
+    """Временный сбой внешней зависимости (S3) — задача подлежит повтору.
+
+    Ретраятся ТОЛЬКО transient-сбои хранилища. Ошибки БД (OperationalError и
+    пр.) сознательно не ретраятся: батчи upsert/PriceHistory уже закоммичены,
+    а повторный запуск импорта прошёл бы заново и задублировал записи.
+    """
+
+
 # Отдельный движок для Celery-задач: NullPool (зачем — см. tasks/_common.py).
 # Тесты подменяют ``_worker_session`` на свой sessionmaker (тестовый движок).
 _worker_engine, _worker_session = create_worker_db()
 
 
-@celery_app.task(bind=True, name="import_price_list", autoretry_for=())
+@celery_app.task(
+    bind=True,
+    name="import_price_list",
+    autoretry_for=(),
+    max_retries=3,  # явный лимит ретраев transient-сбоя, не из глобального конфига
+)
 def run_import(self, version_id: str) -> dict:
     """Запуск импорта. Оборачивает async-пайплайн; ловит критические ошибки.
 
+    Transient-сбой хранилища → ограниченный ретрай (с ресетом
+    PROCESSING→QUEUED, см. ``_reset_for_retry``); после исчерпания ретраев —
+    FAILED (DLQ в БД). Прочие критические ошибки → FAILED сразу, без ретрая.
+
     Returns: ``{"version_id", "rows_ok", "rows_error", "rows_total", "status"}``.
     """
+    vid = uuid.UUID(version_id)
     try:
-        return asyncio.run(_run_import(uuid.UUID(version_id)))
+        return asyncio.run(_run_import(vid))
+    except TransientImportError as exc:
+        if self.request.retries < self.max_retries:
+            log.warning(
+                "import.retry_scheduled",
+                version_id=str(vid),
+                retries=self.request.retries,
+                error=str(exc),
+            )
+            asyncio.run(_reset_for_retry(vid))
+            raise self.retry(
+                exc=exc, countdown=RETRY_BACKOFF_BASE * (2 ** self.request.retries)
+            ) from exc
+        # Ретраи исчерпаны: вместо вечной PROCESSING фиксируем FAILED (DLQ в БД).
+        log.exception("import.retries_exhausted", version_id=str(vid), error=str(exc))
+        asyncio.run(_mark_failed(vid, str(exc)))
+        return {"version_id": str(vid), "status": "FAILED", "error": str(exc)}
     except Exception as exc:  # критическая ошибка → FAILED, без слепого ретрая
-        log.exception("import.crashed", version_id=str(version_id), error=str(exc))
-        asyncio.run(_mark_failed(uuid.UUID(version_id), str(exc)))
-        return {"version_id": str(version_id), "status": "FAILED", "error": str(exc)}
+        log.exception("import.crashed", version_id=str(vid), error=str(exc))
+        asyncio.run(_mark_failed(vid, str(exc)))
+        return {"version_id": str(vid), "status": "FAILED", "error": str(exc)}
 
 
 # ----------------------------- async pipeline -----------------------------
@@ -120,7 +168,8 @@ async def _run_import(version_id: uuid.UUID) -> dict:
             log.warning("import.schema_error", version_id=str(version_id), error=str(exc))
             return {"version_id": str(version_id), "status": version.status,
                     "rows_ok": 0, "rows_error": 1, "rows_total": 0}
-        # storage.StorageError и прочее — пробрасываем → FAILED в run_import.
+        # TransientImportError / ObjectNotFound / прочее — пробрасываем:
+        # transient → ретрай в run_import, остальное → FAILED.
 
         return {
             "version_id": str(version_id),
@@ -132,122 +181,169 @@ async def _run_import(version_id: uuid.UUID) -> dict:
 
 
 async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
-    """Скачать → распарсить → нормализовать → upsert батчами → архивация → финал."""
+    """Скачать → читать батчами (нормализация + upsert) → архивация → финал.
+
+    В памяти держится ~одна копия файла: батчевый reader отдаёт порции строк,
+    каждая порция нормализуется и сразу пишется в БД, а не накапливается
+    целиком (как было: весь DataFrame + все нормализованные строки).
+    """
     s3_key = f"{version.id}/{version.filename}"
     try:
         data = storage.get_bytes(settings.s3_bucket_tmp, s3_key)
-    finally:
-        # CSV уже прочитан в память; временный объект не нужен даже при ошибке
-        # разбора и не должен бессрочно накапливаться в tmp-бакете.
-        try:
-            storage.delete_object(settings.s3_bucket_tmp, s3_key)
-        except storage.StorageError as exc:
-            log.warning(
-                "import.tmp_object_delete_failed",
-                version_id=str(version.id),
-                s3_key=s3_key,
-                error=str(exc),
-            )
+    except storage.ObjectNotFound:
+        raise  # файла нет — постоянная ошибка, ретрай не поможет → FAILED
+    except storage.StorageError as exc:
+        raise TransientImportError(f"хранилище недоступно: {exc}") from exc
+    # Удаление НЕ в finally: при transient-сбое чтения файл нужен повторной
+    # попытке. Утечки объекта при смерти воркера до удаления снимает beat-задача
+    # cleanup_import_artifacts (ниже).
+    try:
+        storage.delete_object(settings.s3_bucket_tmp, s3_key)
+    except storage.StorageError as exc:
+        log.warning(
+            "import.tmp_object_delete_failed",
+            version_id=str(version.id),
+            s3_key=s3_key,
+            error=str(exc),
+        )
+
     data = _strip_bom(data)
     header_line = data.split(b"\n", 1)[0].decode("utf-8", "replace")
     separator = detect_separator(header_line)
 
-    df = pl.read_csv(
-        io.BytesIO(data),
-        separator=separator,
-        has_header=True,
-        infer_schema_length=0,        # все колонки как строки → единая нормализация
-        truncate_ragged_lines=True,
-    )
-    col_map = resolve_columns(df.columns)            # {canonical: actual}
-    df = df.rename({actual: canon for canon, actual in col_map.items()})
-    rows_total = df.height
+    # В памяти ~одна копия файла: read_csv_batched в polars 1.7.1 принимает
+    # только путь (не file-like), поэтому bytes сполятся во временный файл
+    # и сразу освобождаются; дальше parse идёт батчами по BATCH_SIZE.
+    # Файл закрывается сразу (with tmp), polars открывает его повторно по
+    # имени, удаление — в finally ниже (noqa выше — для этой строки).
+    tmp = tempfile.NamedTemporaryFile(prefix="import-", suffix=".csv", delete=False)  # noqa: SIM115
+    try:
+        with tmp:
+            tmp.write(data)
+            tmp.flush()
+        del data  # полную копию файла в памяти больше не держим
 
-    # --- проход 1: нормализация всех строк (чистая, без БД) ---
-    normalized: list[tuple[int, NormalizedRow]] = []
-    errors: list[RowError] = []
-    for row_num, raw in enumerate(df.iter_rows(named=True), start=2):  # 1 = заголовок
-        res = normalize_row(raw, row_num)
-        if isinstance(res, RowError):
-            errors.append(res)
-        else:
-            normalized.append((row_num, res))
+        reader = pl.read_csv_batched(
+            tmp.name,
+            separator=separator,
+            has_header=True,
+            infer_schema_length=0,        # все колонки как строки → единая нормализация
+            truncate_ragged_lines=True,
+            batch_size=BATCH_SIZE,
+        )
+        col_map: dict[str, str] | None = None
+        rows_total = 0
+        errors: list[RowError] = []
 
-    # --- проход 2: upsert батчами в БД ---
-    rate = Decimal(str(version.rate_to_byn or 1))
-    seen_skus: set[str] = set()
-    rows_ok = 0
+        # --- нормализация батча + upsert батчами в БД (один проход) ---
+        rate = Decimal(str(version.rate_to_byn or 1))
+        seen_skus: set[str] = set()
+        rows_ok = 0
 
-    # Кэши brand/series по имени (сбрасываются при rollback батча).
-    brand_cache: dict[str, Brand] = {}
-    series_cache: dict[tuple[str, str], Series] = {}
+        # Кэши brand/series по имени (сбрасываются при rollback батча).
+        brand_cache: dict[str, Brand] = {}
+        series_cache: dict[tuple[str, str], Series] = {}
 
-    async def _brand(name: str) -> uuid.UUID:
-        key = name.lower().strip()
-        if key not in brand_cache:
-            brand_cache[key] = await get_or_create_brand(db, name=name)
-        return brand_cache[key].id
+        async def _brand(name: str) -> uuid.UUID:
+            key = name.lower().strip()
+            if key not in brand_cache:
+                brand_cache[key] = await get_or_create_brand(db, name=name)
+            return brand_cache[key].id
 
-    async def _series(name: str, brand_id: uuid.UUID, photo: str | None = None) -> uuid.UUID:
-        key = (name.lower().strip(), str(brand_id))
-        if key not in series_cache:
-            series_cache[key] = await get_or_create_series(
-                db, name=name, brand_id=brand_id, photo_key=photo
+        async def _series(name: str, brand_id: uuid.UUID, photo: str | None = None) -> uuid.UUID:
+            key = (name.lower().strip(), str(brand_id))
+            if key not in series_cache:
+                series_cache[key] = await get_or_create_series(
+                    db, name=name, brand_id=brand_id, photo_key=photo
+                )
+            return series_cache[key].id
+
+        for batch in _iter_csv_batches(reader):
+            if col_map is None:  # первый батч: сопоставление колонок (§7.1)
+                col_map = resolve_columns(batch.columns)
+            batch = batch.rename({actual: canon for canon, actual in col_map.items()})
+            normalized: list[tuple[int, NormalizedRow]] = []
+            # Нумерация сквозная между батчами: 1 = заголовок, данные с 2.
+            for row_num, raw in enumerate(
+                batch.iter_rows(named=True), start=rows_total + 2
+            ):
+                res = normalize_row(raw, row_num)
+                if isinstance(res, RowError):
+                    errors.append(res)
+                else:
+                    normalized.append((row_num, res))
+            rows_total += batch.height
+
+            for chunk in _chunks(normalized, BATCH_SIZE):
+                try:
+                    for _row_num, nr in chunk:
+                        base_byn = (nr.base_price * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+                        brand_id = await _brand(nr.brand)
+                        # series_photo (§7, §16 п.17) — «сырое» имя файла фото серии:
+                        # сохранится в series.photo_key до появления webp из photo-ZIP.
+                        series_id = (
+                            await _series(nr.series, brand_id, nr.series_photo)
+                            if nr.series else None
+                        )
+                        has_discount = nr.discount_price is not None
+                        # discount_price тоже в валюте CSV → конвертируем в BYN (§17.2),
+                        # override_price хранится в BYN наравне с base_price.
+                        override_byn = (
+                            (nr.discount_price * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+                            if has_discount else None
+                        )
+                        product, _created = await upsert_product(
+                            db,
+                            sku=nr.sku,
+                            name=nr.name,
+                            brand_id=brand_id,
+                            series_id=series_id,
+                            base_price=base_byn,
+                            stock_status=nr.stock_status,
+                            price_list_version_id=version.id,
+                            override_price=override_byn,
+                            update_override=has_discount,
+                            stock_qty=nr.stock_qty,
+                            # Колонки остатка нет в CSV → не трогаем ранее заведённый остаток.
+                            update_stock_qty="stock_qty" in col_map,
+                        )
+                        await add_price_history(
+                            db,
+                            product_id=product.id,
+                            base_price=base_byn,
+                            override_price=(
+                                override_byn if has_discount else product.override_price
+                            ),
+                            price_list_version_id=version.id,
+                        )
+                        seen_skus.add(nr.sku)
+                    await db.commit()
+                    rows_ok += len(chunk)
+                except Exception as exc:
+                    await db.rollback()
+                    brand_cache.clear()
+                    series_cache.clear()
+                    log.warning("import.batch_failed", version_id=str(version.id), error=str(exc))
+                    for row_num, _nr in chunk:
+                        errors.append(RowError(row_num, "_db", f"ошибка записи: {exc}"))
+
+        if col_map is None:
+            # Ни одного батча — строк данных в файле нет (read_csv_batched не
+            # отдаёт колонки, пока нет батчей). Полный разбор без строк данных
+            # дёшев и повторяет семантики прежнего ``read_csv``: пустой файл →
+            # NoDataError (FAILED), файл из одного заголовка → DONE 0/0/0 либо
+            # _schema-ошибка невалидного заголовка.
+            col_map = resolve_columns(
+                pl.read_csv(
+                    tmp.name,
+                    separator=separator,
+                    has_header=True,
+                    infer_schema_length=0,
+                    truncate_ragged_lines=True,
+                ).columns
             )
-        return series_cache[key].id
-
-    for chunk in _chunks(normalized, BATCH_SIZE):
-        try:
-            for _row_num, nr in chunk:
-                base_byn = (nr.base_price * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
-                brand_id = await _brand(nr.brand)
-                # series_photo (§7, §16 п.17) — «сырое» имя файла фото серии:
-                # сохранится в series.photo_key до появления webp из photo-ZIP.
-                series_id = (
-                    await _series(nr.series, brand_id, nr.series_photo)
-                    if nr.series else None
-                )
-                has_discount = nr.discount_price is not None
-                # discount_price тоже в валюте CSV → конвертируем в BYN (§17.2),
-                # override_price хранится в BYN наравне с base_price.
-                override_byn = (
-                    (nr.discount_price * rate).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
-                    if has_discount else None
-                )
-                product, _created = await upsert_product(
-                    db,
-                    sku=nr.sku,
-                    name=nr.name,
-                    brand_id=brand_id,
-                    series_id=series_id,
-                    base_price=base_byn,
-                    stock_status=nr.stock_status,
-                    price_list_version_id=version.id,
-                    override_price=override_byn,
-                    update_override=has_discount,
-                    stock_qty=nr.stock_qty,
-                    # Колонки остатка нет в CSV → не трогаем ранее заведённый остаток.
-                    update_stock_qty="stock_qty" in col_map,
-                )
-                await add_price_history(
-                    db,
-                    product_id=product.id,
-                    base_price=base_byn,
-                    override_price=(
-                        override_byn if has_discount else product.override_price
-                    ),
-                    price_list_version_id=version.id,
-                )
-                seen_skus.add(nr.sku)
-            await db.commit()
-            rows_ok += len(chunk)
-        except Exception as exc:
-            await db.rollback()
-            brand_cache.clear()
-            series_cache.clear()
-            log.warning("import.batch_failed", version_id=str(version.id), error=str(exc))
-            for row_num, _nr in chunk:
-                errors.append(RowError(row_num, "_db", f"ошибка записи: {exc}"))
+    finally:
+        os.unlink(tmp.name)
 
     # --- архивация отсутствующих (ARCHIVE_MISSING / REPLACE) ---
     if version.import_mode in (ImportMode.ARCHIVE_MISSING, ImportMode.REPLACE) and seen_skus:
@@ -255,6 +351,9 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
         await db.commit()
         log.info("import.archived_missing", version_id=str(version.id), count=archived)
 
+    # Отчёт по строкам по порядку: ошибки нормализации и _db-ошибки собирались
+    # вперемешку (батчи обрабатывались на лету), сортируем перед записью.
+    errors.sort(key=lambda e: e.row_num)
     await _finalize(db, version, ok=rows_ok, err=len(errors),
                     total=rows_total, errors=errors)
     await invalidate_tags(CATALOG_TAG, FILTERS_TAG)
@@ -282,6 +381,24 @@ async def _lock_version(db, version_id: uuid.UUID) -> PriceListVersion | None:
     version.started_at = datetime.utcnow()
     await db.commit()
     return version
+
+
+async def _reset_for_retry(version_id: uuid.UUID) -> None:
+    """PROCESSING → QUEUED перед повторной доставкой (ретрай transient-сбоя).
+
+    Без ресета повторно доставленная задача ушла бы в no-op «skipped»
+    (_lock_version пропускает не-QUEUED). Только из PROCESSING — DONE/FAILED
+    не трогаем. FOR UPDATE — как в _lock_version.
+    """
+    async with _worker_session() as db:
+        version = await db.scalar(
+            select(PriceListVersion).where(PriceListVersion.id == version_id).with_for_update()
+        )
+        if version is None or version.status != PriceListVersionStatus.PROCESSING:
+            return
+        version.status = PriceListVersionStatus.QUEUED
+        version.started_at = None
+        await db.commit()
 
 
 async def _finalize(db, version, *, ok: int, err: int, total: int,
@@ -402,6 +519,56 @@ async def _reconcile_stuck() -> dict:
     return {"status": "ok", "reconciled": len(stale_ids)}
 
 
+# ----------------------------- cleanup артефактов S3 (FP-12) -----------------------------
+
+TMP_UPLOAD_RETENTION_DAYS = 7    # tmp-uploads: исходник CSV (утечка — воркер умер до delete)
+ERROR_LOG_RETENTION_DAYS = 90    # error-logs: CSV-отчёты об ошибках строк
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.import_price_list.cleanup_import_artifacts",
+    autoretry_for=(),
+)
+def cleanup_import_artifacts(self) -> dict:
+    """Beat раз в сутки: старые tmp-uploads (>7 д) и error-logs (>90 д) → удалить.
+
+    Без неё tmp-uploads текут при смерти воркера посреди импорта (delete в
+    _process не выполнится), а отчёты об ошибках копятся бессрочно.
+    """
+    try:
+        return _cleanup_artifacts()
+    except Exception as exc:
+        log.exception("import.cleanup.crashed", error=str(exc))
+        return {"status": "error", "error": str(exc)}
+
+
+def _cleanup_artifacts() -> dict:
+    now = datetime.now(UTC)
+    deleted = {"tmp": 0, "errors": 0, "failed": 0}
+    for bucket, days in (
+        (settings.s3_bucket_tmp, TMP_UPLOAD_RETENTION_DAYS),
+        (settings.s3_bucket_errors, ERROR_LOG_RETENTION_DAYS),
+    ):
+        cutoff = now - timedelta(days=days)
+        for obj in storage.list_objects(bucket):
+            if obj.last_modified >= cutoff:
+                continue
+            try:
+                storage.delete_object(bucket, obj.key)
+                deleted["tmp" if bucket == settings.s3_bucket_tmp else "errors"] += 1
+            except storage.StorageError as exc:
+                deleted["failed"] += 1
+                log.warning(
+                    "import.cleanup_delete_failed",
+                    bucket=bucket,
+                    key=obj.key,
+                    error=str(exc),
+                )
+    log.info("import.cleanup_done", **deleted)
+    return {"status": "ok", **deleted}
+
+
 def _errors_to_csv(errors: Sequence[RowError]) -> bytes:
     """CSV-отчёт об ошибках импорта (§7.1): номер строки, колонка, сообщение.
 
@@ -421,6 +588,15 @@ def _errors_to_csv(errors: Sequence[RowError]) -> bytes:
 
 def _strip_bom(data: bytes) -> bytes:
     return data.decode("utf-8-sig").encode("utf-8")
+
+
+def _iter_csv_batches(reader) -> Iterator:
+    """Итерация по батчам BatchedCsvReader до конца файла (None → стоп)."""
+    while True:
+        batches = reader.next_batches(1)
+        if not batches:
+            return
+        yield from batches
 
 
 def _chunks(seq: Sequence, size: int) -> Iterator[list]:

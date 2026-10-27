@@ -9,6 +9,7 @@
 """
 import io
 import uuid
+from csv import DictReader
 from decimal import Decimal
 
 import pytest
@@ -353,6 +354,38 @@ class TestImportTask:
             )).scalar_one()
             # webp-ключ из photo-ZIP не перезаписан
             assert existing.photo_key == "photos-series/with-webp.webp"
+
+    async def test_batched_row_numbering(self, session_factory, monkeypatch):
+        """Батчевое чтение CSV: нумерация строк сквозная между батчами (FP-12).
+
+        BATCH_SIZE=2 читается и polars (batch_size), и _chunks (грануляция
+        коммитов). 3-я строка данных с невалидной ценой → RowError с точным
+        row_num=4 (заголовок=1), остальные 4 строки записаны в БД.
+        """
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(session_factory, manager=mgr)
+        csv_bytes = b"sku;name;base_price\nA;N;1\nB;M;2\nC;X;abc\nD;Y;4\nE;Z;5\n"
+        monkeypatch.setattr(import_task, "BATCH_SIZE", 2)
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+        reports: list[bytes] = []
+        monkeypatch.setattr(import_task.storage, "get_bytes", lambda b, k: csv_bytes)
+        monkeypatch.setattr(
+            import_task.storage,
+            "put_bytes",
+            lambda b, k, data, **kw: reports.append(data),
+        )
+
+        await import_task._run_import(version.id)
+
+        assert len(reports) == 1
+        error_rows = list(DictReader(io.StringIO(reports[0].decode("utf-8"))))
+        assert [(r["row"], r["column"]) for r in error_rows] == [("4", "base_price")]
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, version.id)
+            assert v.status == PriceListVersionStatus.DONE
+            assert (v.rows_total, v.rows_ok, v.rows_error) == (5, 4, 1)
+            skus = (await s.scalars(select(Product.sku))).all()
+            assert sorted(skus) == ["A", "B", "D", "E"]
 
 
 # ===========================================================================

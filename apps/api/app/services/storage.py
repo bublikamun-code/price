@@ -16,7 +16,9 @@ file-like объекты частями (multipart), не материализу
 """
 from __future__ import annotations
 
+from datetime import datetime
 from functools import lru_cache
+from typing import NamedTuple
 
 import boto3
 from botocore.client import BaseClient, Config
@@ -169,6 +171,30 @@ def delete_object(bucket: str, key: str) -> None:
     except (BotoCoreError, ClientError) as exc:
         log.warning("s3.delete_failed", bucket=bucket, key=key, error=str(exc))
         raise StorageError(f"Не удалось удалить объект {bucket}/{key}") from exc
+
+
+class ListedObject(NamedTuple):
+    """Объект бакета, отданный ``list_objects``."""
+
+    key: str
+    last_modified: datetime  # UTC, tz-aware (отдаёт S3 API)
+
+
+def list_objects(bucket: str) -> list[ListedObject]:
+    """Все объекты бакета (list_objects_v2 c пагинацией). Перебои сети → StorageError."""
+    client = get_s3_client()
+    try:
+        paginator = client.get_paginator("list_objects_v2")
+        objects: list[ListedObject] = []
+        for page in paginator.paginate(Bucket=bucket):
+            for obj in page.get("Contents", []):
+                objects.append(
+                    ListedObject(key=obj["Key"], last_modified=obj["LastModified"])
+                )
+        return objects
+    except (BotoCoreError, ClientError) as exc:
+        log.warning("s3.list_failed", bucket=bucket, error=str(exc))
+        raise StorageError(f"Не удалось получить список объектов {bucket}") from exc
 
 
 def presigned_get(bucket: str, key: str, *, expires: int | None = None) -> str:

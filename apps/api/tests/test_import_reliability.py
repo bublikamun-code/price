@@ -1,4 +1,4 @@
-"""Тесты надёжности CSV-импорта прайс-листа (§7.2).
+"""Тесты надёжности CSV-импорта прайс-листа (§7.2, FP-12).
 
 Сценарии:
   1. Beat-reconciler зависших импортов: PROCESSING-версия со ``started_at``
@@ -7,16 +7,26 @@
   2. ``_lock_version``: SELECT с ``FOR UPDATE`` (гонка двух воркеров при
      acks_late + reject_on_worker_lost); второй воркер после захвата получает
      no-op («skipped»).
+  3. Transient-сбой S3: ``StorageError`` → ``TransientImportError`` (ретрай с
+     ресетом PROCESSING→QUEUED), ``ObjectNotFound`` — постоянная ошибка;
+     исчерпание ретраев → FAILED.
+  4. Beat-чистка артефактов S3: старые tmp-uploads/error-logs удаляются,
+     расписание зарегистрировано в beat.
 """
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from celery.exceptions import Retry
+from celery.schedules import crontab
 from sqlalchemy.dialects import postgresql
 
 import app.tasks.import_price_list as import_task
+from app.core.config import settings
 from app.models.catalog import PriceListVersion
 from app.models.enums import ImportMode, PriceListVersionStatus, UserRole
+from app.services import storage
 from tests.conftest import create_user
 
 MANAGER_EMAIL = "manager@example.by"
@@ -183,3 +193,189 @@ class TestLockVersion:
     async def test_lock_unknown_version_returns_none(self, session_factory):
         async with session_factory() as s:
             assert await import_task._lock_version(s, uuid.uuid4()) is None
+
+
+# ===========================================================================
+# 3. Transient-сбой S3: ретрай с ресетом, DLQ при исчерпании (FP-12)
+# ===========================================================================
+@pytest.mark.asyncio
+class TestTransientS3Retry:
+    async def test_transient_s3_error_raises_transient(
+        self, session_factory, monkeypatch
+    ):
+        """StorageError (не ObjectNotFound) → TransientImportError; версия
+        остаётся PROCESSING — финализирует её только run_import (ретрай/FAILED)."""
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(
+            session_factory, manager=mgr, status=PriceListVersionStatus.QUEUED
+        )
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+
+        def _boom(bucket, key):
+            raise storage.StorageError("boom")
+
+        monkeypatch.setattr(import_task.storage, "get_bytes", _boom)
+
+        with pytest.raises(import_task.TransientImportError):
+            await import_task._run_import(version.id)
+
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, version.id)
+            assert v.status == PriceListVersionStatus.PROCESSING
+
+    async def test_object_not_found_is_permanent(self, session_factory, monkeypatch):
+        """ObjectNotFound — постоянная ошибка: наружу StorageError (файла нет,
+        ретрай не поможет), а не TransientImportError."""
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(
+            session_factory, manager=mgr, status=PriceListVersionStatus.QUEUED
+        )
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+
+        def _missing(bucket, key):
+            raise storage.ObjectNotFound("объект не найден")
+
+        monkeypatch.setattr(import_task.storage, "get_bytes", _missing)
+
+        with pytest.raises(storage.StorageError) as excinfo:
+            await import_task._run_import(version.id)
+        assert not isinstance(excinfo.value, import_task.TransientImportError)
+
+    async def test_reset_for_retry(self, session_factory, monkeypatch):
+        """PROCESSING → QUEUED (started_at сброшен); DONE — no-op."""
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(
+            session_factory, manager=mgr, status=PriceListVersionStatus.QUEUED
+        )
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+
+        async with session_factory() as s:  # захват версии: QUEUED → PROCESSING
+            locked = await import_task._lock_version(s, version.id)
+        assert locked is not None
+
+        await import_task._reset_for_retry(version.id)
+
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, version.id)
+            assert v.status == PriceListVersionStatus.QUEUED
+            assert v.started_at is None
+
+        # DONE — терминальный статус, ресет не трогает.
+        done = await _make_version(
+            session_factory, manager=mgr, status=PriceListVersionStatus.DONE
+        )
+        await import_task._reset_for_retry(done.id)
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, done.id)
+            assert v.status == PriceListVersionStatus.DONE
+
+    async def test_run_import_transient_retries(self, session_factory, monkeypatch):
+        """Полный run_import: transient-сбой → ресет в QUEUED + retry(countdown=30).
+
+        Задача зовётся через to_thread: run_import — sync-обёртка с asyncio.run,
+        которую нельзя запускать в loop текущего теста (см. test_photo_zip).
+        """
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(
+            session_factory, manager=mgr, status=PriceListVersionStatus.QUEUED
+        )
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+
+        def _boom(bucket, key):
+            raise storage.StorageError("s3 недоступен")
+
+        monkeypatch.setattr(import_task.storage, "get_bytes", _boom)
+
+        retry_calls: list[dict] = []
+
+        def _fake_retry(exc=None, countdown=None, **_kw):
+            retry_calls.append({"exc": exc, "countdown": countdown})
+            raise Retry()
+
+        # instance-атрибут затеняет метод Task.retry
+        monkeypatch.setattr(import_task.run_import, "retry", _fake_retry)
+
+        with pytest.raises(Retry):
+            await asyncio.to_thread(import_task.run_import, str(version.id))
+
+        assert retry_calls[0]["countdown"] == 30  # RETRY_BACKOFF_BASE * 2**0
+        assert isinstance(retry_calls[0]["exc"], import_task.TransientImportError)
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, version.id)
+            assert v.status == PriceListVersionStatus.QUEUED
+            assert v.started_at is None
+
+    async def test_run_import_retries_exhausted_fails(
+        self, session_factory, monkeypatch
+    ):
+        """Ретраи исчерпаны (max_retries=0) → версия FAILED, статус в отчёте."""
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        version = await _make_version(
+            session_factory, manager=mgr, status=PriceListVersionStatus.QUEUED
+        )
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+
+        def _boom(bucket, key):
+            raise storage.StorageError("s3 недоступен")
+
+        monkeypatch.setattr(import_task.storage, "get_bytes", _boom)
+        # instance-атрибут затеняет классовый max_retries
+        monkeypatch.setattr(import_task.run_import, "max_retries", 0)
+
+        result = await asyncio.to_thread(import_task.run_import, str(version.id))
+
+        assert result["status"] == "FAILED"
+        assert result["version_id"] == str(version.id)
+        async with session_factory() as s:
+            v = await s.get(PriceListVersion, version.id)
+            assert v.status == PriceListVersionStatus.FAILED
+            assert v.finished_at is not None
+
+
+# ===========================================================================
+# 4. Beat-чистка артефактов S3 (FP-12)
+# ===========================================================================
+@pytest.mark.asyncio
+class TestCleanupImportArtifacts:
+    async def test_cleanup_artifacts_deletes_old(self, monkeypatch):
+        """Удаляются только объекты старше retention; счётчики в результате."""
+        now = datetime.now(UTC)
+        old_tmp = storage.ListedObject(
+            key="dead-worker/p.csv", last_modified=now - timedelta(days=8)
+        )
+        fresh_tmp = storage.ListedObject(
+            key="just-uploaded/p.csv", last_modified=now - timedelta(days=1)
+        )
+        old_errors = storage.ListedObject(
+            key="old-report.csv", last_modified=now - timedelta(days=91)
+        )
+
+        def _fake_list(bucket):
+            if bucket == settings.s3_bucket_tmp:
+                return [old_tmp, fresh_tmp]
+            return [old_errors]
+
+        deleted: list[tuple[str, str]] = []
+        monkeypatch.setattr(import_task.storage, "list_objects", _fake_list)
+        monkeypatch.setattr(
+            import_task.storage,
+            "delete_object",
+            lambda bucket, key: deleted.append((bucket, key)),
+        )
+
+        result = import_task.cleanup_import_artifacts()
+
+        assert result == {"status": "ok", "tmp": 1, "errors": 1, "failed": 0}
+        assert sorted(deleted) == sorted([
+            (settings.s3_bucket_tmp, "dead-worker/p.csv"),
+            (settings.s3_bucket_errors, "old-report.csv"),
+        ])
+
+    async def test_cleanup_beat_schedule_registered(self):
+        """Чистка зарегистрирована в beat (crontab 03:30 Europe/Minsk)."""
+        from app.workers import celery_app
+
+        entry = celery_app.conf.beat_schedule.get("cleanup-import-artifacts")
+        assert entry is not None
+        assert entry["task"] == "app.tasks.import_price_list.cleanup_import_artifacts"
+        assert entry["schedule"] == crontab(minute=30, hour=3)
