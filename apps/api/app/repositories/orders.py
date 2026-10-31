@@ -185,6 +185,9 @@ async def fetch_orders_v2_page(
             Order.organization_id,
             Order.client_id,
             Order.status,
+            # approval_status в load_only: иначе сериализатор OrderSummary
+            # тянет его ленивым IO → MissingGreenlet (§16 п.42).
+            Order.approval_status,
             Order.total_amount,
             Order.currency_code,
             Order.exchange_rate,
