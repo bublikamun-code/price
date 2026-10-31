@@ -54,9 +54,13 @@ DELIVERY_METHOD_RU = {
 }
 
 
-def format_order_no(seq: int) -> str:
-    """Форматировать номер заказа."""
-    return f"#{seq:06d}"
+def format_order_no(seq: int | None) -> str:
+    """Форматировать номер заказа.
+
+    ``seq`` может быть NULL у legacy-заявок (PG-последовательность появилась
+    позже) — уведомления/письма по такой заявке не должны падать (§16 п.42).
+    """
+    return f"#{seq:06d}" if seq is not None else "#б/н"
 
 
 def build_password_reset_email(link: str) -> tuple[str, str]:
