@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Лента заявок менеджера. См. SITEMAP.md §7, §9 (FSM), §11 (RBAC).
 import type { OrderListPage, OrderRead, OrderStatus } from '~/types/api'
-import { ORDER_STATUS_META, ORDER_STATUS_TABS } from '~/utils/order-status'
+import { ORDER_STATUS_META, ORDER_STATUS_TABS, orderApprovalBadge } from '~/utils/order-status'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 useHead({ title: 'Заявки — Менеджер' })
@@ -298,15 +298,25 @@ onMounted(load)
               </td>
               <td class="px-4 py-3 text-right font-semibold whitespace-nowrap">{{ formatMoney(o.total_amount, o.currency_code) }}</td>
               <td class="px-4 py-3">
-                <UiStatusBadge :tone="STATUS_META[o.status].tone" :label="STATUS_META[o.status].label" dot />
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <UiStatusBadge :tone="STATUS_META[o.status].tone" :label="STATUS_META[o.status].label" dot />
+                  <!-- Согласование (Э6): бейдж только для PENDING/REJECTED -->
+                  <UiStatusBadge
+                    v-if="orderApprovalBadge(o.approval_status)"
+                    :tone="orderApprovalBadge(o.approval_status)!.tone"
+                    :label="orderApprovalBadge(o.approval_status)!.label"
+                  />
+                </div>
               </td>
               <td class="px-4 py-3 text-right">
                 <div class="flex items-center justify-end gap-2">
-                  <!-- Быстрая кнопка перехода статуса (В сборку / Отгрузить / Завершить) -->
+                  <!-- Быстрая кнопка перехода статуса (В сборку / Отгрузить / Завершить).
+                       При ожидании визы владельца (Э6) только блокируем — не удаляем. -->
                   <button
                     v-if="QUICK_ACTIONS[o.status]"
                     class="btn-primary min-h-11 px-3 text-xs"
-                    :disabled="changingId === o.id"
+                    :disabled="changingId === o.id || o.approval_status === 'PENDING'"
+                    :title="o.approval_status === 'PENDING' ? 'Ожидается виза владельца организации' : undefined"
                     @click.prevent="quickChangeStatus(o, QUICK_ACTIONS[o.status]!.next)"
                   >
                     <span v-if="changingId === o.id" class="w-3 h-3 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>

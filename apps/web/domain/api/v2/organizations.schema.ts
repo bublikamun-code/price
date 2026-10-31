@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { OrganizationApprovalMode } from '../../../types/api'
 import { dateTimeSchema, uuidSchema } from './common.schema'
 
 // Адресная книга организации (v2). Контракт: GET/POST /api/v2/me/organization/addresses,
@@ -6,6 +7,16 @@ import { dateTimeSchema, uuidSchema } from './common.schema'
 // только схемы чтения и создания. Ответы и тела — camelCase, envelope — strict.
 
 export const organizationAddressKindSchema = z.enum(['LEGAL', 'DELIVERY', 'PICKUP'])
+
+// Согласование заявок организации (Э6): PATCH /api/v2/organizations/{id}/approval.
+// approvalLimitAmount — Decimal: приходить/уходить может строкой или числом.
+export const approvalModeSchema = z.enum([
+  'OFF',
+  'ALL',
+  'OVER_LIMIT',
+] as const satisfies readonly OrganizationApprovalMode[])
+
+export const approvalLimitAmountSchema = z.union([z.string(), z.number()]).nullable()
 
 // Организация как её видит менеджер (§6 «Организации»): summary для коллекции
 // и detail с печатными реквизитами для счёта (УНП = taxId, §16 п.40 п.4).
@@ -23,6 +34,9 @@ export const organizationSummarySchema = z
     version: z.number().int().min(1),
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
+    // Согласование (Э6): опционально — старый бэкенд полей ещё не отдаёт.
+    approvalMode: approvalModeSchema.optional(),
+    approvalLimitAmount: approvalLimitAmountSchema.optional(),
   })
   .strict()
 
@@ -120,6 +134,15 @@ export const organizationAddressResponseSchema = z
   })
   .strict()
 
+// PATCH /api/v2/organizations/{id}/approval — право: OWNER организации.
+// approvalLimitAmount обязателен на бэкенде только при mode=OVER_LIMIT (422 иначе).
+export const organizationApprovalUpdateSchema = z
+  .object({
+    approvalMode: approvalModeSchema,
+    approvalLimitAmount: z.union([z.string(), z.number()]).nullish(),
+  })
+  .strict()
+
 export const organizationAddressListResponseSchema = z
   .object({
     data: z.array(organizationAddressSchema),
@@ -128,11 +151,13 @@ export const organizationAddressListResponseSchema = z
   .strict()
 
 export type OrganizationAddressKind = z.infer<typeof organizationAddressKindSchema>
+export type OrganizationApprovalModeV2 = z.infer<typeof approvalModeSchema>
 export type OrganizationSummary = z.infer<typeof organizationSummarySchema>
 export type OrganizationDetail = z.infer<typeof organizationDetailSchema>
 export type OrganizationResponse = z.infer<typeof organizationDetailResponseSchema>
 export type OrganizationListResponse = z.infer<typeof organizationListResponseSchema>
 export type OrganizationListQuery = z.infer<typeof organizationListQuerySchema>
+export type OrganizationApprovalUpdate = z.infer<typeof organizationApprovalUpdateSchema>
 export type OrganizationAddress = z.infer<typeof organizationAddressSchema>
 export type OrganizationAddressCreate = z.infer<typeof organizationAddressCreateSchema>
 export type OrganizationAddressResponse = z.infer<typeof organizationAddressResponseSchema>

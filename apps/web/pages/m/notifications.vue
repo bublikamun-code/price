@@ -10,6 +10,10 @@ const { unreadCount } = useNotifications()
 const TYPE_META: Record<string, { label: string; icon: string; cls: string }> = {
   NEW_ORDER: { label: 'Новая заявка', icon: 'heroicons:document-plus', cls: 'bg-surface-2 text-primary' },
   ORDER_STATUS_CHANGED: { label: 'Статус заявки', icon: 'heroicons:arrow-path', cls: 'bg-surface-2 text-primary' },
+  // Согласование заявок (Э6): полный текст («Заявка №X …») приходит в title от бэкенда.
+  ORDER_APPROVAL_REQUESTED: { label: 'Ожидает согласования', icon: 'heroicons:clock', cls: 'bg-warning-soft text-warning' },
+  ORDER_APPROVED: { label: 'Заявка согласована', icon: 'heroicons:check-badge', cls: 'bg-success-soft text-success' },
+  ORDER_REJECTED: { label: 'Заявка отклонена', icon: 'heroicons:x-circle', cls: 'bg-danger-soft text-danger' },
   PRICE_CHANGED: { label: 'Изменение цен', icon: 'heroicons:banknotes', cls: 'bg-surface-2 text-primary' },
   PRICE_CHANGED_DIGEST: { label: 'Дайджест цен', icon: 'heroicons:chart-bar', cls: 'bg-surface-2 text-primary' },
   STOCK_CHANGED: { label: 'Наличие', icon: 'heroicons:cube', cls: 'bg-warning-soft text-warning' },

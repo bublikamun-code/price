@@ -24,6 +24,10 @@ const PER_PAGE = 20
 const TYPE_META: Record<string, { label: string; icon: string; cls: string }> = {
   NEW_ORDER: { label: 'Новая заявка', icon: 'heroicons:document-plus', cls: 'bg-primary-soft text-primary' },
   ORDER_STATUS_CHANGED: { label: 'Статус заявки', icon: 'heroicons:arrow-path', cls: 'bg-primary-soft text-primary' },
+  // Согласование заявок (Э6): полный текст («Заявка №X …») приходит в title от бэкенда.
+  ORDER_APPROVAL_REQUESTED: { label: 'Ожидает согласования', icon: 'heroicons:clock', cls: 'bg-warning-soft text-warning' },
+  ORDER_APPROVED: { label: 'Заявка согласована', icon: 'heroicons:check-badge', cls: 'bg-success-soft text-success' },
+  ORDER_REJECTED: { label: 'Заявка отклонена', icon: 'heroicons:x-circle', cls: 'bg-danger-soft text-danger' },
   PRICE_CHANGED: { label: 'Изменение цен', icon: 'heroicons:banknotes', cls: 'bg-primary-soft text-primary' },
   PRICE_CHANGED_DIGEST: { label: 'Дайджест цен', icon: 'heroicons:chart-bar', cls: 'bg-primary-soft text-primary' },
   STOCK_CHANGED: { label: 'Наличие', icon: 'heroicons:cube', cls: 'bg-warning-soft text-warning' },
@@ -43,6 +47,9 @@ function getNotificationLink(n: NotificationItem): string | null {
   switch (n.type) {
     case 'NEW_ORDER':
     case 'ORDER_STATUS_CHANGED':
+    case 'ORDER_APPROVAL_REQUESTED':
+    case 'ORDER_APPROVED':
+    case 'ORDER_REJECTED':
       return n.payload?.order_id ? `${prefix}/orders/${n.payload.order_id}` : `${prefix}/orders`
     case 'PRICE_CHANGED':
       // payload приходит из данных без типизации, поэтому sku приводим к строке

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { OrderDetail } from '~/domain/api/v2/order.schema'
 import { AppProblem } from '~/domain/api/v2/problem'
-import { ORDER_STATUS_META } from '~/utils/order-status'
+import { ORDER_STATUS_META, orderApprovalBadge } from '~/utils/order-status'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
 
 const route = useRoute()
-const { getById, cancel: cancelOrderV2, repeat } = useOrdersV2()
+const { getById, cancel: cancelOrderV2, approve: approveOrderV2, reject: rejectOrderV2, repeat } = useOrdersV2()
 
 const STATUS_META = ORDER_STATUS_META
 
@@ -98,6 +98,79 @@ async function cancelOrder() {
   }
 }
 
+// ---------- Согласование владельцем организации (Э6) ----------
+const sessionContext = useSessionContext()
+const approvalBadge = computed(() => orderApprovalBadge(order.value?.approvalStatus))
+
+// Визу ставит только OWNER организации заявки, пока заявка в статусе PENDING.
+const isOrganizationOwner = computed(() => {
+  const current = order.value
+  const context = sessionContext.store.context
+  if (!current?.organizationId || !context) return false
+  return context.memberships.some(
+    (membership) =>
+      membership.organizationId === current.organizationId &&
+      membership.role === 'OWNER' &&
+      membership.status === 'ACTIVE',
+  )
+})
+const canApprove = computed(() => isOrganizationOwner.value && order.value?.approvalStatus === 'PENDING')
+
+const approveDialogOpen = ref(false)
+const rejectDialogOpen = ref(false)
+const rejectionReason = ref('')
+const rejectionError = ref('')
+const approving = ref(false)
+const rejecting = ref(false)
+
+function openRejectDialog() {
+  rejectionReason.value = ''
+  rejectionError.value = ''
+  rejectDialogOpen.value = true
+}
+
+async function approveOrder() {
+  if (approving.value || !order.value || !canApprove.value) return
+  approving.value = true
+  error.value = ''
+  try {
+    const snapshot = await approveOrderV2(order.value.id)
+    order.value = snapshot.order
+    approveDialogOpen.value = false
+  } catch (cause) {
+    // 403/409 показываем как ошибку действия на странице (паттерн cancel).
+    approveDialogOpen.value = false
+    error.value = problemMessage(cause, 'Не удалось согласовать заявку')
+  } finally {
+    approving.value = false
+  }
+}
+
+async function rejectOrder() {
+  if (rejecting.value || !order.value || !canApprove.value) return
+  const reason = rejectionReason.value.trim()
+  if (!reason) {
+    rejectionError.value = 'Укажите причину отказа'
+    return
+  }
+  if (reason.length > 1000) {
+    rejectionError.value = 'Причина отказа — не длиннее 1000 символов'
+    return
+  }
+  rejecting.value = true
+  rejectionError.value = ''
+  try {
+    const snapshot = await rejectOrderV2(order.value.id, reason)
+    order.value = snapshot.order
+    rejectDialogOpen.value = false
+  } catch (cause) {
+    // 403/409 показываем внутри диалога: форма остаётся открытой.
+    rejectionError.value = problemMessage(cause, 'Не удалось отклонить заявку')
+  } finally {
+    rejecting.value = false
+  }
+}
+
 // Экспортные endpoints пока существуют только в v1. Операции заказа — v2.
 const { activeId: pdfActiveId, error: pdfError, exportOrderPdf } = usePdfExport()
 const pdfBusy = computed(() => pdfActiveId.value !== null)
@@ -112,6 +185,9 @@ function xlsxFileName(): string {
 onMounted(() => {
   isMounted = true
   void load()
+  // Роль в активной организации нужна для кнопок визы; сбой контекста не
+  // ломает карточку — просто без действий согласования.
+  sessionContext.ensureLoaded().catch(() => {})
 })
 
 watch(
@@ -156,6 +232,9 @@ onUnmounted(() => {
           <UiButton variant="outline" size="touch" :loading="pdfBusy" :disabled="pdfBusy" :data-testid="`order-detail-pdf-${order.id}`" @click="exportOrderPdf(order.id)"><template #leading><Icon name="heroicons:document-arrow-down" class="size-4" /></template>{{ pdfBusy ? 'Готовим PDF…' : 'PDF' }}</UiButton>
           <UiButton variant="outline" size="touch" :loading="xlsxBusy" :disabled="xlsxBusy" :data-testid="`order-detail-xlsx-${order.id}`" @click="exportOrderXlsx(order.id, xlsxFileName())"><template #leading><Icon name="heroicons:table-cells" class="size-4" /></template>{{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}</UiButton>
           <UiButton v-if="canCancel" variant="danger" size="touch" :loading="acting" :disabled="acting" data-testid="order-detail-cancel" @click="cancelOrder"><template #leading><Icon name="heroicons:x-circle" class="size-4" /></template>Отменить</UiButton>
+          <!-- Виза владельца организации (Э6): только OWNER и только при PENDING -->
+          <UiButton v-if="canApprove" variant="primary" size="touch" :loading="approving" :disabled="acting || approving || rejecting" data-testid="order-detail-approve" @click="approveDialogOpen = true"><template #leading><Icon name="heroicons:check-badge" class="size-4" /></template>Согласовать</UiButton>
+          <UiButton v-if="canApprove" variant="secondary" size="touch" :loading="rejecting" :disabled="acting || approving || rejecting" data-testid="order-detail-reject" @click="openRejectDialog"><template #leading><Icon name="heroicons:no-symbol" class="size-4" /></template>Отклонить</UiButton>
         </template>
       </PageHeading>
 
@@ -168,6 +247,21 @@ onUnmounted(() => {
           <span class="text-xs text-ink-muted">Обновлён {{ formatDateTime(order.updatedAt) }}</span>
         </div>
         <OrderStatusTimeline :status="order.status" />
+
+        <!-- Согласование владельцем организации (Э6) -->
+        <div v-if="approvalBadge || order.approvalStatus === 'APPROVED'" class="mt-4 border-t border-border pt-4" data-testid="order-detail-approval">
+          <div v-if="order.approvalStatus === 'PENDING'" class="flex flex-wrap items-center gap-3">
+            <UiStatusBadge tone="warning" label="Ждёт согласования" dot data-testid="order-detail-approval-pending" />
+            <p class="text-sm text-ink-muted">Заявка ожидает согласования владельцем организации</p>
+          </div>
+          <div v-else-if="order.approvalStatus === 'REJECTED'">
+            <UiStatusBadge tone="danger" label="Отклонена" dot data-testid="order-detail-approval-rejected" />
+            <p class="mt-2 text-sm text-ink-muted">Причина отказа: <span class="text-ink">{{ order.rejectionReason || '—' }}</span></p>
+          </div>
+          <p v-else-if="order.approvalStatus === 'APPROVED'" class="text-sm text-ink-muted" data-testid="order-detail-approval-approved">
+            Согласовано {{ formatDateTime(order.approvedAt) }}
+          </p>
+        </div>
       </section>
 
       <InvoiceCard v-if="order.invoice" :invoice="order.invoice" />
@@ -217,6 +311,42 @@ onUnmounted(() => {
           <p class="mt-4 text-xs leading-5 text-service-muted">Повторная заявка использует текущую версию {{ order.version }} исходной заявки.</p>
         </aside>
       </div>
+
+      <!-- Диалог визы: подтверждение согласования (Э6) -->
+      <UiDialog
+        v-model:open="approveDialogOpen"
+        title="Согласовать заявку?"
+        description="Заявка получит визу владельца организации и продолжит обработку у менеджера."
+      >
+        <template #footer>
+          <UiButton variant="secondary" size="touch" :disabled="approving" data-testid="order-detail-approve-cancel" @click="approveDialogOpen = false">Отмена</UiButton>
+          <UiButton variant="primary" size="touch" :loading="approving" data-testid="order-detail-approve-confirm" @click="approveOrder">Согласовать</UiButton>
+        </template>
+      </UiDialog>
+
+      <!-- Диалог визы: отказ с обязательной причиной (Э6) -->
+      <UiDialog
+        v-model:open="rejectDialogOpen"
+        title="Отклонить заявку?"
+        description="Причину отказа увидит автор заявки."
+      >
+        <form class="flex flex-col gap-4" @submit.prevent="rejectOrder">
+          <UiField for="order-reject-reason" label="Причина отказа" required>
+            <UiTextarea
+              v-model="rejectionReason"
+              :rows="4"
+              :error="rejectionError"
+              placeholder="Например: сумма превышает лимит согласования"
+              data-testid="order-detail-reject-reason"
+            />
+          </UiField>
+          <p class="text-xs leading-5 text-ink-muted">Обязательно, до 1000 символов.</p>
+          <div class="flex flex-wrap justify-end gap-2">
+            <UiButton variant="secondary" size="touch" type="button" :disabled="rejecting" data-testid="order-detail-reject-cancel" @click="rejectDialogOpen = false">Отмена</UiButton>
+            <UiButton variant="danger" size="touch" type="submit" :loading="rejecting" :disabled="!rejectionReason.trim()" data-testid="order-detail-reject-confirm">Отклонить</UiButton>
+          </div>
+        </form>
+      </UiDialog>
     </article>
   </div>
 </template>

@@ -251,6 +251,11 @@ export interface PriceHistoryItem {
 
 export type OrderStatus = 'NEW' | 'IN_PROGRESS' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED'
 
+// ---------- Этап 6.2: согласование заявок в организации (виза владельца) ----------
+// Общие union-типы; зеркалятся zod-схемами в domain/api/v2/*.schema.ts.
+export type OrderApprovalStatus = 'NOT_REQUIRED' | 'PENDING' | 'APPROVED' | 'REJECTED'
+export type OrganizationApprovalMode = 'OFF' | 'ALL' | 'OVER_LIMIT'
+
 export interface OrderItemCreate {
   sku: string
   quantity: number
@@ -294,6 +299,12 @@ export interface OrderRead {
   created_at: string
   updated_at: string
   items?: OrderItemRead[] | null
+  // Согласование владельцем организации (Э6). Поля опциональные: старый бэкенд
+  // их ещё не отдаёт (см. PATCH /api/v2/organizations/{id}/approval, §6).
+  approval_status?: OrderApprovalStatus | null
+  approved_by?: string | null
+  approved_at?: string | null
+  rejection_reason?: string | null
 }
 
 export interface OrderListPage {
@@ -361,6 +372,9 @@ export interface FavoriteListPage {
 export type NotificationType =
   | 'NEW_ORDER'
   | 'ORDER_STATUS_CHANGED'
+  | 'ORDER_APPROVAL_REQUESTED'
+  | 'ORDER_APPROVED'
+  | 'ORDER_REJECTED'
   | 'PRICE_CHANGED'
   | 'PRICE_CHANGED_DIGEST'
   | 'STOCK_CHANGED'

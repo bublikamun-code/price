@@ -48,6 +48,8 @@ export interface OrderRepository {
     idempotencyKey: string,
   ): Promise<OrderCreateResult>;
   cancel(orderId: string): Promise<OrderSnapshot>;
+  approve(orderId: string): Promise<OrderSnapshot>;
+  reject(orderId: string, reason: string): Promise<OrderSnapshot>;
   repeat(orderId: string, ifMatch: string): Promise<OrderRepeatResult>;
 }
 
@@ -131,6 +133,22 @@ export function createOrderRepository(client: ApiV2Client): OrderRepository {
       return client
         .execute(`/api/v2/orders/${orderId}/cancel`, orderResponseSchema, {
           method: "POST",
+        })
+        .then(snapshot);
+    },
+    approve(orderId) {
+      // Повторная виза — 200 no-op (контракт Э6).
+      return client
+        .execute(`/api/v2/orders/${orderId}/approve`, orderResponseSchema, {
+          method: "POST",
+        })
+        .then(snapshot);
+    },
+    reject(orderId, reason) {
+      return client
+        .execute(`/api/v2/orders/${orderId}/reject`, orderResponseSchema, {
+          method: "POST",
+          body: { reason },
         })
         .then(snapshot);
     },

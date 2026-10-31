@@ -1,4 +1,4 @@
-import type { OrderStatus } from '~/types/api'
+import type { OrderApprovalStatus, OrderStatus } from '~/types/api'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -18,3 +18,17 @@ export const ORDER_STATUS_TABS: Array<{ value: '' | OrderStatus; label: string }
   { value: 'COMPLETED', label: 'Завершены' },
   { value: 'CANCELLED', label: 'Отменены' },
 ]
+
+// Согласование владельцем (Э6): показываем только PENDING/REJECTED —
+// APPROVED и NOT_REQUIRED в списках не отображаем, чтобы не шуметь.
+export const ORDER_APPROVAL_META: Record<'PENDING' | 'REJECTED', { label: string; tone: StatusTone }> = {
+  PENDING: { label: 'Ждёт согласования', tone: 'warning' },
+  REJECTED: { label: 'Отклонена', tone: 'danger' },
+}
+
+export function orderApprovalBadge(
+  status: OrderApprovalStatus | null | undefined,
+): { label: string; tone: StatusTone } | null {
+  if (status === 'PENDING' || status === 'REJECTED') return ORDER_APPROVAL_META[status]
+  return null
+}

@@ -129,6 +129,29 @@ export function useOrdersV2() {
     return result;
   }
 
+  // Виза владельца организации (Э6). Заявку мог инициировать другой участник
+  // организации, поэтому проверяем только организационный скоуп — без
+  // требования initiatedByUserId, как в assertOrdersInContext.
+  async function approve(orderId: string): Promise<OrderSnapshot> {
+    await ensureActiveContext();
+    const result = await repository.approve(orderId);
+    const current = await ensureActiveContext();
+    if (!organizationMatchesContext(result.order.organizationId, current)) {
+      throw scopeMismatch();
+    }
+    return result;
+  }
+
+  async function reject(orderId: string, reason: string): Promise<OrderSnapshot> {
+    await ensureActiveContext();
+    const result = await repository.reject(orderId, reason);
+    const current = await ensureActiveContext();
+    if (!organizationMatchesContext(result.order.organizationId, current)) {
+      throw scopeMismatch();
+    }
+    return result;
+  }
+
   async function repeat(
     orderId: string,
     orderVersion: number,
@@ -189,6 +212,8 @@ export function useOrdersV2() {
     list,
     getById,
     cancel,
+    approve,
+    reject,
     repeat,
     submit,
     reset: () => store.reset(),

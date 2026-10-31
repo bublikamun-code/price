@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { OrderStatus, OrderSummary } from '~/domain/api/v2/order.schema'
 import { AppProblem } from '~/domain/api/v2/problem'
-import { ORDER_STATUS_META, ORDER_STATUS_TABS } from '~/utils/order-status'
+import { ORDER_STATUS_META, ORDER_STATUS_TABS, orderApprovalBadge } from '~/utils/order-status'
 
 definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Мои заявки' })
@@ -310,7 +310,18 @@ onMounted(load)
           <tr v-for="order in orders" :key="order.id" class="border-b border-border last:border-b-0 hover:bg-surface-2" :data-testid="`orders-row-${order.id}`">
             <td class="px-4 py-3.5"><NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="font-semibold text-ink hover:text-action" :data-testid="`orders-open-${order.id}`">{{ formatOrderNumber(order.sequence, order.id) }}</NuxtLink></td>
             <td class="whitespace-nowrap px-4 py-3.5 text-sm text-ink-muted">{{ formatDate(order.createdAt) }}</td>
-            <td class="px-4 py-3.5"><UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot /></td>
+            <td class="px-4 py-3.5">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot />
+                <!-- Согласование (Э6): бейдж только для PENDING/REJECTED -->
+                <UiStatusBadge
+                  v-if="orderApprovalBadge(order.approvalStatus)"
+                  :tone="orderApprovalBadge(order.approvalStatus)!.tone"
+                  :label="orderApprovalBadge(order.approvalStatus)!.label"
+                  :data-testid="`orders-approval-${order.id}`"
+                />
+              </div>
+            </td>
             <td class="numeric whitespace-nowrap px-4 py-3.5 text-right font-semibold text-ink">{{ formatMoney(order.total.amount, order.total.currency) }}</td>
             <td class="w-px whitespace-nowrap px-4 py-3 text-right">
               <NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="inline-flex min-h-8 items-center justify-center gap-2 px-2.5 py-1 text-xs font-semibold text-ink hover:bg-surface-2"><Icon name="heroicons:eye" class="size-4" />Открыть</NuxtLink>
@@ -328,7 +339,15 @@ onMounted(load)
             <p class="numeric shrink-0 font-semibold text-ink">{{ formatMoney(order.total.amount, order.total.currency) }}</p>
           </div>
           <div class="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
-            <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot />
+            <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+              <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot />
+              <UiStatusBadge
+                v-if="orderApprovalBadge(order.approvalStatus)"
+                :tone="orderApprovalBadge(order.approvalStatus)!.tone"
+                :label="orderApprovalBadge(order.approvalStatus)!.label"
+                :data-testid="`orders-card-approval-${order.id}`"
+              />
+            </div>
             <div class="flex items-center gap-1">
               <NuxtLink :to="`/orders/${encodeURIComponent(order.id)}`" class="flex size-11 items-center justify-center text-ink hover:bg-surface-2" :aria-label="`Открыть ${formatOrderNumber(order.sequence, order.id)}`"><Icon name="heroicons:eye" class="size-4" /></NuxtLink>
               <UiButton variant="ghost" size="compact" class="min-h-11" :loading="repeatingId === order.id" :disabled="repeatingId !== null" :aria-label="`Повторить ${formatOrderNumber(order.sequence, order.id)}`" :data-testid="`orders-card-repeat-${order.id}`" @click="repeatOrder(order)"><Icon name="heroicons:arrow-path" class="size-4" /></UiButton>

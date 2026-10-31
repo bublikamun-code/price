@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Детали заявки для менеджера. См. SITEMAP.md §7, §9 (FSM), §11 (audit).
 import type { OrderRead, OrderStatus } from '~/types/api'
-import { ORDER_STATUS_META } from '~/utils/order-status'
+import { ORDER_STATUS_META, orderApprovalBadge } from '~/utils/order-status'
 
 definePageMeta({ layout: 'manager', middleware: ['auth', 'role'], roles: ['MANAGER', 'ADMIN'] })
 
@@ -22,6 +22,10 @@ const notFound = ref(false)
 const order = ref<OrderRead | null>(null)
 const selectedStatus = ref<OrderStatus>('NEW')
 const saving = ref(false)
+
+// Согласование владельцем (Э6): заявка на визе заблокирована для обработки статуса.
+const approvalBadge = computed(() => orderApprovalBadge(order.value?.approval_status))
+const approvalPending = computed(() => order.value?.approval_status === 'PENDING')
 
 useHead({ title: computed(() => `Заявка №${order.value ? order.value.id.slice(0, 8) : ''} — Менеджер`) })
 
@@ -130,6 +134,13 @@ onMounted(load)
       >
         <template #actions>
           <UiStatusBadge :tone="STATUS_META[order.status].tone" :label="STATUS_META[order.status].label" dot />
+          <!-- Согласование (Э6): бейдж только для PENDING/REJECTED -->
+          <UiStatusBadge
+            v-if="approvalBadge"
+            :tone="approvalBadge.tone"
+            :label="approvalBadge.label"
+            data-testid="manager-order-approval-badge"
+          />
           <UiButton variant="outline" size="touch" :loading="xlsxBusy" :disabled="xlsxBusy" @click="exportOrderXlsx(order.id, xlsxFileName())">
             <template #leading><Icon name="heroicons:table-cells" class="size-4" /></template>
             {{ xlsxBusy ? 'Готовим Excel…' : 'Excel' }}
@@ -158,23 +169,52 @@ onMounted(load)
         </template>
       </UiErrorState>
 
+      <!-- Согласование владельцем организации (Э6): только информируем, кнопки не удаляем -->
+      <div
+        v-if="order.approval_status === 'PENDING'"
+        class="mb-5 border border-warning/50 bg-warning-soft p-4"
+        data-testid="manager-order-approval-pending"
+        role="status"
+      >
+        <p class="font-semibold text-warning-text">Заявка ожидает согласования владельцем организации</p>
+        <p class="mt-1 text-sm text-ink-muted">Обработка статуса недоступна, пока заявку не подтвердит владелец.</p>
+      </div>
+      <div
+        v-else-if="order.approval_status === 'REJECTED'"
+        class="mb-5 border border-danger/50 bg-danger-soft p-4"
+        data-testid="manager-order-approval-rejected"
+      >
+        <p class="font-semibold text-danger-text">Заявка отклонена владельцем организации</p>
+        <p v-if="order.rejection_reason" class="mt-1 text-sm text-ink-muted">Причина: {{ order.rejection_reason }}</p>
+      </div>
+
       <!-- Управление статусом -->
       <div class="mb-5 border border-border bg-surface p-4">
         <h3 class="font-semibold mb-3">Управление</h3>
         <div class="flex flex-wrap items-center gap-3">
           <label class="text-sm text-ink-muted" for="status">Статус:</label>
-          <select id="status" v-model="selectedStatus" class="input min-h-11 w-auto">
+          <select
+            id="status"
+            v-model="selectedStatus"
+            class="input min-h-11 w-auto"
+            :disabled="approvalPending"
+            :title="approvalPending ? 'Ожидается виза владельца организации' : undefined"
+          >
             <option v-for="s in STATUS_OPTIONS" :key="s" :value="s">{{ STATUS_META[s].label }}</option>
           </select>
           <button
             class="btn-primary min-h-11"
-            :disabled="saving || selectedStatus === order.status"
+            :disabled="saving || approvalPending || selectedStatus === order.status"
+            :title="approvalPending ? 'Ожидается виза владельца организации' : undefined"
             @click="saveStatus"
           >
             <span v-if="saving" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-sm animate-spin motion-reduce:animate-none"/>
             <Icon v-else name="heroicons:check" class="w-4 h-4" />
             Применить
           </button>
+          <p v-if="approvalPending" class="text-xs font-medium text-warning-text w-full mt-1" data-testid="manager-order-approval-hint">
+            Ожидается виза владельца организации — смена статуса заблокирована.
+          </p>
           <p class="text-xs text-ink-faint w-full mt-1">
             Допустимые переходы: NEW → В работе/Отменена, В работе → Отгружена/Отменена, Отгружена → Завершена/Отменена.
           </p>

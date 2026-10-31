@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { OrderApprovalStatus } from "../../../types/api";
 import { cartResponseSchema } from "./cart.schema";
 import {
   dateSchema,
@@ -12,6 +13,14 @@ import {
 import { invoiceSchema, invoiceSummarySchema } from "./invoice.schema";
 
 const noteSchema = z.string().max(2000).nullable().optional();
+
+// Согласование владельцем организации (Э6): виза на заявки сверх лимита.
+export const approvalStatusSchema = z.enum([
+  "NOT_REQUIRED",
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+] as const satisfies readonly OrderApprovalStatus[]);
 
 const orderResponseMetaSchema = z
   .object({
@@ -112,6 +121,8 @@ export const orderSummarySchema = z
     // Блок счёта в коллекции — сокращённый (§6 «Счета на оплату»): номер и
     // статус, сумма и PDF здесь не выводятся.
     invoice: invoiceSummarySchema.nullable().optional(),
+    // Согласование (Э6): опционально — старый бэкенд полей ещё не отдаёт.
+    approvalStatus: approvalStatusSchema.optional(),
   })
   .strict();
 
@@ -159,6 +170,11 @@ export const orderDetailSchema = z
     version: z.number().int().min(1),
     // Полный блок счёта в деталях заказа; счёта нет — null (§6).
     invoice: invoiceSchema.nullable().optional(),
+    // Согласование (Э6): опционально — старый бэкенд полей ещё не отдаёт.
+    approvalStatus: approvalStatusSchema.optional(),
+    approvedBy: uuidSchema.nullable().optional(),
+    approvedAt: dateTimeSchema.nullable().optional(),
+    rejectionReason: z.string().max(1000).nullable().optional(),
   })
   .strict();
 

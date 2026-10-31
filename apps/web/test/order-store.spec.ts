@@ -50,6 +50,8 @@ function repositoryMock(
     getById: vi.fn(),
     create: vi.fn(async () => result()),
     cancel: vi.fn(),
+    approve: vi.fn(),
+    reject: vi.fn(),
     repeat: vi.fn(),
     ...overrides,
   };
