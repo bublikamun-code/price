@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.enums import OrderStatus
+from app.models.enums import ApprovalStatus, OrderStatus
 from app.schemas import MetaPage
 
 
@@ -99,6 +99,12 @@ class OrderRead(BaseModel):
     seq: int | None = None
     # Optimistic concurrency token для manager/admin writes.
     version: int = 1
+    # Согласование (Э6, §16 п.42): виза OWNER над заявками организации —
+    # менеджеру нужны бейдж PENDING/REJECTED и причина отказа (список+карточка).
+    approval_status: ApprovalStatus = ApprovalStatus.NOT_REQUIRED
+    approved_by: uuid.UUID | None = None
+    approved_at: datetime | None = None
+    rejection_reason: str | None = None
     # Денормализованное имя/компания клиента (заполняется сервисом/роутером,
     # не хранится в orders — подтягивается из users при выдаче).
     client_name: str | None = None
