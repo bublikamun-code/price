@@ -19,9 +19,9 @@ from app.api.v2.pagination import (
     encode_cursor,
     filter_signature,
 )
-from app.core.deps import require_role
+from app.core.deps import get_current_user, require_role
 from app.db.session import get_db
-from app.models.enums import UserRole
+from app.models.enums import ApprovalMode, UserRole
 from app.models.organization import Organization, OrganizationMembership
 from app.models.user import User
 from app.schemas.v2.common import (
@@ -32,6 +32,7 @@ from app.schemas.v2.common import (
 )
 from app.schemas.v2.invoices import OrganizationBillingPatch
 from app.schemas.v2.organizations import (
+    OrganizationApprovalUpdate,
     OrganizationDetail,
     OrganizationMember,
     OrganizationMemberCreate,
@@ -134,6 +135,8 @@ def _organization_detail(organization: Organization) -> OrganizationDetail:
         bank_name=organization.bank_name,
         bank_code=organization.bank_code,
         bank_account=organization.bank_account,
+        approval_mode=organization.approval_mode,
+        approval_limit_amount=organization.approval_limit_amount,
     )
 
 
@@ -244,6 +247,55 @@ async def get_organization(
         data=_organization_detail(organization),
         meta=ResponseMeta(request_id=request_id_for(request)),
     )
+
+
+@router.patch(
+    "/{organizationId}/approval",
+    response_model=SuccessResponse[OrganizationDetail],
+    response_model_by_alias=True,
+    responses=problem_responses(
+        {
+            401: "Authentication required",
+            403: "Organization OWNER or staff role required",
+            404: "Organization not found",
+            422: "Validation error (OVER_LIMIT requires positive approvalLimitAmount)",
+            500: "Internal server error",
+        }
+    ),
+)
+async def update_approval_settings(
+    request: Request,
+    payload: OrganizationApprovalUpdate,
+    organization_id: uuid.UUID = Path(alias="organizationId"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[OrganizationDetail]:
+    """Настройки согласования заявок (§16 п.42): `{approvalMode,
+    approvalLimitAmount?}`.
+
+    Право — активный OWNER этой организации либо MANAGER/ADMIN (проверка в
+    сервисе, не в deps: OWNER — CLIENT-роль, require_role(MANAGER) не
+    подходит). OVER_LIMIT без положительного лимита → 422. Аудит
+    `organization.approval_settings`. Ответ — та же форма OrganizationDetail,
+    что у GET /organizations/{id}.
+    """
+    try:
+        organization = await OrganizationManagementService(
+            db
+        ).approval_settings_update(
+            user,
+            organization_id=organization_id,
+            approval_mode=ApprovalMode(payload.approval_mode),
+            approval_limit_amount=payload.approval_limit_amount,
+        )
+        result = SuccessResponse[OrganizationDetail](
+            data=_organization_detail(organization),
+            meta=ResponseMeta(request_id_for(request)),
+        )
+        await db.commit()
+        return result
+    except OrganizationManagementError as exc:
+        raise _as_v2_problem(exc) from exc
 
 
 @router.get(

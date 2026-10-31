@@ -39,6 +39,30 @@ class OrderStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+class ApprovalMode(str, enum.Enum):
+    """Режим согласования заявок организации (§16 п.42).
+
+    OFF — виза не требуется; ALL — каждую заявку создателя-не-OWNER ждёт виза
+    OWNER; OVER_LIMIT — виза только для заявок «сверх лимита»
+    (``total_amount > approval_limit_amount``, строго).
+    """
+    OFF = "OFF"
+    ALL = "ALL"
+    OVER_LIMIT = "OVER_LIMIT"
+
+
+class ApprovalStatus(str, enum.Enum):
+    """Гейт согласования заявки (§16 п.42) — вне FSM OrderStatus (§9).
+
+    NOT_REQUIRED — виза не нужна; PENDING — ждёт визы OWNER (менеджеру
+    запрещена любая обработка, кроме отмены); APPROVED/REJECTED — виза
+    выдана (REJECTED терминален)."""
+    NOT_REQUIRED = "NOT_REQUIRED"
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class InvoiceStatus(str, enum.Enum):
     """Статус счёта на оплату (§16 п.40).
 

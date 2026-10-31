@@ -235,6 +235,24 @@ async def count_active_owners(
     )
 
 
+async def list_active_owner_ids(
+    db: AsyncSession, *, organization_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Активные OWNER организации — адресаты запросов визы (§16 п.42 п.8)."""
+    result = await db.execute(
+        select(OrganizationMembership.user_id)
+        .join(Organization, Organization.id == OrganizationMembership.organization_id)
+        .where(
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.role == OrganizationRole.OWNER,
+            OrganizationMembership.is_active.is_(True),
+            Organization.is_active.is_(True),
+        )
+        .order_by(OrganizationMembership.created_at)
+    )
+    return [row[0] for row in result.all()]
+
+
 async def add_membership(
     db: AsyncSession,
     *,

@@ -1,6 +1,27 @@
 {
   "components": {
     "schemas": {
+      "ApprovalMode": {
+        "description": "Режим согласования заявок организации (§16 п.42).\n\nOFF — виза не требуется; ALL — каждую заявку создателя-не-OWNER ждёт виза\nOWNER; OVER_LIMIT — виза только для заявок «сверх лимита»\n(``total_amount > approval_limit_amount``, строго).",
+        "enum": [
+          "OFF",
+          "ALL",
+          "OVER_LIMIT"
+        ],
+        "title": "ApprovalMode",
+        "type": "string"
+      },
+      "ApprovalStatus": {
+        "description": "Гейт согласования заявки (§16 п.42) — вне FSM OrderStatus (§9).\n\nNOT_REQUIRED — виза не нужна; PENDING — ждёт визы OWNER (менеджеру\nзапрещена любая обработка, кроме отмены); APPROVED/REJECTED — виза\nвыдана (REJECTED терминален).",
+        "enum": [
+          "NOT_REQUIRED",
+          "PENDING",
+          "APPROVED",
+          "REJECTED"
+        ],
+        "title": "ApprovalStatus",
+        "type": "string"
+      },
       "Body_upload_product_document_api_v2_manager_products__productId__documents_post": {
         "properties": {
           "file": {
@@ -1150,6 +1171,34 @@
       },
       "OrderDetail": {
         "properties": {
+          "approvalStatus": {
+            "$ref": "#/components/schemas/ApprovalStatus",
+            "default": "NOT_REQUIRED"
+          },
+          "approvedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvedat"
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvedby"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -1222,6 +1271,17 @@
               }
             ],
             "title": "Organizationid"
+          },
+          "rejectionReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejectionreason"
           },
           "sequence": {
             "anyOf": [
@@ -1345,6 +1405,22 @@
         "title": "OrderLine",
         "type": "object"
       },
+      "OrderRejectPayload": {
+        "description": "Тело визы «отклонено» (POST /orders/{id}/reject, §16 п.42).",
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OrderRejectPayload",
+        "type": "object"
+      },
       "OrderStatus": {
         "description": "Жизненный цикл заявки (§9).",
         "enum": [
@@ -1360,6 +1436,10 @@
       "OrderSummary": {
         "description": "Lightweight order collection projection; never contains lines or media.",
         "properties": {
+          "approvalStatus": {
+            "$ref": "#/components/schemas/ApprovalStatus",
+            "default": "NOT_REQUIRED"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -1764,6 +1844,33 @@
         "title": "OrganizationAddressPatch",
         "type": "object"
       },
+      "OrganizationApprovalUpdate": {
+        "description": "Настройки визы (PATCH /organizations/{id}/approval, §16 п.42).\n\nПри OVER_LIMIT лимит обязателен и строго положителен (422 иначе);\nпри OFF/ALL допускается null — режим его не читает.",
+        "properties": {
+          "approvalLimitAmount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvallimitamount"
+          },
+          "approvalMode": {
+            "$ref": "#/components/schemas/ApprovalMode"
+          }
+        },
+        "required": [
+          "approvalMode"
+        ],
+        "title": "OrganizationApprovalUpdate",
+        "type": "object"
+      },
       "OrganizationBillingPatch": {
         "description": "Тело ``PATCH /manager/organizations/{id}`` — реквизиты для счёта.\n\nОтдельная схема от ``organizations.Organization*Patch``: здесь нет\nуправления доступом, только печатные реквизиты (§16 п.40 п.4).",
         "properties": {
@@ -1861,6 +1968,21 @@
       },
       "OrganizationDetail": {
         "properties": {
+          "approvalLimitAmount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approvallimitamount"
+          },
+          "approvalMode": {
+            "$ref": "#/components/schemas/ApprovalMode",
+            "default": "OFF"
+          },
           "bankAccount": {
             "anyOf": [
               {
@@ -7664,6 +7786,130 @@
         ]
       }
     },
+    "/api/v2/orders/{orderId}/approve": {
+      "post": {
+        "description": "Виза «согласовано» (§16 п.42): только активный OWNER организации заказа.\n\nИдемпотентность машинным состоянием: повторный approve на APPROVED —\n200 no-op; Idempotency-Key не применяется (действие не создаёт ресурс).",
+        "operationId": "approve_order_api_v2_orders__orderId__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Orderid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrderDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Organization OWNER role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Order not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Order not awaiting approval, cancelled or already decided"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Approve Order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
     "/api/v2/orders/{orderId}/cancel": {
       "post": {
         "operationId": "cancel_order_api_v2_orders__orderId__cancel_post",
@@ -7863,6 +8109,140 @@
         "summary": "Get Order Invoice",
         "tags": [
           "invoices"
+        ]
+      }
+    },
+    "/api/v2/orders/{orderId}/reject": {
+      "post": {
+        "description": "Виза «отклонено» (§16 п.42): причина обязательна (1..1000), REJECTED\nтерминален — повторный reject возвращает 409 APPROVAL_TERMINAL.",
+        "operationId": "reject_order_api_v2_orders__orderId__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Orderid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderRejectPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrderDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Organization OWNER role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Order not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Order not awaiting approval, cancelled or already decided"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error (reason required)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Reject Order",
+        "tags": [
+          "orders"
         ]
       }
     },
@@ -8260,6 +8640,125 @@
           }
         },
         "summary": "Get Organization",
+        "tags": [
+          "organizations"
+        ]
+      }
+    },
+    "/api/v2/organizations/{organizationId}/approval": {
+      "patch": {
+        "description": "Настройки согласования заявок (§16 п.42): `{approvalMode,\napprovalLimitAmount?}`.\n\nПраво — активный OWNER этой организации либо MANAGER/ADMIN (проверка в\nсервисе, не в deps: OWNER — CLIENT-роль, require_role(MANAGER) не\nподходит). OVER_LIMIT без положительного лимита → 422. Аудит\n`organization.approval_settings`. Ответ — та же форма OrganizationDetail,\nчто у GET /organizations/{id}.",
+        "operationId": "update_approval_settings_api_v2_organizations__organizationId__approval_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organizationid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationApprovalUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse_OrganizationDetail_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Organization OWNER or staff role required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Organization not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Validation error (OVER_LIMIT requires positive approvalLimitAmount)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Update Approval Settings",
         "tags": [
           "organizations"
         ]

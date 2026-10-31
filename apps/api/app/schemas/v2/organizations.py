@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
-from app.models.enums import OrganizationRole
+from app.models.enums import ApprovalMode, OrganizationRole
 from app.schemas.v2.common import V2Model
 
 
@@ -37,6 +38,34 @@ class OrganizationDetail(OrganizationSummary):
     bank_name: str | None = None
     bank_code: str | None = None
     bank_account: str | None = None
+    # Согласование заявок (§16 п.42): режим визы OWNER и порог «сверх лимита».
+    # Читают все участники организации; правит PATCH .../approval (OWNER/staff).
+    approval_mode: ApprovalMode = ApprovalMode.OFF
+    approval_limit_amount: Decimal | None = None
+
+
+class OrganizationApprovalUpdate(V2Model):
+    """Настройки визы (PATCH /organizations/{id}/approval, §16 п.42).
+
+    При OVER_LIMIT лимит обязателен и строго положителен (422 иначе);
+    при OFF/ALL допускается null — режим его не читает.
+    """
+
+    approval_mode: ApprovalMode
+    approval_limit_amount: Decimal | None = None
+
+    @model_validator(mode="after")
+    def _over_limit_requires_positive_amount(self):
+        if ApprovalMode(self.approval_mode) is ApprovalMode.OVER_LIMIT:
+            if self.approval_limit_amount is None:
+                raise ValueError(
+                    "approvalLimitAmount обязателен при approvalMode=OVER_LIMIT"
+                )
+            if self.approval_limit_amount <= 0:
+                raise ValueError(
+                    "approvalLimitAmount должен быть положительным при OVER_LIMIT"
+                )
+        return self
 
 
 class OrganizationMember(V2Model):
@@ -126,6 +155,7 @@ __all__ = [
     "OrganizationAddressCreate",
     "OrganizationAddressOut",
     "OrganizationAddressPatch",
+    "OrganizationApprovalUpdate",
     "OrganizationDetail",
     "OrganizationListItem",
     "OrganizationMember",

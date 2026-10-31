@@ -6,6 +6,10 @@
     "initiatedByUserId": "11111111-1111-4111-8111-111111111111",
     "managerId": "33333333-3333-4333-8333-333333333333",
     "status": "IN_PROGRESS",
+    "approvalStatus": "NOT_REQUIRED",
+    "approvedBy": null,
+    "approvedAt": null,
+    "rejectionReason": null,
     "total": {
       "amount": "294.90",
       "currency": "BYN"

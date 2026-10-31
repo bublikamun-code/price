@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
-from app.models.enums import OrganizationRole, pg_enum
+from app.models.enums import ApprovalMode, OrganizationRole, pg_enum
 
 
 class Organization(Base, UUIDPrimaryKey, TimestampMixin):
@@ -36,6 +36,18 @@ class Organization(Base, UUIDPrimaryKey, TimestampMixin):
     default_currency: Mapped[str] = mapped_column(String(3), default="BYN", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+    # Согласование заявок (§16 п.42): режим визы OWNER и порог «сверх лимита».
+    # Лимит обязателен при OVER_LIMIT (валидация на сервисной границе, >0),
+    # nullable — при OFF/ALL он просто не читается.
+    approval_mode: Mapped[ApprovalMode] = mapped_column(
+        pg_enum(ApprovalMode, "approval_mode"),
+        nullable=False,
+        default=ApprovalMode.OFF,
+    )
+    approval_limit_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True
+    )
 
     # Canonical organization details; delivery addresses live in the table below.
     legal_address: Mapped[str | None] = mapped_column(Text, nullable=True)

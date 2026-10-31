@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 from pydantic_core import PydanticCustomError
 
-from app.models.enums import OrderStatus
+from app.models.enums import ApprovalStatus, OrderStatus
 from app.models.invoice import Invoice
 from app.models.order import Order, OrderItem
 from app.models.organization import Organization
@@ -110,6 +110,8 @@ class OrderSummary(V2Model):
     organization_id: uuid.UUID | None
     initiated_by_user_id: uuid.UUID
     status: OrderStatus
+    # Гейт согласования (§16 п.42) — вне FSM; бейдж «ждёт согласования».
+    approval_status: ApprovalStatus = ApprovalStatus.NOT_REQUIRED
     total: Money
     exchange_rate: Rate
     # Счёт 1:1 с заказом (§16 п.40): в коллекции только {id, number, status} —
@@ -127,6 +129,12 @@ class OrderDetail(V2Model):
     initiated_by_user_id: uuid.UUID
     manager_id: uuid.UUID | None
     status: OrderStatus
+    approval_status: ApprovalStatus = ApprovalStatus.NOT_REQUIRED
+    # Виза OWNER (§16 п.42): заполнены только при APPROVED/REJECTED;
+    # rejectionReason обязателен при REJECTED (валидация на сервисной границе).
+    approved_by: uuid.UUID | None = None
+    approved_at: datetime | None = None
+    rejection_reason: str | None = None
     total: Money
     exchange_rate: Rate
     lines: list[OrderLine]
@@ -138,6 +146,12 @@ class OrderDetail(V2Model):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class OrderRejectPayload(V2Model):
+    """Тело визы «отклонено» (POST /orders/{id}/reject, §16 п.42)."""
+
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 def _project_line(item: OrderItem) -> OrderLine:
@@ -162,6 +176,7 @@ def order_summary(order: Order, invoice: Invoice | None = None) -> OrderSummary:
         organization_id=order.organization_id,
         initiated_by_user_id=order.client_id,
         status=order.status,
+        approval_status=order.approval_status,
         total=_money(order.total_amount, order.currency_code),
         exchange_rate=Rate(
             value=rate_value(order.exchange_rate),
@@ -189,6 +204,10 @@ def order_detail(
         initiated_by_user_id=order.client_id,
         manager_id=order.manager_id,
         status=order.status,
+        approval_status=order.approval_status,
+        approved_by=order.approved_by,
+        approved_at=_utc(order.approved_at) if order.approved_at is not None else None,
+        rejection_reason=order.rejection_reason,
         total=_money(order.total_amount, order.currency_code),
         exchange_rate=Rate(
             value=rate_value(order.exchange_rate),
@@ -224,6 +243,7 @@ __all__ = [
     "OrderDetail",
     "OrderItemCreate",
     "OrderLine",
+    "OrderRejectPayload",
     "OrderSummary",
     "order_detail",
     "order_summary",

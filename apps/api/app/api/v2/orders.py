@@ -40,6 +40,7 @@ from app.schemas.v2.common import (
 from app.schemas.v2.orders import (
     OrderCreate,
     OrderDetail,
+    OrderRejectPayload,
     OrderSummary,
     order_detail,
     order_summary,
@@ -47,6 +48,7 @@ from app.schemas.v2.orders import (
 from app.services import email as email_service
 from app.services.cart_v2 import CartV2Error
 from app.services.order import OrderError, OrderService
+from app.services.order_approval import OrderApprovalService
 from app.services.organizations import OrganizationContextService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -368,6 +370,8 @@ async def create_order(
     await _notify_manager_order_created(order, user, items_count=len(payload.items))
     # In-app broadcast менеджерам (NEW_ORDER создан в транзакции service.create_v2).
     service.publish_new_order_notification()
+    # Запросы визы OWNER'ам (§16 п.42) — если create_v2 проставил PENDING.
+    service.publish_approval_requests()
     return SuccessResponse[OrderDetail](
         data=detail,
         meta=ResponseMeta(request_id=request_id_for(request)),
@@ -435,6 +439,86 @@ async def cancel_order(
     return SuccessResponse[OrderDetail](
         data=await _detail_with_invoice(db, order, items),
         meta=ResponseMeta(request_id=request_id_for(request)),
+    )
+
+
+@router.post(
+    "/{orderId}/approve",
+    response_model=SuccessResponse[OrderDetail],
+    response_model_by_alias=True,
+    responses=problem_responses(
+        {
+            401: "Authentication required",
+            403: "Organization OWNER role required",
+            404: "Order not found",
+            409: "Order not awaiting approval, cancelled or already decided",
+            422: "Validation error",
+            500: "Internal server error",
+        }
+    ),
+)
+async def approve_order(
+    request: Request,
+    order_id: uuid.UUID = Path(alias="orderId"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[OrderDetail]:
+    """Виза «согласовано» (§16 п.42): только активный OWNER организации заказа.
+
+    Идемпотентность машинным состоянием: повторный approve на APPROVED —
+    200 no-op; Idempotency-Key не применяется (действие не создаёт ресурс).
+    """
+    service = OrderApprovalService(db)
+    try:
+        order = await service.approve_order(user, order_id)
+    except OrderError as exc:
+        raise _as_v2_problem(exc) from exc
+    await db.commit()
+    await db.refresh(order)
+    items = await orders_repo.get_order_items(db, order_id=order.id)
+    service.publish_visa_notification()
+    return SuccessResponse[OrderDetail](
+        data=await _detail_with_invoice(db, order, items),
+        meta=ResponseMeta(request_id_for(request)),
+    )
+
+
+@router.post(
+    "/{orderId}/reject",
+    response_model=SuccessResponse[OrderDetail],
+    response_model_by_alias=True,
+    responses=problem_responses(
+        {
+            401: "Authentication required",
+            403: "Organization OWNER role required",
+            404: "Order not found",
+            409: "Order not awaiting approval, cancelled or already decided",
+            422: "Validation error (reason required)",
+            500: "Internal server error",
+        }
+    ),
+)
+async def reject_order(
+    request: Request,
+    payload: OrderRejectPayload,
+    order_id: uuid.UUID = Path(alias="orderId"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[OrderDetail]:
+    """Виза «отклонено» (§16 п.42): причина обязательна (1..1000), REJECTED
+    терминален — повторный reject возвращает 409 APPROVAL_TERMINAL."""
+    service = OrderApprovalService(db)
+    try:
+        order = await service.reject_order(user, order_id, reason=payload.reason)
+    except OrderError as exc:
+        raise _as_v2_problem(exc) from exc
+    await db.commit()
+    await db.refresh(order)
+    items = await orders_repo.get_order_items(db, order_id=order.id)
+    service.publish_visa_notification()
+    return SuccessResponse[OrderDetail](
+        data=await _detail_with_invoice(db, order, items),
+        meta=ResponseMeta(request_id_for(request)),
     )
 
 

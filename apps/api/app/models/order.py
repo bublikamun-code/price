@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
-from app.models.enums import OrderStatus, pg_enum
+from app.models.enums import ApprovalStatus, OrderStatus, pg_enum
 
 # PG-последовательность сквозных номеров заявок (nextval, аудит 2026-09-06):
 # миграция 0009 создаёт её на существующей БД с START = MAX(seq)+1.
@@ -117,6 +117,22 @@ class Order(Base, TimestampMixin, UUIDPrimaryKey):
         default=OrderStatus.NEW,
     )
 
+    # Гейт согласования (§16 п.42) — отдельная колонка, FSM OrderStatus (§9)
+    # не тронут. PENDING блокирует менеджерскую обработку (кроме отмены),
+    # REJECTED терминален. Виза: approved_by/approved_at + rejection_reason.
+    approval_status: Mapped[ApprovalStatus] = mapped_column(
+        pg_enum(ApprovalStatus, "approval_status"),
+        nullable=False,
+        default=ApprovalStatus.NOT_REQUIRED,
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     currency_code: Mapped[str] = mapped_column(String(3), default="BYN", nullable=False)
     # Денежные поля — Numeric в БД, значит Decimal и в рантайме (§8/§17).
     # Аннотация обязана совпадать с фактическим типом Numeric: иначе Decimal
@@ -173,6 +189,14 @@ class Order(Base, TimestampMixin, UUIDPrimaryKey):
             "ix_orders_manager_created",
             "manager_id",
             text("created_at DESC"),
+        ),
+        # Менеджерский список «ждут согласования» (§16 п.42): строк единицы,
+        # поэтому частичный индекс только по PENDING. Создан миграцией 0027;
+        # объявлен в модели ради alembic check.
+        Index(
+            "ix_orders_pending_approval",
+            "approval_status",
+            postgresql_where=text("approval_status = 'PENDING'"),
         ),
     )
 

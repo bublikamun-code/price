@@ -5,11 +5,12 @@ membership.  The resolver never derives ownership from ``User.company``.
 """
 import uuid
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import OrganizationRole, UserRole
+from app.models.enums import ApprovalMode, OrganizationRole, UserRole
 from app.models.organization import OrganizationAddress, OrganizationMembership
 from app.models.user import User
 from app.repositories import audit as audit_repo
@@ -132,6 +133,14 @@ class InvalidOrganizationSelectionError(OrganizationManagementError):
     title = "Недопустимая организация"
 
 
+class ApprovalSettingsForbiddenError(OrganizationManagementError):
+    """Настройки визы меняет OWNER организации или staff (§16 п.42)."""
+
+    code = "PERMISSION_DENIED"
+    status_code = 403
+    title = "Недостаточно прав"
+
+
 class OrganizationManagementService:
     """Manager/admin organization operations over explicit memberships."""
 
@@ -149,6 +158,88 @@ class OrganizationManagementService:
             "isPrimary": membership.is_primary,
             "version": membership.version,
         }
+
+    async def approval_settings_update(
+        self,
+        actor: User,
+        *,
+        organization_id: uuid.UUID,
+        approval_mode: ApprovalMode,
+        approval_limit_amount: Decimal | None,
+    ):
+        """Настройки визы организации (PATCH /organizations/{id}/approval, §16 п.42).
+
+        Право: активный OWNER этой организации ИЛИ менеджер/admin (staff).
+        При OVER_LIMIT лимит обязателен и строго положителен (422) — pydantic
+        проверяет это же на транспортной границе, здесь defensive-дубль для
+        прямых вызовов сервиса. Мутация организации bump'ает ``version`` и
+        пишется в аудит как ``organization.approval_settings``.
+        """
+        if approval_mode is ApprovalMode.OVER_LIMIT and (
+            approval_limit_amount is None or approval_limit_amount <= 0
+        ):
+            raise OrganizationManagementError(
+                "При OVER_LIMIT требуется положительный approval_limit_amount"
+            )
+
+        if actor.role not in {UserRole.MANAGER, UserRole.ADMIN}:
+            membership = await organizations_repo.get_membership(
+                self.db, organization_id=organization_id, user_id=actor.id
+            )
+            if membership is None or not membership.is_active:
+                # Существование чужой организации не раскрываем.
+                raise OrganizationNotFoundError("Организация не найдена")
+            if membership.role is not OrganizationRole.OWNER:
+                raise ApprovalSettingsForbiddenError(
+                    "Настройки согласования меняет OWNER организации"
+                )
+
+        organization = await organizations_repo.get_organization(
+            self.db, organization_id=organization_id
+        )
+        if organization is None:
+            raise OrganizationNotFoundError("Организация не найдена")
+
+        # NUMERIC(14,2): квантование входа до 2 знаков (HALF_UP, §8) — иначе
+        # ответ PATCH ("250.5" от числа 250.5) расходился бы с последующим
+        # GET, читающим из БД ("250.50").
+        if approval_limit_amount is not None:
+            approval_limit_amount = approval_limit_amount.quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+
+        before = {
+            "approvalMode": getattr(
+                organization.approval_mode, "value", organization.approval_mode
+            ),
+            "approvalLimitAmount": (
+                str(organization.approval_limit_amount)
+                if organization.approval_limit_amount is not None
+                else None
+            ),
+            "version": organization.version,
+        }
+        organization.approval_mode = approval_mode
+        organization.approval_limit_amount = approval_limit_amount
+        organization.version += 1
+        after = {
+            "approvalMode": approval_mode.value,
+            "approvalLimitAmount": (
+                str(approval_limit_amount) if approval_limit_amount is not None else None
+            ),
+            "version": organization.version,
+        }
+        await audit_repo.create_audit(
+            self.db,
+            actor_id=actor.id,
+            action="organization.approval_settings",
+            target_type="organization",
+            target_id=organization_id,
+            before=before,
+            after=after,
+        )
+        await self.db.flush()
+        return organization
 
     @staticmethod
     def _ensure_staff(actor: User) -> None:
@@ -544,6 +635,7 @@ class OrganizationAddressService:
 
 
 __all__ = [
+    "ApprovalSettingsForbiddenError",
     "InvalidMembershipTargetError",
     "InvalidOrganizationSelectionError",
     "LastOwnerProtectionError",

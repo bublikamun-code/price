@@ -22,15 +22,21 @@ from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import OrderStatus, StockStatus
+from app.models.enums import (
+    ApprovalMode,
+    ApprovalStatus,
+    OrderStatus,
+    OrganizationRole,
+    StockStatus,
+)
 from app.models.order import Order, OrderIdempotency, OrderItem
+from app.models.organization import Organization
 from app.models.system import AuditLog, Notification
-from app.services.email import ORDER_STATUS_RU, format_order_no
-from app.services.notifications import build_new_order_text, build_order_status_changed_text
 from app.repositories import cart as cart_repo
 from app.repositories import catalog as catalog_repo
 from app.repositories import notifications as notifications_repo
 from app.repositories import orders as orders_repo
+from app.repositories import organizations as organizations_repo
 from app.schemas.cart import CartRead
 from app.schemas.order import OrderCreate, OrderItemCreate
 from app.schemas.v2.cart import CartSummary
@@ -38,9 +44,14 @@ from app.schemas.v2.common import MAX_DATABASE_INTEGER
 from app.schemas.v2.orders import OrderCreate as OrderCreateV2
 from app.services.cart import CartService
 from app.services.cart_v2 import CartQuantityOverflowError, CartV2Service
+from app.services.email import ORDER_STATUS_RU, format_order_no
 from app.services.notification_events import notification_payload, publish_notification
+from app.services.notifications import (
+    build_new_order_text,
+    build_order_approval_requested_text,
+    build_order_status_changed_text,
+)
 from app.services.organizations import OrganizationContextService
-from app.repositories import organizations as organizations_repo
 from app.services.pricing import PricingService, quantize_money, quantize_rate
 
 # Допустимые переходы статусов (см. §9 — таблица инициаторов).
@@ -140,8 +151,68 @@ class StaleResourceVersionError(OrderError):
     title = "Ресурс изменился"
 
 
+class ApprovalPendingError(OrderError):
+    """Заявка ждёт визы OWNER — менеджеру запрещена обработка (§16 п.42 п.5)."""
+
+    code = "APPROVAL_PENDING"
+    status_code = 409
+    title = "Заявка ждёт согласования"
+
+
+class ApprovalNotPendingError(OrderError):
+    """Виза принимается только из PENDING живой заявки (§16 п.42 п.6)."""
+
+    code = "APPROVAL_NOT_PENDING"
+    status_code = 409
+    title = "Заявка не ожидает согласования"
+
+
+class ApprovalTerminalError(OrderError):
+    """Решение по заявке уже принято (REJECTED терминален, §16 п.42 п.5)."""
+
+    code = "APPROVAL_TERMINAL"
+    status_code = 409
+    title = "Решение по заявке уже принято"
+
+
+class ApprovalForbiddenError(OrderError):
+    """Визу ставит только активный OWNER организации заказа (§16 п.42 п.6)."""
+
+    code = "PERMISSION_DENIED"
+    status_code = 403
+    title = "Недостаточно прав"
+
+
 # Статусы, из которых клиент вправе отменить свою заявку.
 CLIENT_CANCELABLE: set[OrderStatus] = {OrderStatus.NEW, OrderStatus.IN_PROGRESS}
+
+
+def resolve_approval_status(
+    role_in_org: str | None,
+    organization: Organization | None,
+    total_amount: Decimal,
+) -> ApprovalStatus:
+    """Гейт согласования при создании заявки (§16 п.42 п.1-3).
+
+    ``role_in_org is None`` (legacy-одиночка без организации) или создатель-
+    OWNER → виза не требуется. Граница OVER_LIMIT — строгая: PENDING при
+    ``total_amount > approval_limit_amount``; сумма, равная лимиту, проходит
+    без визы. NULL-лимит при OVER_LIMIT недостижим через API (валидация
+    настроек), но defensive-ветка ведёт себя как OFF.
+    """
+    if organization is None or role_in_org is None:
+        return ApprovalStatus.NOT_REQUIRED
+    if role_in_org == OrganizationRole.OWNER.value:
+        return ApprovalStatus.NOT_REQUIRED
+    mode = organization.approval_mode
+    if mode is ApprovalMode.OFF:
+        return ApprovalStatus.NOT_REQUIRED
+    if mode is ApprovalMode.ALL:
+        return ApprovalStatus.PENDING
+    limit = organization.approval_limit_amount
+    if limit is None:
+        return ApprovalStatus.NOT_REQUIRED
+    return ApprovalStatus.PENDING if total_amount > limit else ApprovalStatus.NOT_REQUIRED
 
 
 def _merge_items(payload: OrderCreate) -> list[OrderItemCreate]:
@@ -220,13 +291,15 @@ class OrderService:
         # In-app broadcast менеджерам о новой заявке (create/create_v2);
         # публикуется роутером после коммита — publish_new_order_notification().
         self.order_notification: Notification | None = None
+        # In-app запросы визы OWNER'ам (create_v2 → PENDING, §16 п.42);
+        # публикуются роутером после коммита — publish_approval_requests().
+        self.approval_requests: list[Notification] = []
 
     async def request_fingerprint(self, user, payload: OrderCreate) -> str:
         context = await self.organizations.resolve(user)
         return order_request_fingerprint(
             payload, organization_id=context.organization_id
         )
-
     async def find_idempotent_order(
         self, user, *, idempotency_key: str, request_hash: str
     ) -> Order | None:
@@ -361,6 +434,7 @@ class OrderService:
             client_id=user.id,
             organization_id=organization_id,
             status=OrderStatus.NEW,
+            approval_status=await self._approval_for(context, organization_id, total),
             currency_code=resolved.currency,
             exchange_rate=(
                 quantize_rate(resolved.rate) if resolved.rate is not None else Decimal(1)
@@ -390,6 +464,10 @@ class OrderService:
         await cart_repo.clear_cart(self.db, cart_id=scoped_cart.id)
         await cart_repo.bump_cart_version(self.db, cart=scoped_cart)
         await self._create_new_order_notification(user, order, items_count=len(new_items))
+        # Согласование (§16 п.42): PENDING-заявка уходит активным OWNER'ам
+        # организации в той же транзакции (атомарно факту создания).
+        if order.approval_status is ApprovalStatus.PENDING:
+            await self._create_approval_request_notifications(user, order)
         return order
 
     # -------------------------------------------------------------- create
@@ -715,6 +793,10 @@ class OrderService:
         order = await self.get(user, order_id, as_manager=False)
         if order.client_id != user.id:
             raise OrderNotCancelableError("Отменить можно только свою заявку")
+        # Гейт согласования (§16 п.42 п.5): REJECTED терминален — отмена
+        # запрещена; PENDING клиент-автор отменяет обычным cancel.
+        if order.approval_status is ApprovalStatus.REJECTED:
+            raise ApprovalTerminalError("Отклонённую заявку нельзя отменить")
         if order.status not in CLIENT_CANCELABLE:
             raise OrderNotCancelableError("Заявку в этом статусе нельзя отменить")
         return await orders_repo.update_order_status(
@@ -762,6 +844,16 @@ class OrderService:
             raise StaleResourceVersionError(
                 f"Ожидалась версия {expected_version}, актуальная версия {order.version}"
             )
+        # Гейт согласования (§16 п.42 п.5): PENDING-заявка менеджером не
+        # обрабатывается — разрешена только отмена; REJECTED терминален.
+        if order.approval_status is ApprovalStatus.PENDING and (
+            new_status is not OrderStatus.CANCELLED
+        ):
+            raise ApprovalPendingError(
+                "Заявка ждёт согласования OWNER'ом; обработка недоступна"
+            )
+        if order.approval_status is ApprovalStatus.REJECTED:
+            raise ApprovalTerminalError("Заявка отклонена — переходы запрещены")
         if new_status not in ALLOWED_TRANSITIONS[order.status]:
             raise InvalidOrderTransitionError(
                 f"Запрещённый переход статуса: {order.status.value} → {new_status.value}"
@@ -861,3 +953,75 @@ class OrderService:
         if notif is None:
             return
         publish_notification(notification_payload(notif), user_id=None)
+
+    # ------------------------------------------------------------- approval
+    async def _approval_for(
+        self,
+        context,
+        organization_id: uuid.UUID | None,
+        total: Decimal,
+    ) -> ApprovalStatus:
+        """Гейт согласования создателя заявки (§16 п.42 п.1-3).
+
+        Роль берётся из уже резолвнутого контекста организации. Настройки
+        режима читаются из БД только когда виза в принципе возможна
+        (создатель-не-OWNER в организации) — путь OWNER/legacy лишний
+        запрос не делает.
+        """
+        if organization_id is None:
+            return ApprovalStatus.NOT_REQUIRED
+        role = next(
+            (
+                membership.role
+                for membership in context.memberships
+                if membership.organization_id == organization_id
+            ),
+            None,
+        )
+        if role is None or role == OrganizationRole.OWNER.value:
+            return ApprovalStatus.NOT_REQUIRED
+        organization = await organizations_repo.get_organization(
+            self.db, organization_id=organization_id
+        )
+        if organization is None:
+            return ApprovalStatus.NOT_REQUIRED
+        return resolve_approval_status(role, organization, quantize_money(total))
+
+    async def _create_approval_request_notifications(
+        self, user, order: Order
+    ) -> None:
+        """ORDER_APPROVAL_REQUESTED каждому активному OWNER организации
+        (§20.3 / §16 п.42 п.8) — в той же транзакции, что и создание заявки.
+        Публикация в SSE — роутером после коммита (publish_approval_requests)."""
+        owner_ids = await organizations_repo.list_active_owner_ids(
+            self.db, organization_id=order.organization_id
+        )
+        for owner_id in owner_ids:
+            self.approval_requests.append(
+                await notifications_repo.create_notification(
+                    self.db,
+                    type="ORDER_APPROVAL_REQUESTED",
+                    title="Требуется согласование заявки",
+                    body=build_order_approval_requested_text(
+                        order_number=format_order_no(order.seq),
+                        client_name=user.full_name,
+                        total=order.total_amount,
+                        currency_code=order.currency_code,
+                    ),
+                    user_id=owner_id,
+                    channel=["inapp"],
+                    payload={
+                        "order_id": str(order.id),
+                        "order_number": format_order_no(order.seq),
+                        "organization_id": str(order.organization_id),
+                        "client_name": user.full_name,
+                        "total_amount": str(order.total_amount),
+                        "currency_code": order.currency_code,
+                    },
+                )
+            )
+
+    def publish_approval_requests(self) -> None:
+        """SSE-события запросов визы — ПОСЛЕ коммита, per-owner (fail-open)."""
+        for notif in self.approval_requests:
+            publish_notification(notification_payload(notif), user_id=notif.user_id)

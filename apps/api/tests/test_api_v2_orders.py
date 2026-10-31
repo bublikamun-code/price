@@ -116,6 +116,8 @@ async def test_list_orders_success_envelope_string_money_and_summary_projection(
         "organizationId",
         "initiatedByUserId",
         "status",
+        # Гейт согласования (§16 п.42) — бейдж «ждёт согласования» в списках.
+        "approvalStatus",
         "total",
         "exchangeRate",
         "createdAt",

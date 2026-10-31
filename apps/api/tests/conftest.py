@@ -9,6 +9,7 @@ Provides:
 """
 import os
 from datetime import date
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
@@ -24,15 +25,16 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.catalog import Brand, Product, Series
-from app.models.enums import OrganizationRole, StockStatus, UserRole
-from app.models.pricing import ExchangeRate, UserBrand
+from app.models.enums import ApprovalMode, OrganizationRole, StockStatus, UserRole
 from app.models.organization import (
     Organization,
     OrganizationBrandTerm,
     OrganizationMembership,
     OrganizationPricingAgreement,
 )
+from app.models.pricing import ExchangeRate, UserBrand
 from app.models.user import User
+
 
 # testcontainers — импортируем лениво (нужен только без TEST_DB_URL)
 def _import_pg_container():
@@ -345,6 +347,23 @@ async def set_organization_brand_term(
         await s.commit()
         await s.refresh(term)
         return term
+
+
+async def set_organization_approval(
+    session_factory,
+    *,
+    organization: Organization,
+    mode: ApprovalMode,
+    limit: str | Decimal | None = None,
+) -> Organization:
+    """Настройки визы (§16 п.42) — сидится напрямую, как делает PATCH approval."""
+    async with session_factory() as s:
+        org = await s.get(Organization, organization.id)
+        org.approval_mode = mode
+        org.approval_limit_amount = Decimal(limit) if limit is not None else None
+        await s.commit()
+        await s.refresh(org)
+        return org
 
 
 # ---------- HTTP client ----------

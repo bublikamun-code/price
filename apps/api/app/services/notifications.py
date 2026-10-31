@@ -81,6 +81,34 @@ def build_new_order_text(order_number: str, client_name: str, items_count: int, 
     )
 
 
+def build_order_approval_requested_text(
+    order_number: str, client_name: str, total, currency_code: str
+) -> str:
+    """Текст OWNER'ам о заявке, ждущей визы (§20.3 ORDER_APPROVAL_REQUESTED, §16 п.42)."""
+    return render_notification(
+        "order_approval_requested.j2",
+        order_number=order_number,
+        client_name=client_name,
+        total=f"{quantize_money(total):.2f}",
+        currency=currency_code,
+    )
+
+
+def build_order_approved_text(order_number: str) -> str:
+    """Текст автору о выданной визе (§20.3 ORDER_APPROVED, §16 п.42)."""
+    return render_notification("order_approved.j2", order_number=order_number)
+
+
+def build_order_rejected_text(order_number: str, reason: str) -> str:
+    """Текст автору об отклонении (§20.3 ORDER_REJECTED, §16 п.42).
+
+    ``reason`` — обязательная причина из визы reject (1..1000).
+    """
+    return render_notification(
+        "order_rejected.j2", order_number=order_number, reason=reason
+    )
+
+
 def build_manager_price_changed_text(diff: VersionDiff) -> str:
     """Сводный текст для менеджера (§20.3 PRICE_CHANGED)."""
     return render_notification("price_changed_manager.j2", diff=diff)
