@@ -102,6 +102,9 @@ Server не обязан возвращать `total`, если cursor count д�
 - `INVOICE_PDF_NOT_READY`;
 - `VOLUME_TIER_NOT_FOUND`;
 - `VOLUME_TIER_DUPLICATE_THRESHOLD`;
+- `APPROVAL_PENDING`;
+- `APPROVAL_NOT_PENDING`;
+- `APPROVAL_TERMINAL`;
 - `STORAGE_UNAVAILABLE`;
 - `CONFLICT`;
 - `RATE_LIMITED`;
@@ -245,6 +248,24 @@ UUID tie-breaker. Невалидный, изменённый или исполь
 - `DELETE` возвращает `204` без тела. Заказы не ломаются: `orders.delivery_address_id` —
   opaque UUID без FK-констрейнта (миграция 0015), а человекочитаемый снапшот уже сохранён
   в `orders.delivery_address`.
+
+### Approval settings (`/organizations/{id}/approval`, §16 п.42)
+
+Настройки согласования заявок живут на организации (этап 6 роадмапа): `approval_mode`
+(`OFF|ALL|OVER_LIMIT`, default `OFF`) и `approval_limit_amount` (`NUMERIC(14,2)`, nullable).
+
+- `GET /organizations/{id}` в `OrganizationDetail` добавляет `approvalMode` и
+  `approvalLimitAmount` (`decimal string | null`) — видны всем участникам организации
+  (OWNER/BUYER/CONTACT/VIEWER) и менеджеру;
+- `PATCH /organizations/{id}/approval` — тело `{approvalMode: OFF|ALL|OVER_LIMIT,
+  approvalLimitAmount?: number}`; право: активный OWNER этой организации либо
+  MANAGER/ADMIN. При `OVER_LIMIT` без положительного `approvalLimitAmount` → 422
+  `VALIDATION_ERROR` (лимит обязателен); при OFF/ALL лимит допускается `null`. Ответ —
+  `SuccessResponse[OrganizationDetail]`; аудит `organization.approval_settings`;
+- не-OWNER участник (BUYER/CONTACT/VIEWER) на PATCH → 403 `PERMISSION_DENIED`; чужая/
+  несуществующая организация → 404.
+
+Семантика режима — §12 «Order approval».
 
 ## 8. Catalog
 
@@ -422,6 +443,8 @@ Fingerprint включает canonicalized payload, organization, authenticated 
 | POST | `/orders` | Create from current cart/draft. |
 | GET | `/orders/{orderId}` | Detail + lines + events. |
 | POST | `/orders/{orderId}/cancel` | FSM-safe cancel. |
+| POST | `/orders/{orderId}/approve` | Виза «согласовано» OWNER'ом (§16 п.42). |
+| POST | `/orders/{orderId}/reject` | Виза «отклонено» с обязательной причиной (§16 п.42). |
 | POST | `/orders/{orderId}/repeat` | Create new draft with current prices. |
 | POST | `/orders/{orderId}/pdf` | Create PDF job. |
 
@@ -481,6 +504,46 @@ Collection DTO — отдельный `OrderSummary`: `id`, `sequence`, `organiz
 при активной organization видны organization orders и legacy/NULL-organization orders,
 инициированные текущим пользователем; без выбранной organization — только legacy/NULL
 orders текущего пользователя. Outsider не видит organization orders.
+
+### Order approval (`approvalStatus`, §16 п.42)
+
+Согласование заявок организации (этап 6 роадмапа) — отдельный гейт вне FSM заявки:
+`OrderSummary` и `OrderDetail` публикуют `approvalStatus`
+(`NOT_REQUIRED|PENDING|APPROVED|REJECTED`, default `NOT_REQUIRED`), а `OrderDetail`
+дополнительно `approvedBy` (`uuid | null`), `approvedAt` (`datetime | null`) и
+`rejectionReason` (`string | null`, обязателен при `REJECTED`). Заявки без
+`organization_id` (legacy) всегда `NOT_REQUIRED`.
+
+Резолюция при создании (`POST /orders`): создатель-OWNER организации либо заявка вне
+действующего режима → `NOT_REQUIRED`; режим `ALL` или (`OVER_LIMIT` и
+`total > approvalLimitAmount`, строго) у создателя-не-OWNER → `PENDING`. Заявка в
+`PENDING` снапшотнута как обычно (§9); виза цены не пересчитывает и остатки не
+резервирует. Менеджеру при этом уходит обычный `NEW_ORDER`, активным OWNER организации —
+in-app `ORDER_APPROVAL_REQUESTED` (+SSE).
+
+| Method | Path | Назначение |
+|---|---|---|
+| POST | `/orders/{orderId}/approve` | Виза «согласовано». |
+| POST | `/orders/{orderId}/reject` | Виза «отклонено», body `{reason}` (1..1000, обязателен). |
+
+Правила визы:
+
+- выполняет только активный **OWNER** организации заказа: BUYER/CONTACT/VIEWER → 403
+  `PERMISSION_DENIED`; чужая/несуществующая заявка → 404 `ORDER_NOT_FOUND` (существование
+  не раскрывается);
+- принимается только из `PENDING` и живого статуса заявки: `CANCELLED` → 409,
+  approve из `REJECTED`/`NOT_REQUIRED` → 409 `APPROVAL_NOT_PENDING`; reject — зеркально;
+  REJECTED терминален → 409 `APPROVAL_TERMINAL` на повторную визу;
+- повторный approve на `APPROVED` → 200 no-op (тот же `OrderDetail`): идемпотентность
+  машинным состоянием — действие не создаёт ресурса, поэтому `Idempotency-Key`
+  (в отличие от `POST /orders`) не применяется;
+- успех: approve ставит `approvalStatus=APPROVED`, `approvedBy/approvedAt`, `version += 1`,
+  аудит `order.approve`; reject ставит `REJECTED` + `rejectionReason`, аудит `order.reject`;
+  после визы автору уходит `ORDER_APPROVED` / `ORDER_REJECTED` (причина в body), in-app + SSE;
+- блокировки FSM (§9): заявка в `PENDING` не переводится менеджером никуда, кроме
+  `CANCELLED` — иначе 409 `APPROVAL_PENDING`; `REJECTED` терминален — все переходы и
+  отмена запрещены (409). Отмена `PENDING` клиентом-автором/менеджером — обычный cancel;
+- настройка режима — `PATCH /organizations/{id}/approval` (§7 Approval settings).
 
 ### Invoices (§16 п.40)
 
