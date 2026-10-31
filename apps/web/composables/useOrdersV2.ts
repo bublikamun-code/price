@@ -60,10 +60,11 @@ function orderMatchesContext(
   order: OrderSummary | OrderDetail,
   context: ActiveOrderContext,
 ): boolean {
-  return (
-    organizationMatchesContext(order.organizationId, context) &&
-    order.initiatedByUserId === context.user.id
-  );
+  // Только организационный скоуп (Э6, §16 п.42): участники организации видят
+  // заявки организации, в том числе инициированные другими (OWNER визирует
+  // заявки BUYER). Требование initiatedByUserId === user.id делало такие
+  // заявки недоступными списком/карточкой — ORDER_SCOPE_MISMATCH.
+  return organizationMatchesContext(order.organizationId, context);
 }
 
 export function useOrdersV2() {
