@@ -326,7 +326,7 @@ async def test_reject_after_approve_conflicts(api_client, session_factory):
     )
 
     assert response.status_code == 409, response.text
-    assert response.headers.get("x-error-code") == "APPROVAL_NOT_PENDING"
+    assert response.json()["code"] == "APPROVAL_NOT_PENDING"
     async with session_factory() as session:
         refreshed = await session.get(Order, order.id)
         assert refreshed is not None

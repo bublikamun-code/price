@@ -239,6 +239,10 @@ class OrganizationManagementService:
             after=after,
         )
         await self.db.flush()
+        # server-onupdate updated_at после flush помечена «протухшей» — без
+        # refresh сериализация детали уходит в sync-IO (MissingGreenlet),
+        # как в address-методах ниже.
+        await self.db.refresh(organization)
         return organization
 
     @staticmethod
