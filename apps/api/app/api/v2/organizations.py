@@ -290,7 +290,7 @@ async def update_approval_settings(
         )
         result = SuccessResponse[OrganizationDetail](
             data=_organization_detail(organization),
-            meta=ResponseMeta(request_id_for(request)),
+            meta=ResponseMeta(request_id=request_id_for(request)),
         )
         await db.commit()
         return result

@@ -479,7 +479,7 @@ async def approve_order(
     service.publish_visa_notification()
     return SuccessResponse[OrderDetail](
         data=await _detail_with_invoice(db, order, items),
-        meta=ResponseMeta(request_id_for(request)),
+        meta=ResponseMeta(request_id=request_id_for(request)),
     )
 
 
@@ -518,7 +518,7 @@ async def reject_order(
     service.publish_visa_notification()
     return SuccessResponse[OrderDetail](
         data=await _detail_with_invoice(db, order, items),
-        meta=ResponseMeta(request_id_for(request)),
+        meta=ResponseMeta(request_id=request_id_for(request)),
     )
 
 
