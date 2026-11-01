@@ -63,7 +63,7 @@ async def _member_user(
 async def _product(session_factory, *, sku: str, name: str, stock=StockStatus.IN_STOCK):
     brand = await create_brand(session_factory, name=f"Brand {sku}")
     return await create_product(
-        session_factory, sku=sku, name=name, brand=brand, base_price=100
+        session_factory, sku=sku, name=name, brand=brand, base_price=100, stock=stock
     )
 
 
