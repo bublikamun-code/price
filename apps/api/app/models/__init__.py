@@ -16,6 +16,7 @@ from app.models.catalog import (
     ProductPhoto,
     Series,
 )
+from app.models.client_sku import ClientSkuMapping
 from app.models.file import FileAsset, MediaAsset
 from app.models.invoice import Invoice
 from app.models.news import News
@@ -83,4 +84,6 @@ __all__ = [
     "News",
     # banner
     "Banner",
+    # client_sku (§16 п.43)
+    "ClientSkuMapping",
 ]

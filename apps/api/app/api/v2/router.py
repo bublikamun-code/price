@@ -6,6 +6,7 @@ from app.api.v2 import (
     auth,
     cart,
     catalog,
+    client_sku_mappings,
     documents,
     invoices,
     media,
@@ -21,6 +22,10 @@ api_router.include_router(session.router)
 api_router.include_router(organizations.router)
 api_router.include_router(organizations.manager_router)
 api_router.include_router(addresses.router)
+# Кросс-справочник (§16 п.43): раньше каталога не критично, но держим рядом
+# с organization-scope роутерами; apply-csv мутирует корзину v2.
+api_router.include_router(client_sku_mappings.router)
+api_router.include_router(client_sku_mappings.manager_router)
 api_router.include_router(catalog.router)
 api_router.include_router(documents.router)
 api_router.include_router(cart.router)
