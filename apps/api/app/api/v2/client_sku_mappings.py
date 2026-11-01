@@ -30,6 +30,7 @@ from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.v2.client_sku import (
+    ClientSkuMappingListResponse,
     ClientSkuApplyCsvIn,
     ClientSkuApplyOut,
     ClientSkuMappingCreate,
@@ -108,7 +109,7 @@ def _patch_changes(payload: ClientSkuMappingUpdate) -> dict[str, object]:
 
 @router.get(
     "",
-    response_model=SuccessResponse[list[ClientSkuMappingOut]],
+    response_model=ClientSkuMappingListResponse,
     response_model_by_alias=True,
     responses=_CLIENT_PROBLEMS,
 )
@@ -119,7 +120,7 @@ async def list_mappings(
     page_size: int = Query(default=20, ge=1, le=100, alias="pageSize"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> SuccessResponse[list[ClientSkuMappingOut]]:
+) -> ClientSkuMappingListResponse:
     """Страница справочника организации, свежие связки сверху."""
     try:
         rows, total = await ClientSkuService(db).list_page(
@@ -127,7 +128,7 @@ async def list_mappings(
         )
     except ClientSkuMappingError as exc:
         raise _as_v2_problem(exc) from exc
-    return SuccessResponse[list[ClientSkuMappingOut]](
+    return ClientSkuMappingListResponse(
         data=[_mapping_out(mapping) for mapping in rows],
         meta=PageMeta(
             request_id=request_id_for(request),
@@ -249,7 +250,7 @@ async def delete_mapping(
 
 @manager_router.get(
     "/{organizationId}/client-sku-mappings",
-    response_model=SuccessResponse[list[ClientSkuMappingOut]],
+    response_model=ClientSkuMappingListResponse,
     response_model_by_alias=True,
     responses=_CLIENT_PROBLEMS,
 )
@@ -261,7 +262,7 @@ async def manager_list_mappings(
     page_size: int = Query(default=20, ge=1, le=100, alias="pageSize"),
     manager: User = Depends(require_role(UserRole.MANAGER)),
     db: AsyncSession = Depends(get_db),
-) -> SuccessResponse[list[ClientSkuMappingOut]]:
+) -> ClientSkuMappingListResponse:
     try:
         rows, total = await ClientSkuService(db).list_page(
             manager,
@@ -272,7 +273,7 @@ async def manager_list_mappings(
         )
     except ClientSkuMappingError as exc:
         raise _as_v2_problem(exc) from exc
-    return SuccessResponse[list[ClientSkuMappingOut]](
+    return ClientSkuMappingListResponse(
         data=[_mapping_out(mapping) for mapping in rows],
         meta=PageMeta(
             request_id=request_id_for(request),

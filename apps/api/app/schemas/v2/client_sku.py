@@ -95,6 +95,18 @@ class PageMeta(ResponseMeta):
     total: int = Field(ge=0)
 
 
+class ClientSkuMappingListResponse(V2Model):
+    """Страница справочника: SuccessResponse с расширенной PageMeta.
+
+    Отдельный тип, потому что ``SuccessResponse.meta`` типизирован узким
+    ``ResponseMeta`` — FastAPI сериализует по аннотации и отрезал бы
+    page/pageSize/total (см. тест list-эндпоинтов).
+    """
+
+    data: list["ClientSkuMappingOut"]
+    meta: PageMeta
+
+
 __all__ = [
     "ClientSkuApplyCsvIn",
     "ClientSkuApplyOut",
@@ -103,5 +115,6 @@ __all__ = [
     "ClientSkuMappingCreate",
     "ClientSkuMappingOut",
     "ClientSkuMappingUpdate",
+    "ClientSkuMappingListResponse",
     "PageMeta",
 ]
