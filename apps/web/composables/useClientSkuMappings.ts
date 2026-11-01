@@ -5,6 +5,7 @@ import type {
 import { AppProblem, problemMessage, toAppProblem } from '~/domain/api/v2/problem'
 import type { ApplyCsvResult } from '~/domain/client-sku/client-sku.repository'
 import { createClientSkuRepository } from '~/domain/client-sku/client-sku.repository'
+import { newIdempotencyKey } from '~/utils/idempotency-key'
 
 export const ORGANIZATION_REQUIRED_MESSAGE =
   'Мои артикулы доступны только в контексте организации'
@@ -117,11 +118,11 @@ export function useClientSkuMappings() {
     organizationId?: string,
   ): Promise<ClientSkuMapping> {
     if (organizationId) {
-      const result = await repository.createForOrg(organizationId, payload, crypto.randomUUID())
+      const result = await repository.createForOrg(organizationId, payload, newIdempotencyKey())
       return result.mapping
     }
     await ensureActiveOrganization()
-    const result = await repository.create(payload, crypto.randomUUID())
+    const result = await repository.create(payload, newIdempotencyKey())
     return result.mapping
   }
 

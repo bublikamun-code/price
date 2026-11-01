@@ -4,6 +4,7 @@ import type {
 } from '~/domain/api/v2/organizations.schema'
 import { AppProblem } from '~/domain/api/v2/problem'
 import { createOrganizationRepository } from '~/domain/organization/organization.repository'
+import { newIdempotencyKey } from '~/utils/idempotency-key'
 
 /**
  * Адресная книга организации для оформления заявок. Эндпоинты v2 `/me/...`
@@ -47,7 +48,7 @@ export function useOrganizationAddresses() {
         retryable: false,
       })
     }
-    const idempotencyKey = crypto.randomUUID()
+    const idempotencyKey = newIdempotencyKey()
     return (await repository.createAddress(payload, idempotencyKey)).address
   }
 
