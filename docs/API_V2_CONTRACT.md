@@ -267,6 +267,93 @@ UUID tie-breaker. Невалидный, изменённый или исполь
 
 Семантика режима — §12 «Order approval».
 
+### Client SKU mappings (кросс-справочник, `/me/organization/client-sku-mappings`, §16 п.43)
+
+Кросс-справочник «артикул клиента → наш SKU» (этап 7 роадмапа). Справочник — свойство
+организации: участники одной организации делят связки; у пользователя без активной
+организации режим недоступен — любой эндпоинт возвращает 422 `ORGANIZATION_REQUIRED`.
+`clientSku` сравнивается регистронезависимо (CITEXT) и хранится как ввёл клиент (trim
+на сервисной границе, 1..64 символа). Чтение — все участники организации; создание,
+правка и удаление — OWNER/BUYER (403 `PERMISSION_DENIED` для CONTACT/VIEWER) и
+MANAGER/ADMIN через manager-роутер
+`/api/v2/manager/organizations/{organizationId}/client-sku-mappings` (организация
+берётся из пути, membership-проверки не применяются).
+
+| Method | Path | Назначение |
+|---|---|---|
+| GET | `/me/organization/client-sku-mappings` | Страница связок: `query?` (ILIKE по `clientSku` и нашему SKU), `page` ≥1, `pageSize` 1..100 (default 20). Сортировка `createdAt` DESC. → `SuccessResponse[list[ClientSkuMappingOut]]` c `meta: {requestId, page, pageSize, total}`. |
+| POST | `/me/organization/client-sku-mappings` | Создать связку `{clientSku, productId, note?}` (201). Товар не найден → 404 `PRODUCT_NOT_FOUND`; товар ARCHIVED → 422 `PRODUCT_ARCHIVED`; дубль `(organizationId, clientSku)` → 409 `CLIENT_SKU_MAPPING_EXISTS`. Аудит `client_sku_mapping.create`. |
+| PATCH | `/me/organization/client-sku-mappings/{mappingId}` | Перемапить/править заметку `{productId?, note?}`; `If-Match` обязателен (версия маппинга), stale → 409 `STALE_RESOURCE_VERSION`. Чужой/несуществующий `mappingId` в своей организации → 404. Аудит `client_sku_mapping.update`. |
+| DELETE | `/me/organization/client-sku-mappings/{mappingId}` | Удалить связку → 204, без `If-Match` (паттерн адресной книги). Аудит `client_sku_mapping.delete`. |
+| POST | `/me/organization/client-sku-mappings/apply-csv` | Применить CSV-вставку → отчёт и наполнение корзины (ниже). Аудит `client_sku_mapping.apply_csv`. |
+
+Форма `ClientSkuMappingOut`: `{"id", "organizationId", "clientSku", "productId", "note",
+"version", "createdAt", "updatedAt"}`.
+
+`POST .../apply-csv` — тело `{csv: string}` (1..262144 символов). CSV парсит бэкенд,
+форматы строк те же, что у фронтового bulk-add: `sku`, `sku=qty`, `sku;qty`, `sku⇥qty`
+(вставка из Excel), qty — целое ≥1, по умолчанию 1; пустые строки и `#`-комментарии
+пропускаются. Пустой CSV → 422 `VALIDATION_ERROR` (`CSV_EMPTY`), более 500 позиций →
+422 `VALIDATION_ERROR` (`TOO_MANY_ROWS`).
+
+Ответ — `SuccessResponse[ClientSkuApplyOut]`:
+
+```json
+{
+  "data": {
+    "rows": [
+      {
+        "clientSku": "Вент-2",
+        "qty": 5,
+        "status": "MATCHED",
+        "productId": "uuid",
+        "productName": "Привод ГТУ-2",
+        "productSku": "VENT-2",
+        "unitPrice": {"amount": "100.00", "currency": "BYN"},
+        "stockStatus": "IN_STOCK",
+        "message": null
+      },
+      {
+        "clientSku": "мотор",
+        "qty": 1,
+        "status": "UNKNOWN",
+        "productId": null,
+        "productName": null,
+        "productSku": null,
+        "unitPrice": null,
+        "stockStatus": null,
+        "message": "Не найден в справочнике"
+      }
+    ],
+    "summary": {"matched": 1, "unknown": 1, "ambiguous": 0, "cartAdded": 1},
+    "cartVersion": "7"
+  },
+  "meta": {"requestId": "..."}
+}
+```
+
+Семантика отчёта (частичный успех, как в v1 bulk-корзине):
+
+- `MATCHED` — связка найдена, товар жив: строка содержит resolved `productId` (обязательное
+  следствие из §10), `productName`, `productSku`, клиентские `unitPrice`/`stockStatus`
+  (батч-прайсинг, как в resolve-bulk). Позиция немедленно добавляется в корзину v2 тем же
+  сервисом, что и ручное добавление: существующая line инкрементит qty, ARCHIVED-товар даёт
+  `UNKNOWN` с сообщением «Товар в архиве» (маппинг сохраняется — клиент перемапит).
+- `AMBIGUOUS` — этот артикул встречается в файле более одного раза (регистр не важен):
+  все вхождения помечаются, qty не суммируется молча, остальные строки применяются.
+- `UNKNOWN` — нет связки, товар в архиве, некорректное количество или нераспознанная строка;
+  причина — в `message`. Клиент закрывает её поиском по каталогу и «запомнить связку»,
+  затем повторным apply довозит остаток; повторный apply по тому же файлу инкрементит qty
+  уже лежащих позиций (штатная семантика корзины), поэтому Idempotency-Key не применяется:
+  apply меняет корзину, а не создаёт ресурс.
+- `cartVersion` — версия корзины после последней мутации (значение `ETag` корзины); `null`,
+  если ни одна строка не попала в корзину. Фронт после apply обновляет корзину.
+
+Стабильные коды ошибок среза: `ORGANIZATION_REQUIRED` (422), `CLIENT_SKU_MAPPING_EXISTS`
+(409), `CLIENT_SKU_MAPPING_NOT_FOUND` (404), `PRODUCT_ARCHIVED` (422), `PRODUCT_NOT_FOUND`
+(404), `ORGANIZATION_NOT_FOUND` (404, manager-роутер), `STALE_RESOURCE_VERSION` (409),
+`PERMISSION_DENIED` (403), `VALIDATION_ERROR` (422).
+
 ## 8. Catalog
 
 | Method | Path | Назначение |
@@ -378,7 +465,7 @@ Cart — server resource с явным commercial scope. У одного пол�
 
 Cart DTO — `SuccessResponse[CartSummary]`: UUID, nullable `organizationId`, `version`, `items`, `total`, `totalItems` и `exchangeRate`. `totalItems` — число cart lines, а не сумма quantity. Каждое чтение пересчитывает current prices; пустая cart получает currency и rate из active commercial scope. Organization cart использует organization agreement currency, fixed rate при наличии и organization-brand terms; отсутствие brand terms не вызывает fallback на legacy user discounts. Внутренние `photoKey`, S3 keys и другие storage identifiers не выдаются.
 
-Favorites остаются отдельным resources и в текущий v2 slice не реализованы; будущий bulk-add может принимать SKU input, но response обязан содержать resolved product UUID.
+Favorites остаются отдельным resources и в текущий v2 slice не реализованы. Bulk-add по SKU input реализован этапом 7 роадмапа как кросс-справочник клиентских артикулов: `POST /api/v2/me/organization/client-sku-mappings/apply-csv` (см. §7 «Client SKU mappings»), response обязан содержать resolved product UUID.
 
 ## 11. Order create
 
