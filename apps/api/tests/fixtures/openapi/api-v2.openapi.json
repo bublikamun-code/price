@@ -682,6 +682,27 @@
         "title": "ClientSkuMappingCreate",
         "type": "object"
       },
+      "ClientSkuMappingListResponse": {
+        "description": "Страница справочника: SuccessResponse с расширенной PageMeta.\n\nОтдельный тип, потому что ``SuccessResponse.meta`` типизирован узким\n``ResponseMeta`` — FastAPI сериализует по аннотации и отрезал бы\npage/pageSize/total (см. тест list-эндпоинтов).",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ClientSkuMappingOut"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PageMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "ClientSkuMappingListResponse",
+        "type": "object"
+      },
       "ClientSkuMappingOut": {
         "properties": {
           "clientSku": {
@@ -2718,6 +2739,43 @@
         "title": "OrganizationSummary",
         "type": "object"
       },
+      "PageMeta": {
+        "description": "Offset-пагинация списков справочника (page/pageSize, default 20).",
+        "properties": {
+          "page": {
+            "minimum": 1.0,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "requestId": {
+            "examples": [
+              "0198f0d2-58f2-79a7-8123-2c72c1548f90"
+            ],
+            "minLength": 1,
+            "title": "Requestid",
+            "type": "string"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requestId",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "title": "PageMeta",
+        "type": "object"
+      },
       "ProblemDetails": {
         "properties": {
           "code": {
@@ -3394,26 +3452,6 @@
           "meta"
         ],
         "title": "SuccessResponse[VolumeTierOut]",
-        "type": "object"
-      },
-      "SuccessResponse_list_ClientSkuMappingOut__": {
-        "properties": {
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/ClientSkuMappingOut"
-            },
-            "title": "Data",
-            "type": "array"
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ResponseMeta"
-          }
-        },
-        "required": [
-          "data",
-          "meta"
-        ],
-        "title": "SuccessResponse[list[ClientSkuMappingOut]]",
         "type": "object"
       },
       "SuccessResponse_list_OrganizationAddressOut__": {
@@ -6551,7 +6589,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessResponse_list_ClientSkuMappingOut__"
+                  "$ref": "#/components/schemas/ClientSkuMappingListResponse"
                 }
               }
             },
@@ -8086,7 +8124,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessResponse_list_ClientSkuMappingOut__"
+                  "$ref": "#/components/schemas/ClientSkuMappingListResponse"
                 }
               }
             },
