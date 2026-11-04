@@ -35,6 +35,7 @@ from app.core.security import (
     hash_password_async,
     verify_password_async,
 )
+from app.models.enums import UserRole
 from app.models.pricing import ExchangeRate
 from app.models.user import (
     ConsentLog,
@@ -379,6 +380,17 @@ class AuthService:
         # M5: whitelist полей — setattr только по явно разрешённым колонкам User,
         # чтобы расширение схемы не позволило трогать role/is_active/password_hash.
         # display_currency ∈ {BYN, USD, EUR, RUB} — выбор клиента (§8, уровень 2).
+        # Правка §17 (2026-11): клиенту выбор валюты отключён — видит только BYN;
+        # попытка выставить другую валюту отклоняется (см. resolve_rate).
+        if (
+            changed.get("display_currency")
+            and user.role == UserRole.CLIENT
+            and changed["display_currency"] != "BYN"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Клиент видит цены только в BYN: выбор валюты отключён",
+            )
         allowed = {"display_currency", "price_digest_enabled", "price_digest_sources"}
         for field, value in changed.items():
             if field in allowed:

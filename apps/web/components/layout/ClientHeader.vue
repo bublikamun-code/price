@@ -3,16 +3,11 @@ const auth = useAuth()
 const notifications = useNotifications()
 const cart = useCartV2()
 const theme = useTheme()
-const route = useRoute()
 const isDark = computed(() => theme.mode.value === 'dark')
 
 function openGlobalSearch() {
   if (import.meta.client) window.dispatchEvent(new CustomEvent('price:open-search'))
 }
-
-const onCurrencySection = computed(
-  () => route.path === '/profile' && route.hash === '#profile-currency',
-)
 </script>
 
 <template>
@@ -31,15 +26,6 @@ const onCurrencySection = computed(
         <span class="truncate">Каталог и заявки</span>
       </button>
       <span class="flex-1" />
-      <NuxtLink
-        to="/profile#profile-currency"
-        class="inline-flex min-h-10 items-center gap-2 px-2 text-sm font-semibold transition-colors hover:text-action"
-        :class="onCurrencySection ? 'text-action' : 'text-ink-muted'"
-        :aria-current="onCurrencySection ? 'page' : undefined"
-      >
-        <Icon name="heroicons:banknotes" class="size-5" aria-hidden="true" />
-        <span class="numeric">{{ auth.user?.displayCurrency || 'BYN' }}</span>
-      </NuxtLink>
       <NuxtLink to="/cart" class="relative inline-flex min-h-10 items-center gap-2 border border-border px-3 text-sm font-semibold text-ink hover:bg-surface-2" aria-label="Текущая заявка">
         <Icon name="heroicons:clipboard-document-list" class="size-5" aria-hidden="true" />
         <span>Заявка</span>

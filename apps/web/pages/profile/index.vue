@@ -8,33 +8,8 @@ useHead({ title: 'Профиль' })
 const auth = useAuth()
 const { request } = useApi()
 
-const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB'] as const
-const currencyOptions = CURRENCIES.map((currency) => ({ value: currency, label: currency }))
-const currencySaving = ref(false)
-const currencySaved = ref(false)
-const currencyError = ref('')
-
-async function setDisplayCurrency(code: string) {
-  if (currencySaving.value || code === auth.user?.displayCurrency) return
-  currencySaving.value = true
-  currencySaved.value = false
-  currencyError.value = ''
-  try {
-    await auth.updateMe({ display_currency: code })
-    currencySaved.value = true
-    window.setTimeout(() => {
-      currencySaved.value = false
-    }, 2500)
-  } catch (error) {
-    currencyError.value = getErrorMessage(error, 'Не удалось изменить валюту')
-  } finally {
-    currencySaving.value = false
-  }
-}
-
-function onCurrencyChange(value: string | number) {
-  void setDisplayCurrency(String(value))
-}
+// Валюта отображения удалена (правка §17, 2026-11): клиент всегда видит BYN,
+// селектор валюты из профиля убран, сервер отклоняет не-BYN для клиентов.
 
 interface MyTerms {
   discounts: { brand_id: string; brand_name: string; discount_percent: number }[]
@@ -147,23 +122,6 @@ const roleLabel = computed(() => {
             </dd>
           </div>
         </dl>
-      </div>
-    </section>
-
-    <section id="profile-currency" class="grid scroll-mt-24 border-b border-border py-6 md:grid-cols-[14rem_minmax(0,1fr)] md:gap-8" aria-labelledby="currency-heading">
-      <h2 id="currency-heading" class="text-sm font-bold text-ink">Валюта</h2>
-      <div class="max-w-sm">
-        <UiField for="profile-currency-select" label="Валюта отображения прайсов">
-          <UiSelect
-            :model-value="auth.user?.displayCurrency ?? ''"
-            :options="currencyOptions"
-            :disabled="currencySaving"
-            @update:model-value="onCurrencyChange"
-          />
-        </UiField>
-        <p class="mt-2 text-sm text-ink-muted">Изменение сохраняется через PATCH /auth/me.</p>
-        <p v-if="currencySaved" class="mt-2 text-sm font-semibold text-success-text" role="status">Валюта сохранена.</p>
-        <p v-if="currencyError" class="mt-2 text-sm text-danger-text" role="alert">{{ currencyError }}</p>
       </div>
     </section>
 

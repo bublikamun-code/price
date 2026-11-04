@@ -150,8 +150,17 @@ async def test_organization_pricing_isolated_and_does_not_use_user_brand(
 
 
 async def test_organization_rate_and_legacy_user_rate_are_separate(session_factory):
-    user = await create_user(
-        session_factory, email="rate@company.example", role=UserRole.CLIENT
+    """Организационный курс и легаси-курс пользователя — разные источники.
+
+    Разделение актуально для MANAGER (у него конвертация осталась). Правка
+    §17 (2026-11): для клиента оба источника игнорируются — resolve_rate
+    всегда сводится к BYN (проверяется в конце теста).
+    """
+    manager = await create_user(
+        session_factory, email="rate-manager@company.example", role=UserRole.MANAGER
+    )
+    client = await create_user(
+        session_factory, email="rate-client@company.example", role=UserRole.CLIENT
     )
     organization = await create_organization(
         session_factory, legal_name="Rate Org", default_currency="USD"
@@ -163,11 +172,11 @@ async def test_organization_rate_and_legacy_user_rate_are_separate(session_facto
         session_factory, currency="RUB", rate=Decimal("30.00"), scale=10
     )
     async with session_factory() as db:
-        db_user = await db.get(User, user.id)
-        db_user.display_currency = "RUB"
-        db_user.fixed_rate_id = user_rate.id
+        db_manager = await db.get(User, manager.id)
+        db_manager.display_currency = "RUB"
+        db_manager.fixed_rate_id = user_rate.id
         await db.commit()
-        await db.refresh(db_user)
+        await db.refresh(db_manager)
         await set_organization_pricing_agreement(
             session_factory,
             organization=organization,
@@ -176,14 +185,33 @@ async def test_organization_rate_and_legacy_user_rate_are_separate(session_facto
         )
         service = PricingService(db)
         org_resolved = await service.resolve_rate(
-            db_user, "fixed", organization_id=organization.id
+            db_manager, "fixed", organization_id=organization.id
         )
-        legacy_resolved = await service.resolve_rate(db_user, "fixed")
+        legacy_resolved = await service.resolve_rate(db_manager, "fixed")
 
     assert (org_resolved.currency, org_resolved.source) == ("USD", "FIXED")
     assert org_resolved.rate == Decimal("3.00")
     assert (legacy_resolved.currency, legacy_resolved.source) == ("RUB", "FIXED")
     assert legacy_resolved.rate == Decimal("30.00")
+
+    # Клиент: даже с USD-agreement организации и легаси-курсом RUB обе ветки
+    # дают BYN без конвертации (правка §17, 2026-11).
+    async with session_factory() as db:
+        db_client = await db.get(User, client.id)
+        db_client.display_currency = "RUB"
+        db_client.fixed_rate_id = user_rate.id
+        await db.commit()
+        await db.refresh(db_client)
+        service = PricingService(db)
+        client_org = await service.resolve_rate(
+            db_client, "fixed", organization_id=organization.id
+        )
+        client_legacy = await service.resolve_rate(db_client, "fixed")
+
+    assert (client_org.currency, client_org.source) == ("BYN", "BYN")
+    assert client_org.rate is None
+    assert (client_legacy.currency, client_legacy.source) == ("BYN", "BYN")
+    assert client_legacy.rate is None
 
 
 async def test_order_uses_validated_membership_and_keeps_initiator(session_factory):

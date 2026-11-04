@@ -353,6 +353,8 @@ async def test_price_snapshot_freezes_after_price_change(api_client, session_fac
 # SNAPSHOT — курс фиксируется
 # =========================================================
 async def test_exchange_rate_snapshot(api_client, session_factory):
+    """Снапшот курса при оформлении. Правка §17 (2026-11): клиенту конвертация
+    не применяется — легаси-фиксация USD игнорируется, снапшот BYN с курсом-заглушкой."""
     sf = session_factory
     brand, p1, _ = await _seed(sf)
     user = await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
@@ -366,11 +368,11 @@ async def test_exchange_rate_snapshot(api_client, session_factory):
     })
     assert r.status_code == 201, r.text
     o = r.json()
-    assert o["currency_code"] == "USD"
-    assert o["exchange_rate"] == 3.0
-    assert o["rate_source"] == "FIXED"
-    # unit_price в display-валюте: 100 BYN * 1 / 3 ≈ 33.33
-    assert abs(o["items"][0]["unit_price"] - 33.33) < 0.01
+    assert o["currency_code"] == "BYN"
+    assert o["exchange_rate"] == 1.0
+    assert o["rate_source"] == "BYN"
+    # Без конвертации: розничные 100 BYN за штуку
+    assert o["items"][0]["unit_price"] == 100.0
 
 
 # =========================================================

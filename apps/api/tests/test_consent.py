@@ -79,14 +79,16 @@ async def test_consent_false_rejected_even_if_already_accepted(api_client, sessi
 
 
 async def test_display_currency_regression(api_client, session_factory):
+    """Правка §17 (2026-11): клиенту доступен только BYN; патч валюты
+    по-прежнему не затрагивает согласие (consent_accepted не меняется)."""
     sf = session_factory
     await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL)
 
-    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "usd"})
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "BYN"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["display_currency"] == "USD"
+    assert body["display_currency"] == "BYN"
     assert body["consent_accepted"] is False  # не задано — не меняется
 
 

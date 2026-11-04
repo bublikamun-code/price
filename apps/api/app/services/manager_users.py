@@ -160,7 +160,8 @@ class ManagerUsersService:
         data = payload.model_dump(exclude_unset=True)
         before: dict = {}
         after: dict = {}
-        for field in ("full_name", "company", "phone", "display_currency"):
+        # display_currency удалён из правки (правка §17, 2026-11): клиент видит только BYN
+        for field in ("full_name", "company", "phone"):
             value = data.get(field)
             if value is None:
                 continue
@@ -185,8 +186,6 @@ class ManagerUsersService:
             )
             await self.db.commit()
             await self.db.refresh(user)
-            if "display_currency" in after:
-                await invalidate_tags(user_tag(user.id))
         return user
 
     # ----------------------------------------------------- reset password

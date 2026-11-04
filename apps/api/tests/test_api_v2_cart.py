@@ -76,6 +76,10 @@ async def _set_organization_scope(
         scale=1,
         source="ORG_FIXTURE",
     )
+    # Правка §17 (2026-11): организационный agreement с display-валютой (USD)
+    # и fixed rate для роли CLIENT больше не влияет на валюту — resolve_rate
+    # всегда отдаёт BYN. Оставлено как легаси-условия: бренд-скидка организации
+    # продолжает работать, конвертации не будет.
     await set_organization_pricing_agreement(
         session_factory,
         organization=organization,
@@ -300,8 +304,10 @@ async def test_organization_cart_is_separate_and_uses_organization_pricing(
     first = await api_client.get("/api/v2/cart")
     assert first.status_code == 200, first.text
     assert first.json()["data"]["organizationId"] == str(first_org.id)
-    assert first.json()["data"]["exchangeRate"]["source"] == "FIXED"
-    assert first.json()["data"]["exchangeRate"]["value"] == "2.0000"
+    # Правка §17 (2026-11): USD-agreement первой организации для клиента
+    # игнорируется — корзина считается в BYN (курс отсутствует, source BYN)
+    assert first.json()["data"]["exchangeRate"]["source"] == "BYN"
+    assert first.json()["data"]["exchangeRate"]["value"] == "1.0000"
 
     first_add = await api_client.post(
         "/api/v2/cart/items",
@@ -309,9 +315,10 @@ async def test_organization_cart_is_separate_and_uses_organization_pricing(
         headers={"If-Match": "1"},
     )
     assert first_add.status_code == 200, first_add.text
+    # Организационная скидка 20% работает (100 BYN − 20%), но без конвертации
     assert first_add.json()["data"]["items"][0]["unitPrice"] == {
-        "amount": "40.00",
-        "currency": "USD",
+        "amount": "80.00",
+        "currency": "BYN",
     }
     first_cart_id = first_add.json()["data"]["id"]
 

@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.catalog import BrandVolumeTier, Product
+from app.models.enums import UserRole
 from app.models.organization import (
     OrganizationBrandTerm,
     OrganizationPricingAgreement,
@@ -279,6 +280,11 @@ class PricingService:
         self, user, calc_mode: str, *, organization_id=None
     ) -> ResolvedRate:
         """Resolve organization terms first, then legacy user terms."""
+        # Правка §17 (2026-11): клиент видит цены только в BYN — display-конвертация
+        # не применяется, даже если организационный agreement задал USD/EUR/RUB.
+        # Выбор валюты у клиента отключён (SITEMAP §6 /profile).
+        if user.role == UserRole.CLIENT:
+            return ResolvedRate("BYN", None, 1, "BYN")
         selected_organization_id = organization_id
         agreement = None
         if selected_organization_id is not None:

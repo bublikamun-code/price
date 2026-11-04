@@ -3,7 +3,8 @@
 Покрытие:
   - список товаров: пагинация, поиск, фильтры по бренду/серии/складу
   - ценообразование: скидка % по бренду, override_price приоритет, без скидки
-  - мультивалютность: BYN (по умолчанию), USD (конвертация), фиксация курса
+  - мультивалютность (правка §17, 2026-11): клиент всегда видит BYN — display-валюта
+    и фиксация курса на него не влияют; конвертация осталась только у менеджера
   - price_calc_mode: fixed vs nbrb_current
   - /filters, /products/{sku}, /products/{sku}/price-history
   - RBAC: каталог требует авторизации
@@ -190,7 +191,9 @@ async def test_manager_sees_retail_no_discount(api_client, session_factory):
 # =========================================================
 # МУЛЬТИВАЛЮТНОСТЬ (§17)
 # =========================================================
-async def test_currency_conversion_usd(api_client, session_factory):
+async def test_client_with_display_usd_sees_byn(api_client, session_factory):
+    """Правка §17 (2026-11): клиент с display-валютой USD всё равно видит BYN —
+    display-конвертация к клиенту не применяется, даже если курс задан."""
     sf = session_factory
     brand_a, _, _, [p1, *_] = await _seed_basic_catalog(sf)  # base_price 100 BYN
     user = await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
@@ -200,27 +203,31 @@ async def test_currency_conversion_usd(api_client, session_factory):
 
     r = await api_client.get(f"/api/v1/catalog/products?q={p1.sku}")
     card = r.json()["data"][0]
-    assert card["currency"] == "USD"
-    assert card["rate_source"] == "NBRB"
-    # 100 BYN / 3.27 ≈ 30.58
-    assert abs(card["retail_price"] - 30.58) < 0.01
+    assert card["currency"] == "BYN"
+    assert card["rate_source"] == "BYN"
+    # Без конвертации: base == retail == client в BYN
+    assert card["base_price_byn"] == 100.0
+    assert card["retail_price"] == 100.0
+    assert card["client_price"] == 100.0
 
 
 async def test_fixed_rate_overrides_nbrb(api_client, session_factory):
-    """Если у клиента зафиксирован курс — используется он (calc_mode=fixed)."""
+    """Фиксация курса перекрывает курс НБ РБ (calc_mode=fixed) — поведение
+    менеджера; клиенту после правки §17 (2026-11) конвертация не применяется."""
     sf = session_factory
     brand_a, _, _, [p1, *_] = await _seed_basic_catalog(sf)
-    user = await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    user = await create_user(sf, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD)
     await set_rate(sf, currency="USD", rate=3.27, scale=1)  # текущий НБ РБ
     fixed = await set_rate(sf, currency="USD", rate=3.0, scale=1, source="MANUAL")
     await set_fixed_rate_for_user(sf, user=user, rate=fixed)
-    await _login(api_client, CLIENT_EMAIL)
+    await _login(api_client, MANAGER_EMAIL)
 
     # fixed (по умолчанию) → курс 3.0 → 100/3 = 33.33
     r = await api_client.get(
         f"/api/v1/catalog/products?q={p1.sku}&price_calc_mode=fixed"
     )
     card = r.json()["data"][0]
+    assert card["currency"] == "USD"
     assert card["rate_source"] == "FIXED"
     assert abs(card["retail_price"] - 33.33) < 0.01
 
@@ -233,8 +240,9 @@ async def test_fixed_rate_overrides_nbrb(api_client, session_factory):
     assert abs(card2["retail_price"] - 30.58) < 0.01
 
 
-async def test_no_rate_falls_back_to_byn(api_client, session_factory):
-    """Если для display-валюты нет курса — показываем в BYN."""
+async def test_client_with_display_eur_sees_byn(api_client, session_factory):
+    """Правка §17 (2026-11): клиент с display-валютой EUR видит BYN — прежний
+    graceful-degrade «нет курса → BYN» для клиента теперь безусловный."""
     sf = session_factory
     brand_a, _, _, [p1, *_] = await _seed_basic_catalog(sf)
     user = await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
@@ -243,8 +251,9 @@ async def test_no_rate_falls_back_to_byn(api_client, session_factory):
 
     r = await api_client.get(f"/api/v1/catalog/products?q={p1.sku}")
     card = r.json()["data"][0]
-    assert card["currency"] == "BYN"   # fallback
-    assert card["retail_price"] == 100.0
+    assert card["currency"] == "BYN"
+    assert card["rate_source"] == "BYN"
+    assert card["base_price_byn"] == card["retail_price"] == card["client_price"] == 100.0
 
 
 # =========================================================

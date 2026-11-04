@@ -196,7 +196,9 @@ async def test_get_user_detail_discounts(api_client, session_factory):
 
 
 # ------------------------------------------------------------------ patch
-async def test_patch_user_and_audit(api_client, session_factory):
+async def test_patch_user_ignores_display_currency_and_audits_rest(api_client, session_factory):
+    """Правка §17 (2026-11): display_currency больше не принимается в PATCH —
+    поле молча игнорируется (клиент остаётся в BYN), остальные поля применяются."""
     sf = session_factory
     manager, client = await _login_manager(api_client, sf)
 
@@ -208,14 +210,17 @@ async def test_patch_user_and_audit(api_client, session_factory):
     body = r.json()
     assert body["phone"] == "+375290000000"
     assert body["is_active"] is False
-    assert body["display_currency"] == "USD"
+    # Валюта клиента не изменилась: display_currency игнорируется, BYN по умолчанию
+    assert body["display_currency"] == "BYN"
 
     async with sf() as s:
         entries = (await s.execute(
             select(AuditLog).where(AuditLog.action == "user.update")
         )).scalars().all()
     assert len(entries) == 1
-    assert entries[0].after["display_currency"] == "USD"
+    # display_currency не попал в аудит — он не менялся
+    assert "display_currency" not in entries[0].after
+    assert entries[0].after["phone"] == "+375290000000"
     assert entries[0].after["is_active"] is False
     assert entries[0].actor_id == manager.id
 

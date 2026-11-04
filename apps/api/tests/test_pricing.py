@@ -1,14 +1,27 @@
 """Unit-тесты формулы ценообразования и конвертации валют.
 
 Покрывают бизнес-логику §8 (приоритет цены) и §17 (конвертация).
-Без БД — чистые функции.
+Большинство тестов — чистые функции без БД; resolve_rate требует БД
+(фикстуры conftest): правка §17 (2026-11) — клиент всегда видит BYN.
 """
+from datetime import date
 from decimal import Decimal
 
+from app.models.enums import UserRole
+from app.models.user import User
 from app.services.pricing import (
+    PricingService,
+    ResolvedRate,
     client_price_byn,
     convert_to_currency,
     has_discount,
+)
+from tests.conftest import (
+    create_organization,
+    create_user,
+    set_fixed_rate_for_user,
+    set_organization_pricing_agreement,
+    set_rate,
 )
 
 
@@ -88,3 +101,54 @@ def test_convert_zero_rate_safe():
     """rate=0 не должен ронять (возвращаем исходное)."""
     got = convert_to_currency(amount_byn=Decimal("100"), rate=Decimal("0"), scale=1)
     assert got == Decimal("100.00")
+
+
+# ---------------- resolve_rate: клиент всегда BYN (правка §17, 2026-11) ----------------
+async def test_resolve_rate_client_forces_byn_despite_org_agreement(session_factory):
+    """CLIENT + организационный agreement display_currency=USD + fixed_rate →
+    всё равно BYN без конвертации: display-конвертация к клиенту не применяется."""
+    sf = session_factory
+    user = await create_user(sf, email="client-rate@example.by", role=UserRole.CLIENT)
+    organization = await create_organization(sf, legal_name="Rate Org")
+    fixed = await set_rate(sf, currency="USD", rate=Decimal("2"), scale=1)
+    await set_organization_pricing_agreement(
+        sf,
+        organization=organization,
+        display_currency="USD",
+        fixed_rate_id=fixed.id,
+    )
+
+    async with sf() as db:
+        db_user = await db.get(User, user.id)
+        resolved = await PricingService(db).resolve_rate(
+            db_user, "fixed", organization_id=organization.id
+        )
+
+    assert resolved == ResolvedRate("BYN", None, 1, "BYN")
+
+
+async def test_resolve_rate_manager_converts_display_currency_as_before(session_factory):
+    """MANAGER + display_currency USD → конвертация как раньше: FIXED-курс при
+    calc_mode=fixed и свежий NBRB-курс при nbrb_current (по фикстурам set_rate)."""
+    sf = session_factory
+    manager = await create_user(sf, email="manager-rate@example.by", role=UserRole.MANAGER)
+    fixed = await set_rate(
+        sf, currency="USD", rate=Decimal("3.0"), scale=1, source="MANUAL",
+        fetched_at=date(2026, 1, 1),
+    )
+    # Свежий курс НБ РБ: get_latest_rate берёт последний по fetched_at
+    await set_rate(
+        sf, currency="USD", rate=Decimal("3.27"), scale=1,
+        fetched_at=date(2026, 1, 2),
+    )
+    # set_fixed_rate_for_user заодно выставляет display_currency = USD
+    await set_fixed_rate_for_user(sf, user=manager, rate=fixed)
+
+    async with sf() as db:
+        db_manager = await db.get(User, manager.id)
+        service = PricingService(db)
+        fixed_resolved = await service.resolve_rate(db_manager, "fixed")
+        nbrb_resolved = await service.resolve_rate(db_manager, "nbrb_current")
+
+    assert fixed_resolved == ResolvedRate("USD", Decimal("3.0"), 1, "FIXED")
+    assert nbrb_resolved == ResolvedRate("USD", Decimal("3.27"), 1, "NBRB")

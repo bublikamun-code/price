@@ -237,7 +237,7 @@ async def test_cart_line_total_rounds_half_up(api_client, session_factory):
 
 
 # =========================================================
-# Заявка: Decimal-курс + Decimal-сумма, JSON-контракт прежний
+# Заявка: Decimal-сумма в BYN (правка §17, 2026-11), JSON-контракт прежний
 # =========================================================
 async def test_order_total_is_exact_decimal_sum(api_client, session_factory):
     sf = session_factory
@@ -285,13 +285,15 @@ async def test_order_total_is_exact_decimal_sum(api_client, session_factory):
         ]
 
 
-async def test_order_in_currency_uses_decimal_rate(api_client, session_factory):
-    """Заявка в валюте: Decimal-цена × Decimal-курс без TypeError."""
+async def test_order_snapshot_forces_byn_and_keeps_decimal_rate(api_client, session_factory):
+    """Правка §17 (2026-11): заявка клиента всегда в BYN — легаси-фиксация
+    USD-курса игнорируется, конвертации нет; деньги по-прежнему Decimal."""
     sf = session_factory
     brand = await create_brand(sf, name="Alpha")
     await create_product(sf, sku="D-1", name="Widget", brand=brand, base_price="100.00")
     rate = await set_rate(sf, currency="USD", rate="3.1234", scale=1)
     user = await create_user(sf, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    # Легаси-условия: фиксированный USD-курс у клиента больше не влияет на заявку
     await set_fixed_rate_for_user(sf, user=user, rate=rate)
     await _login(api_client)
 
@@ -305,18 +307,18 @@ async def test_order_in_currency_uses_decimal_rate(api_client, session_factory):
     )
     assert r.status_code == 201, r.text
     order = r.json()
-    # 100 BYN / 3.1234 = 32.0164… → 32.02 за штуку; курс — с точностью колонки.
-    assert order["currency_code"] == "USD"
-    assert order["exchange_rate"] == 3.1234
-    assert order["items"][0]["unit_price"] == 32.02
-    assert order["total_amount"] == 96.06
+    # Без конвертации: 100.00 BYN за штуку, курс-заглушка 1, итог 300.00 BYN
+    assert order["currency_code"] == "BYN"
+    assert order["exchange_rate"] == 1
+    assert order["items"][0]["unit_price"] == 100.0
+    assert order["total_amount"] == 300.0
 
     async with sf() as s:
         stored = await s.get(Order, order["id"])
         assert isinstance(stored.exchange_rate, Decimal)
-        assert stored.exchange_rate == Decimal("3.1234")
+        assert stored.exchange_rate == Decimal("1")
         # Курс и сумма живут в одной модели и складываются без TypeError.
-        assert stored.total_amount + stored.exchange_rate == Decimal("99.1834")
+        assert stored.total_amount + stored.exchange_rate == Decimal("301.00")
 
 
 async def test_invoice_total_copied_as_decimal(api_client, session_factory):

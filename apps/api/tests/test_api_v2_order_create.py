@@ -105,6 +105,9 @@ async def test_create_order_by_product_id_uses_org_scope_and_delivery_snapshot(
         percent=20,
     )
     await set_discount(session_factory, user=user, brand=brand, percent=90)
+    # Легаси-условия (правка §17, 2026-11): USD-agreement организации и
+    # фиксированный курс пользователя для роли CLIENT больше не конвертируют —
+    # заявка создаётся в BYN. Оставлены, чтобы зафиксировать их игнорирование.
     org_rate = await set_rate(
         session_factory, currency="USD", rate=2, scale=1, source="ORG_FIXTURE"
     )
@@ -151,11 +154,14 @@ async def test_create_order_by_product_id_uses_org_scope_and_delivery_snapshot(
     assert order["status"] == "NEW"
     assert order["organizationId"] == str(organization.id)
     assert order["initiatedByUserId"] == str(user.id)
-    assert order["total"] == {"amount": "120.00", "currency": "USD"}
+    # Правка §17 (2026-11): клиенту конвертация не применяется — снапшот в BYN.
+    # Decimal-арифметика на месте: 100 BYN − организационная скидка 20% = 80.00,
+    # 80.00 × 3 = 240.00 (легаси-скидка 90% в org-скоупе не применяется).
+    assert order["total"] == {"amount": "240.00", "currency": "BYN"}
     assert order["exchangeRate"] == {
-        "value": "2.0000",
+        "value": "1.0000",
         "scale": 4,
-        "source": "FIXED",
+        "source": "BYN",
     }
     assert order["lines"] == [
         {
@@ -164,8 +170,8 @@ async def test_create_order_by_product_id_uses_org_scope_and_delivery_snapshot(
             "sku": "V2-CREATE-1",
             "name": "Createable product",
             "quantity": 3,
-            "unitPrice": {"amount": "40.00", "currency": "USD"},
-            "lineTotal": {"amount": "120.00", "currency": "USD"},
+            "unitPrice": {"amount": "80.00", "currency": "BYN"},
+            "lineTotal": {"amount": "240.00", "currency": "BYN"},
             "note": "Отдельной строкой",
         }
     ]

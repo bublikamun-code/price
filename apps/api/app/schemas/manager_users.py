@@ -9,7 +9,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.schemas import MetaPage
 from app.schemas.currency import RateOut
 
-MANAGER_DISPLAY_CURRENCIES = Literal["BYN", "USD", "EUR", "RUB"]
+# display_currency клиентов: выбор валюты отключён (правка §17, 2026-11) —
+# клиент всегда видит BYN; поле больше не принимается ни в одном эндпоинте.
 FIXABLE_CURRENCIES = Literal["USD", "EUR", "RUB"]
 
 
@@ -87,7 +88,6 @@ class UserPatchIn(BaseModel):
     company: str | None = None
     phone: str | None = None
     is_active: bool | None = None
-    display_currency: MANAGER_DISPLAY_CURRENCIES | None = None
 
 
 class TempPasswordOut(BaseModel):

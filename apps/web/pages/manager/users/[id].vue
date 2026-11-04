@@ -20,7 +20,8 @@ const userId = computed(() => String(route.params.id))
 
 const STATUS_META = ORDER_STATUS_META
 
-const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB'] as const
+// display_currency удалён (правка §17, 2026-11): клиент всегда видит BYN,
+// селектор валюты из формы профиля убран.
 const FIX_CURRENCIES = ['USD', 'EUR', 'RUB'] as const
 type FixCurrency = (typeof FIX_CURRENCIES)[number]
 
@@ -88,7 +89,6 @@ const profile = reactive({
   full_name: '',
   company: '',
   phone: '',
-  display_currency: 'BYN',
   is_active: true,
 })
 const profileSaving = ref(false)
@@ -100,7 +100,6 @@ function syncProfile() {
   profile.full_name = u.full_name
   profile.company = u.company ?? ''
   profile.phone = u.phone ?? ''
-  profile.display_currency = u.display_currency
   profile.is_active = u.is_active
 }
 
@@ -115,7 +114,6 @@ async function saveProfile() {
         full_name: profile.full_name.trim(),
         company: profile.company.trim() || null,
         phone: profile.phone.trim() || null,
-        display_currency: profile.display_currency,
         is_active: profile.is_active,
       },
     })
@@ -379,12 +377,6 @@ onMounted(() => {
           <div>
             <label class="label" for="p-phone">Телефон</label>
             <input id="p-phone" v-model="profile.phone" type="tel" class="input">
-          </div>
-          <div>
-            <label class="label" for="p-currency">Валюта отображения</label>
-            <select id="p-currency" v-model="profile.display_currency" class="input py-2.5">
-              <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
-            </select>
           </div>
         </div>
 

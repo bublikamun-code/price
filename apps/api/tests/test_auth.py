@@ -3,7 +3,8 @@
 Покрытие:
   - login: успех, неверный пароль, неактивный пользователь, case-insensitive email
   - /me: с токеном, без токена (401), с кривым токеном (401)
-  - PATCH /me: display_currency (нормализация/422), дайджест цен (§20.4), дедупликация источников, пустое тело (422), без токена (401)
+  - PATCH /me: display_currency (нормализация/422; клиенту — только BYN, правка §17 2026-11),
+    дайджест цен (§20.4), дедупликация источников, пустое тело (422), без токена (401)
   - refresh: rotation, grace-окно (аудит P0-1: старый токен в пределах окна → 200, после → 401)
   - change-password: смена временного пароля, снятие must_change_password, инвалидация других сессий
   - CSRF double-submit: в т.ч. для cookie-аутентификации auth_token (аудит 2026-09-06)
@@ -194,6 +195,24 @@ async def test_patch_me_display_currency_invalid(api_client, session_factory):
         assert r.status_code == 422, f"{bad!r}: {r.status_code} {r.text}"
 
 
+async def test_patch_me_client_display_currency_not_byn_rejected(api_client, session_factory):
+    """Правка §17 (2026-11): клиенту выбор валюты отключён — USD отклоняется с 422."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "USD"})
+    assert r.status_code == 422, r.text
+    assert "только в BYN" in r.json()["detail"]
+
+
+async def test_patch_me_client_display_currency_byn_allowed(api_client, session_factory):
+    """Правка §17 (2026-11): BYN — единственная валюта отображения клиента, она разрешена."""
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    await _login(api_client, CLIENT_EMAIL, PASSWORD)
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "BYN"})
+    assert r.status_code == 200, r.text
+    assert r.json()["display_currency"] == "BYN"
+
+
 async def test_patch_me_invalid_source(api_client, session_factory):
     """Источники дайджеста — только 'cart' | 'favorite' | 'orders'."""
     await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
@@ -236,7 +255,8 @@ async def test_csrf_cookie_request_success_and_safe_get(api_client, session_fact
     await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
     await _login(api_client, CLIENT_EMAIL, PASSWORD)
     assert (await api_client.get("/api/v1/auth/me")).status_code == 200
-    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "USD"})
+    # BYN — единственная валюта, разрешённая клиенту (правка §17, 2026-11)
+    r = await api_client.patch("/api/v1/auth/me", json={"display_currency": "BYN"})
     assert r.status_code == 200, r.text
 
 
@@ -251,13 +271,14 @@ async def test_csrf_missing_and_wrong_token_forbidden(api_client, session_factor
     # Обходим автоподстановку CSRF из тестовой фикстуры.
     api_client.request = raw_request
     api_client.cookies.delete("csrf_token")
-    missing = await api_client.patch("/api/v1/auth/me", json={"display_currency": "USD"})
+    # BYN — единственная валюта, разрешённая клиенту (правка §17, 2026-11)
+    missing = await api_client.patch("/api/v1/auth/me", json={"display_currency": "BYN"})
     assert missing.status_code == 403
 
     api_client.cookies.set("csrf_token", "cookie-token")
     wrong = await api_client.patch(
         "/api/v1/auth/me",
-        json={"display_currency": "USD"},
+        json={"display_currency": "BYN"},
         headers={"X-CSRF-Token": "wrong-token"},
     )
     assert wrong.status_code == 403
@@ -268,9 +289,10 @@ async def test_bearer_only_mutation_does_not_require_csrf(api_client, session_fa
     login = await _login(api_client, CLIENT_EMAIL, PASSWORD)
     access = login.json()["access_token"]
     api_client.cookies.clear()
+    # BYN — единственная валюта, разрешённая клиенту (правка §17, 2026-11)
     r = await api_client.patch(
         "/api/v1/auth/me",
-        json={"display_currency": "USD"},
+        json={"display_currency": "BYN"},
         headers={"Authorization": f"Bearer {access}"},
     )
     assert r.status_code == 200, r.text
@@ -333,14 +355,14 @@ async def test_csrf_required_for_auth_token_cookie(api_client, session_factory):
     api_client.cookies.set("auth_token", access)
 
     # без csrf-куки и заголовка → 403 (раньше мутация проходила без CSRF)
-    missing = await api_client.patch("/api/v1/auth/me", json={"display_currency": "USD"})
+    missing = await api_client.patch("/api/v1/auth/me", json={"display_currency": "BYN"})
     assert missing.status_code == 403
 
     # согласованная пара cookie+header → 200
     api_client.cookies.set("csrf_token", "test-csrf")
     ok = await api_client.patch(
         "/api/v1/auth/me",
-        json={"display_currency": "USD"},
+        json={"display_currency": "BYN"},
         headers={"X-CSRF-Token": "test-csrf"},
     )
     assert ok.status_code == 200, ok.text

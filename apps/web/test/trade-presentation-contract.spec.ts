@@ -256,7 +256,10 @@ describe('Client cabinet contract', () => {
     for (const path of ['components/layout/ClientHeader.vue', 'components/layout/MobileClientHeader.vue']) {
       expect(read(path)).toContain('price:open-search')
     }
-    expect(read('components/layout/ClientHeader.vue')).toContain('/profile#profile-currency')
+    // Правка §17 (2026-11): селектор/индикатор валюты убран — клиент всегда видит BYN
+    expect(read('components/layout/ClientHeader.vue')).not.toContain('displayCurrency')
+    expect(read('components/layout/ClientHeader.vue')).not.toContain('/profile#profile-currency')
+    expect(read('pages/profile/index.vue')).not.toContain('display_currency')
   })
 
   it('renders favorites as records and files as table plus mobile records', () => {
