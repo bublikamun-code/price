@@ -12597,7 +12597,7 @@
     },
     "/api/v2/quotes/{quoteId}/pdf/download": {
       "get": {
-        "description": "PDF КП байтами (никогда presigned, §16 п.37): org-scope, DRAFT → 404;\n``pdf_status != READY`` → 409; хранилище недоступно → 502.",
+        "description": "PDF КП байтами (никогда presigned, §16 п.37): org-scope, DRAFT → 404;\nменеджер/админ — любое КП (кнопка «PDF» в /manager/quotes);\n``pdf_status != READY`` → 409; хранилище недоступно → 502.",
         "operationId": "download_quote_pdf_api_v2_quotes__quoteId__pdf_download_get",
         "parameters": [
           {
