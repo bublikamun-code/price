@@ -29,6 +29,7 @@ from app.models.organization import (
     OrganizationPricingAgreement,
 )
 from app.models.pricing import ExchangeRate, UserBrand
+from app.models.quote import Quote, QuoteItem
 from app.models.system import AuditLog, EmailOutbox, Notification, NotificationReadState
 from app.models.user import (
     ConsentLog,
@@ -72,6 +73,9 @@ __all__ = [
     "OrderIdempotency",
     # invoice (§16 п.40)
     "Invoice",
+    # quote (этап 8 роадмапа)
+    "Quote",
+    "QuoteItem",
     # file
     "FileAsset",
     "MediaAsset",

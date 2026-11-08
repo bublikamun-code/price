@@ -253,6 +253,24 @@ async def list_active_owner_ids(
     return [row[0] for row in result.all()]
 
 
+async def list_active_member_user_ids(
+    db: AsyncSession, *, organization_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Активные участники организации (любая роль) — адресаты NEW_QUOTE
+    при отправке КП (этап 8 роадмапа)."""
+    result = await db.execute(
+        select(OrganizationMembership.user_id)
+        .join(Organization, Organization.id == OrganizationMembership.organization_id)
+        .where(
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.is_active.is_(True),
+            Organization.is_active.is_(True),
+        )
+        .order_by(OrganizationMembership.created_at)
+    )
+    return [row[0] for row in result.all()]
+
+
 async def add_membership(
     db: AsyncSession,
     *,

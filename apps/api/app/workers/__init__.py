@@ -37,6 +37,7 @@ celery_app = Celery(
         "app.tasks.export_invoice_pdf",
         "app.tasks.export_products_full",
         "app.tasks.photo_zip",
+        "app.tasks.expire_quotes",
     ],
 )
 
@@ -92,6 +93,13 @@ celery_app.conf.beat_schedule = {
     "requeue-stuck-emails": {
         "task": "app.tasks.email.requeue_stuck_emails",
         "schedule": 300.0,  # каждые 5 минут
+    },
+    # Истечение срока действия КП (этап 8): SENT + valid_until < now() →
+    # EXPIRED. Дублирует ленивую маркировку при чтении/accept — beat закрывает
+    # КП, которые никто не открывал, и гарантирует честный статус в списках.
+    "expire-quotes": {
+        "task": "app.tasks.expire_quotes.expire_quotes",
+        "schedule": crontab(minute=5),  # ежечасно на 5-й минуте, Europe/Minsk
     },
 }
 

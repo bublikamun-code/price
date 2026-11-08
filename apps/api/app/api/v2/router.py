@@ -12,6 +12,7 @@ from app.api.v2 import (
     media,
     orders,
     organizations,
+    quotes,
     session,
     volume_tiers,
 )
@@ -34,5 +35,10 @@ api_router.include_router(cart.router)
 api_router.include_router(invoices.router)
 api_router.include_router(invoices.manager_router)
 api_router.include_router(orders.router)
+# КП (этап 8): клиентский /quotes и менеджерский /manager/quotes — префиксы не
+# пересекаются с /orders (там /{orderId} — UUID-путь), порядок включения
+# значения не имеет, но держим КП рядом с заказами (accept создаёт заказ).
+api_router.include_router(quotes.router)
+api_router.include_router(quotes.manager_router)
 api_router.include_router(media.router)
 api_router.include_router(volume_tiers.router)

@@ -86,6 +86,32 @@ class InvoicePdfStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
+class QuoteStatus(str, enum.Enum):
+    """Жизненный цикл коммерческого предложения (этап 8 роадмапа).
+
+    DRAFT →(менеджер send)→ SENT →(клиент accept)→ ACCEPTED |
+    (клиент reject)→ REJECTED | (beat/лениво, valid_until < now)→ EXPIRED.
+    TERMINAL-статусы (ACCEPTED/REJECTED/EXPIRED) переходов не имеют;
+    правки (edit/delete/PDF) доступны только в DRAFT.
+    """
+    DRAFT = "DRAFT"
+    SENT = "SENT"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+
+
+class QuotePdfStatus(str, enum.Enum):
+    """Состояние рендера PDF КП — та же колонка-вместо-Redis, что у счёта.
+
+    Отличие от счёта: PDF КП рендерится СИНХРОННО по запросу менеджера
+    (без Celery), поэтому PENDING — только стартовое состояние колонки.
+    """
+    PENDING = "PENDING"
+    READY = "READY"
+    FAILED = "FAILED"
+
+
 class ImportMode(str, enum.Enum):
     """Режимы импорта CSV (§7.2)."""
     UPSERT = "UPSERT"
@@ -110,6 +136,9 @@ class FileAssetType(str, enum.Enum):
     DATASHEET = "DATASHEET"
     # PDF счёта на оплату (§16 п.40): постоянный документ, visibility=AUTHED.
     INVOICE_PDF = "INVOICE_PDF"
+    # PDF коммерческого предложения (этап 8): рендерится синхронно по запросу
+    # менеджера, visibility=AUTHED — скачивание байтами после проверки доступа.
+    QUOTE_PDF = "QUOTE_PDF"
 
 
 class FileVisibility(str, enum.Enum):

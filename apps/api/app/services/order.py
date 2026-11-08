@@ -42,6 +42,7 @@ from app.schemas.order import OrderCreate, OrderItemCreate
 from app.schemas.v2.cart import CartSummary
 from app.schemas.v2.common import MAX_DATABASE_INTEGER
 from app.schemas.v2.orders import OrderCreate as OrderCreateV2
+from app.schemas.v2.orders import OrderDeliveryCreate
 from app.services.cart import CartService
 from app.services.cart_v2 import CartQuantityOverflowError, CartV2Service
 from app.services.email import ORDER_STATUS_RU, format_order_no
@@ -99,6 +100,19 @@ class ProductNotFoundError(OrderError):
 class ProductUnavailableError(OrderError):
     code = "PRODUCT_UNAVAILABLE"
     status_code = 400
+    title = "Товар недоступен"
+
+
+class QuoteProductUnavailableError(OrderError):
+    """Товар из принятого КП стал недоступен к моменту accept (этап 8).
+
+    Отличается от ``ProductUnavailableError`` статусом: КП уже отправлено
+    клиенту и заморожено — конфликт состояния документа (409), а не
+    ошибка валидации черновика (400). Машинный код общий.
+    """
+
+    code = "PRODUCT_UNAVAILABLE"
+    status_code = 409
     title = "Товар недоступен"
 
 
@@ -466,6 +480,130 @@ class OrderService:
         await self._create_new_order_notification(user, order, items_count=len(new_items))
         # Согласование (§16 п.42): PENDING-заявка уходит активным OWNER'ам
         # организации в той же транзакции (атомарно факту создания).
+        if order.approval_status is ApprovalStatus.PENDING:
+            await self._create_approval_request_notifications(user, order)
+        return order
+
+    # --------------------------------------- create from quote (этап 8 роадмапа)
+    async def create_from_quote(
+        self,
+        user,
+        quote,
+        *,
+        delivery: OrderDeliveryCreate,
+        context,
+    ) -> Order:
+        """Создать заявку из принятого КП (этап 8 роадмапа).
+
+        Отличия от ``create_v2``:
+          * ЦЕНЫ — только из ``quote_items.unit_price`` (заморожены менеджером
+            в КП): никакой прайс-логики, объёмных скидок и пересчёта курса;
+          * товар локается тем же ``get_by_ids_for_update`` — stock-проверки
+            сохраняются (остаток мог уйти, пока КП висело в SENT);
+          * корзина НЕ очищается: accept КП не связан с корзиной;
+          * ``note`` позиции — комментарий из КП;
+          * согласование — тот же гейт ``_approval_for`` (§16 п.42): заявка
+            из КП ничем не привилегированнее обычной.
+
+        Не коммитит транзакцию (коммитит роутер). Запросы визы OWNER'ам при
+        PENDING создаются здесь же — публикует их роутер через
+        ``publish_approval_requests()`` (как у create_v2).
+        """
+        organization_id = quote.organization_id
+
+        # 1) Товары одним IN-запросом с FOR UPDATE: между SEND и accept
+        #    остаток мог уйти — конкурентный accept ждёт коммита первого
+        #    (ORDER BY id в репозитории — без deadlock).
+        product_ids = [item.product_id for item in quote.items]
+        products = await catalog_repo.get_by_ids_for_update(self.db, product_ids)
+        new_items: list[OrderItem] = []
+        total = Decimal(0)
+        for item in quote.items:
+            product = products.get(item.product_id)
+            if product is None:
+                raise ProductNotFoundError(f"Товар {item.sku} не найден")
+            if product.stock_status == StockStatus.ARCHIVED:
+                raise QuoteProductUnavailableError(
+                    f"Товар {product.sku} архивный — недоступен для заказа по КП"
+                )
+            quantity = int(item.qty)
+            if product.stock_qty is not None and quantity > product.stock_qty:
+                raise StockExceededError(product.sku, product.stock_qty)
+            # ЦЕНА ИЗ КП (§этап 8): unit_price заморожен в quote_items,
+            # quantize только нормализует scale под Numeric(12, 2).
+            unit_price = quantize_money(item.unit_price)
+            total += unit_price * quantity
+            snapshot = {
+                "sku": item.sku,
+                "name": item.name,
+                "brand_id": str(product.brand_id) if product.brand_id else None,
+                "price_list_version_id": (
+                    str(product.price_list_version_id)
+                    if product.price_list_version_id
+                    else None
+                ),
+            }
+            new_items.append(
+                OrderItem(
+                    product_id=product.id,
+                    product_snapshot=snapshot,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    # КП всегда в BYN — курс пересчитывать нечем (1:1).
+                    currency_code=quote.currency_code,
+                    # Комментарий позиции КП переезжает в заявку (этап 8).
+                    note=item.comment,
+                )
+            )
+
+        # 2) INSERT order (flush — получаем id), затем items. Курса нет:
+        #    exchange_rate 1, rate_source FIXED — цены уже в BYN из КП.
+        delivery_address_id = delivery.address_id
+        delivery_address_text = None
+        if delivery.method == "DELIVERY" and delivery_address_id is not None:
+            address = await organizations_repo.get_address(
+                self.db,
+                organization_id=organization_id,
+                address_id=delivery_address_id,
+            )
+            if address is None:
+                raise OrderAddressNotFoundError(
+                    "Адрес доставки не найден в текущей организации"
+                )
+            delivery_address_text = ", ".join(
+                part
+                for part in (address.address_line, address.city, address.postal_code)
+                if part
+            )
+        order = Order(
+            client_id=user.id,
+            organization_id=organization_id,
+            status=OrderStatus.NEW,
+            approval_status=await self._approval_for(context, organization_id, total),
+            currency_code=quote.currency_code,
+            exchange_rate=Decimal(1),
+            rate_source="FIXED",
+            total_amount=quantize_money(total),
+            delivery_method=delivery.method.lower(),
+            delivery_point=None,
+            delivery_address=delivery_address_text,
+            delivery_address_id=delivery_address_id,
+            delivery_contact_name=delivery.contact_name,
+            delivery_phone=delivery.phone,
+            delivery_preferred_date=delivery.preferred_date,
+            delivery_comment=delivery.comment,
+            seq=await orders_repo.next_order_seq(self.db),
+        )
+        order = await orders_repo.create_order(self.db, order=order)
+        for item in new_items:
+            item.order_id = order.id
+        await orders_repo.add_order_items(self.db, items=new_items)
+
+        # 3) Корзину НЕ трогаем (этап 8): accept КП не связан с корзиной —
+        #    клиент принимает условия менеджера, а не своё содержимое корзины.
+
+        # 4) Согласование (§16 п.42): PENDING-заявка уходит активным OWNER'ам
+        #    организации в той же транзакции (атомарно факту создания).
         if order.approval_status is ApprovalStatus.PENDING:
             await self._create_approval_request_notifications(user, order)
         return order

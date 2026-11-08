@@ -49,6 +49,30 @@ def build_invoice_issued_text(invoice_number: str, amount, currency_code: str) -
     )
 
 
+def build_quote_sent_text(quote_number: str, amount, currency_code: str) -> str:
+    """Текст участникам организации о новом КП (этап 8, NEW_QUOTE)."""
+    return render_notification(
+        "quote_sent.j2",
+        quote_number=quote_number,
+        amount=f"{quantize_money(amount):.2f}",
+        currency=currency_code,
+    )
+
+
+def build_quote_accepted_text(quote_number: str, order_number: str) -> str:
+    """Текст менеджеру-создателю о принятом КП (этап 8, QUOTE_ACCEPTED)."""
+    return render_notification(
+        "quote_accepted.j2",
+        quote_number=quote_number,
+        order_number=order_number,
+    )
+
+
+def build_quote_rejected_text(quote_number: str) -> str:
+    """Текст менеджеру-создателю об отклонённом КП (этап 8, QUOTE_REJECTED)."""
+    return render_notification("quote_rejected.j2", quote_number=quote_number)
+
+
 def build_import_done_text(filename: str, rows_ok: int, rows_error: int, rows_total: int) -> str:
     """Сводка менеджерам об успешном импорте (§20.3 IMPORT_DONE)."""
     return render_notification(
