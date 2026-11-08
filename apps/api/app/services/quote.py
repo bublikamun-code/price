@@ -322,6 +322,14 @@ class QuoteService:
         for notif in self.quote_notifications:
             publish_notification(notification_payload(notif), user_id=notif.user_id)
 
+    def publish_status_notification(self) -> None:
+        """SSE-событие accept/reject менеджеру-создателю (fail-open) — после
+        коммита роутера. Нет уведомления — no-op."""
+        notif = self.status_notification
+        if notif is None:
+            return
+        publish_notification(notification_payload(notif), user_id=notif.user_id)
+
     # --------------------------------------------------------- idempotency
     # Отдельной таблицы для accept не заводим: OrderIdempotency привязана к
     # заказу (order_id CASCADE), accept создаёт ровно один заказ на КП —
