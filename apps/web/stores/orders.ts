@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { AppProblem, toAppProblem } from '../domain/api/v2/problem'
 import type { OrderCreate } from '../domain/api/v2/order.schema'
 import type { OrderCreateResult, OrderRepository } from '../domain/order/order.repository'
+import { newIdempotencyKey } from '../utils/idempotency-key'
 
 export interface OrderOwner {
   userId: string
@@ -44,7 +45,10 @@ function stableFingerprint(value: unknown): string {
 }
 
 function createIdempotencyKey(): string {
-  return globalThis.crypto.randomUUID()
+  // crypto.randomUUID есть только в secure-контекстах (HTTPS/localhost);
+  // на HTTP-стенде без фолбэка сабмит заявки падал до сетевого вызова
+  // («Не удалось оформить заявку», аудит 08.11.2026).
+  return newIdempotencyKey()
 }
 
 export const useOrdersStore = defineStore('orders-v2', () => {
