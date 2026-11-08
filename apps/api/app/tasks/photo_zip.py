@@ -37,7 +37,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.catalog import Series
 from app.repositories.catalog import PHOTO_KEY_PREFIX, _slugify
-from app.services import storage
+from app.services import media, storage
 from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
 from app.tasks._common import create_worker_db, mark_redis_job_failed
 from app.workers import celery_app
@@ -139,6 +139,9 @@ async def _run_photo_zip(job_id: uuid.UUID, user_id: str, s3_key: str) -> dict:
                     settings.s3_bucket_photos, key_thumb, io.BytesIO(thumb),
                     content_type="image/webp",
                 )
+                # Реестр v2-медиа: без записи ключ не резолвится в
+                # /api/v2/media/{id} (аудит 08.11.2026).
+                await media.register_key(db, key_large)
                 files += 1
 
                 # Приоритет (§16 п.17): slug по имени серии, затем «сырое»

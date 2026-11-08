@@ -32,7 +32,7 @@ from app.schemas.manager_catalog import (
     ProductPhotoOut,
     SeriesPhotoOut,
 )
-from app.services import storage
+from app.services import media, storage
 from app.services.cache import CATALOG_TAG, FILTERS_TAG, invalidate_tags
 
 log = get_logger("app.services.manager_catalog")
@@ -310,6 +310,10 @@ class ManagerCatalogService:
                 content_type="image/webp",
             )
 
+            # Реестр v2-медиа: без записи ключ не будет резолвиться
+            # в /api/v2/media/{id} (аудит 08.11.2026).
+            await media.register_key(self.db, key_large)
+
             series.photo_key = key_large
             await audit_repo.create_audit(
                 self.db,
@@ -386,6 +390,10 @@ class ManagerCatalogService:
                 io.BytesIO(thumb),
                 content_type="image/webp",
             )
+
+            # Реестр v2-медиа: без записи ключ не будет резолвиться
+            # в /api/v2/media/{id} (аудит 08.11.2026).
+            await media.register_key(self.db, key_large)
 
             await catalog_repo.add_product_photo(
                 self.db, product_id=product.id, photo_key=key_large
