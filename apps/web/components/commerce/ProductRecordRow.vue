@@ -66,7 +66,7 @@ const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTi
     <ProductPhoto
       :media="product.thumbnail"
       :alt="product.name"
-      class="size-20 shrink-0 border border-border"
+      class="pointer-events-none size-20 shrink-0 border border-border"
       :data-testid="testIdPrefix ? `${testIdPrefix}-media` : undefined"
     />
     <div class="min-w-0 flex-1">
@@ -88,7 +88,7 @@ const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTi
       </div>
       <!-- Растянутая ссылка: вся карточка строки тапабельна (норма 44px),
            интерактивные элементы подняты z-10. -->
-      <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="mt-1 block line-clamp-2 text-sm font-semibold leading-5 text-ink after:absolute after:inset-0 after:content-[''] hover:text-action">{{ product.name }}</NuxtLink>
+      <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="mt-1 block line-clamp-2 text-sm font-semibold leading-5 text-ink after:absolute after:inset-0 after:z-[1] after:content-[''] hover:text-action">{{ product.name }}</NuxtLink>
       <p class="numeric mt-1 truncate text-xs text-ink-muted">{{ product.sku }}<span v-if="product.series"> · {{ product.series.name }}</span></p>
       <div class="mt-3 flex items-end justify-between gap-3">
         <div class="min-w-0">
