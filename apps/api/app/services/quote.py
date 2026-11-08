@@ -424,6 +424,11 @@ class QuoteService:
         quote.total_amount = _quote_total(list(quote.items))
         quote.version += 1
         await self.db.flush()
+        # ``updated_at`` обновляет ``onupdate=func.now()`` на стороне БД: после
+        # flush значение есть только в сервере, и синхронный доступ в проекции
+        # упал бы в MissingGreenlet. Образец — update_organization_billing
+        # в services/invoice.py.
+        await self.db.refresh(quote)
         await audit_repo.create_audit(
             self.db,
             actor_id=manager.id,
@@ -533,6 +538,11 @@ class QuoteService:
                     },
                 )
             )
+        # ``updated_at`` обновляет ``onupdate=func.now()`` на стороне БД: после
+        # flush значение есть только в сервере — синхронный доступ в проекции
+        # (quote_out в роутере) упал бы в MissingGreenlet. Образец —
+        # update_organization_billing в services/invoice.py.
+        await self.db.refresh(quote)
         return quote
 
     # -------------------------------------------------------------- accept
@@ -632,6 +642,11 @@ class QuoteService:
                     "quote_number": quote.number,
                 },
             )
+        # ``updated_at`` обновляет ``onupdate=func.now()`` на стороне БД: после
+        # flush значение есть только в сервере — синхронный доступ в проекции
+        # (quote_out в роутере) упал бы в MissingGreenlet. Образец —
+        # update_organization_billing в services/invoice.py.
+        await self.db.refresh(quote)
         return quote
 
     # ---------------------------------------------------------------- read

@@ -729,10 +729,14 @@ async def download_quote_pdf(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """PDF КП байтами (никогда presigned, §16 п.37): org-scope, DRAFT → 404;
+    менеджер/админ — любое КП (кнопка «PDF» в /manager/quotes);
     ``pdf_status != READY`` → 409; хранилище недоступно → 502."""
     service = QuoteService(db)
     try:
-        quote = await service.get_for_client(user, quote_id)
+        if user.role in (UserRole.MANAGER, UserRole.ADMIN):
+            quote = await service.get_for_manager(quote_id)
+        else:
+            quote = await service.get_for_client(user, quote_id)
     except QuoteError as exc:
         raise _as_v2_problem(exc) from exc
 
