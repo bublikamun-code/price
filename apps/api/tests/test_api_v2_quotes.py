@@ -115,17 +115,17 @@ async def _seed_client_with_org(
 def _quote_payload(
     organization_id, products_prices: list[tuple], *, valid_until: str | None = DEFAULT_VALID_UNTIL
 ) -> dict:
-    """products_prices: [(product, "77.50", "Комментарий"), ...]."""
+    """products_prices: [(product_id, qty, "77.50", "Комментарий"), ...]."""
     body: dict = {
         "organizationId": str(organization_id),
         "items": [
             {
-                "productId": str(product.id),
+                "productId": str(product_id),
                 "quantity": qty,
                 "unitPrice": {"amount": price, "currency": "BYN"},
                 "comment": comment,
             }
-            for product, qty, price, comment in products_prices
+            for product_id, qty, price, comment in products_prices
         ],
     }
     if valid_until is not None:
