@@ -9,6 +9,7 @@ const navSections = [
       { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
       { to: '/cart', label: 'Текущая заявка', icon: 'heroicons:clipboard-document-list' },
       { to: '/orders', label: 'История заявок', icon: 'heroicons:clock' },
+      { to: '/quotes', label: 'КП', icon: 'heroicons:document-check' },
     ],
   },
   {

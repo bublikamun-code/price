@@ -4,6 +4,7 @@ const cart = useCartV2()
 const items = computed(() => [
   { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
   { to: '/cart', label: 'Заявка', icon: 'heroicons:clipboard-document-list', count: cart.store.cart?.totalItems ?? 0 },
+  { to: '/quotes', label: 'КП', icon: 'heroicons:document-check' },
   { to: '/dashboard', label: 'Кабинет', icon: 'heroicons:building-office-2' },
   { to: '/profile', label: 'Профиль', icon: 'heroicons:user-circle' },
 ])
@@ -23,7 +24,7 @@ useNavLayer(root)
     :style="{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }"
     aria-label="Основная навигация"
   >
-    <div class="mx-auto grid h-[var(--h-mobile-nav)] max-w-lg grid-cols-4">
+    <div class="mx-auto grid h-[var(--h-mobile-nav)] max-w-lg grid-cols-5">
       <NuxtLink
         v-for="item in items"
         :key="item.to"
