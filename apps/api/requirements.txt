@@ -28,6 +28,10 @@ qrcode==8.2                      # QR для otpauth-uri 2FA; PNG-бэкенд �
 
 # --- Background tasks ---
 celery[redis]==5.4.0
+kombu==5.6.2
+# ^ пин обязателен: незапинненный kombu уплыл в 5.7.0, который требует
+# redis-py>=6.1.0 («Redis transport requires...»), а redis запиннен на 5.0.8 —
+# транспорт отказывался работать, любой .delay() давал 500 (аудит 08.11.2026).
 redis==5.0.8
 
 # --- Object storage / медиа ---
