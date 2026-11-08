@@ -41,6 +41,8 @@ const ATTRIBUTE_LABELS: Record<string, string> = {
   temperature_range: 'Рабочая температура, °C',
   climate: 'Климатическое исполнение',
   electric_protection: 'Степень защиты от поражения эл. током',
+  din_rail: 'Крепление',
+  transparent_window: 'Прозрачное окно',
   // Комплектация / монтаж
   modules: 'Модули',
   din_modules: 'Количество модулей DIN',
