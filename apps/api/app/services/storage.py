@@ -91,19 +91,22 @@ def get_s3_presign_client() -> BaseClient:
     """Клиент для генерации presigned-URL.
 
     Host входит в SigV4-подпись (SignedHeaders), поэтому подписываем ТЕМ
-    host, который MinIO реально видит в запросе. На проде nginx-виртуалхост
-    статики (managed хостера, ``proxy_set_header Host`` недоступен) форвардит
-    upstream'у Host ``127.0.0.1:19000`` (proxy_host), а не внешний. Поэтому
-    подпись считается на внутренний endpoint (``s3_endpoint``), а в готовой
-    строке URL хост строково заменяется на внешний (``s3_external_endpoint``)
-    — браузер идёт на внешний адрес, nginx проксирует на MinIO с Host,
-    под которым считалась подпись. Замена хоста после генерации подпись НЕ
-    ломает: SigV4 фиксирует host на момент подписания.
+    host, который реально получит rustfs: ``s3_external_endpoint`` (если
+    задан), иначе ``s3_endpoint``. И docker-proxy (домашний стенд), и nginx
+    с ``proxy_set_header Host $host`` доставляют upstream'у внешний Host —
+    подпись сходится. Серверные операции идут отдельным клиентом на
+    ``s3_endpoint`` (внутренняя сеть) и тут не участвуют.
+
+    Ранее здесь была схема «подпись на внутреннем endpoint + строковая
+    замена host в готовом URL» — под nginx managed-хостера (vh163),
+    форвардивший proxy_host; вне такого прокси она даёт 403
+    SignatureDoesNotMatch (аудит 08.11.2026).
     ``generate_presigned_url`` не делает сетевых запросов.
     """
+    endpoint = settings.s3_external_endpoint or settings.s3_endpoint
     return boto3.client(
         "s3",
-        endpoint_url=settings.s3_endpoint,
+        endpoint_url=endpoint,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
         region_name=settings.s3_region,
@@ -200,10 +203,8 @@ def list_objects(bucket: str) -> list[ListedObject]:
 def presigned_get(bucket: str, key: str, *, expires: int | None = None) -> str:
     """Presigned URL на чтение объекта (TTL из настроек, по умолчанию 5 мин).
 
-    Используется браузером: подпись считается на внутренний endpoint (см.
-    ``get_s3_presign_client`` — nginx форвардит upstream'у внутренний Host),
-    затем в строке URL хост заменяется на внешний (``s3_external_endpoint``),
-    чтобы ссылка была валидна снаружи контейнера.
+    Используется браузером: подпись считается на внешнем endpoint (см.
+    ``get_s3_presign_client``), готовая строка идёт наружу без замен.
     """
     client = get_s3_presign_client()
     ttl = expires if expires is not None else settings.s3_presign_ttl_seconds
@@ -214,8 +215,6 @@ def presigned_get(bucket: str, key: str, *, expires: int | None = None) -> str:
     except (BotoCoreError, ClientError) as exc:
         log.warning("s3.presign_failed", bucket=bucket, key=key, error=str(exc))
         raise StorageError(f"Не удалось создать ссылку на {bucket}/{key}") from exc
-    if settings.s3_external_endpoint:
-        url = url.replace(settings.s3_endpoint, settings.s3_external_endpoint, 1)
     return url
 
 
