@@ -15,8 +15,10 @@ import app.api.v1.manager.brands as brands_api
 from app.core.config import settings
 from app.models.catalog import Brand, Product, Series
 from app.models.enums import UserRole
+from app.models.file import MediaAsset
 from app.models.system import AuditLog
 from app.services import storage
+from app.services.media import media_id_for_key
 from tests.conftest import create_brand, create_product, create_series, create_user
 
 PASSWORD = "Passw0rd!"
@@ -229,6 +231,15 @@ async def test_series_photo_upload(api_client, session_factory, monkeypatch):
 
     async with sf() as s:
         assert (await s.get(Series, serie.id)).photo_key == "photos-series/serie-x.webp"
+
+    # ключ попал в реестр v2-медиа (иначе /api/v2/media/{id} отдаёт 404 —
+    # аудит 08.11.2026: реестр не заполнялся нигде)
+    async with sf() as s:
+        asset = await s.get(
+            MediaAsset, media_id_for_key("photos-series/serie-x.webp")
+        )
+    assert asset is not None
+    assert asset.s3_key == "photos-series/serie-x.webp"
 
     # аудит мутации
     async with sf() as s:
