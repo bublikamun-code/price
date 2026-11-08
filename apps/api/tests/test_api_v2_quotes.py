@@ -23,7 +23,8 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import select
+import pytest_asyncio
+from sqlalchemy import select, text
 
 from app.models.enums import (
     ApprovalMode,
@@ -53,6 +54,14 @@ OUTSIDER_EMAIL = "v2-quote-outsider@example.by"
 
 # Срок действия по умолчанию — «далеко» в будущем от любой точки 2026 года.
 DEFAULT_VALID_UNTIL = "2027-12-31T23:59:59+00:00"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_quote_seq(engine):
+    """TRUNCATE RESTART IDENTITY не трогает standalone-sequences, а тесты
+    ассертят абсолютный номер «КП-2026-000001» — сбрасываем счётчик КП."""
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT setval('quotes_seq_seq', 1, false)"))
 
 
 # --------------------------------------------------------------------- моки
