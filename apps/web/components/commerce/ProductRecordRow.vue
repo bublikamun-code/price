@@ -62,7 +62,7 @@ const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTi
 </script>
 
 <template>
-  <article class="flex gap-3 border-b border-border py-4 last:border-b-0" :data-testid="`product-record-${product.id}`">
+  <article class="relative flex gap-3 border-b border-border py-4 last:border-b-0" :data-testid="`product-record-${product.id}`">
     <ProductPhoto
       :media="product.thumbnail"
       :alt="product.name"
@@ -77,7 +77,7 @@ const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTi
         </span>
         <button
           type="button"
-          class="inline-flex size-11 shrink-0 items-center justify-center text-ink-muted hover:text-action"
+          class="relative z-10 inline-flex size-11 shrink-0 items-center justify-center text-ink-muted hover:text-action"
           :aria-label="favorite ? `Убрать ${product.name} из избранного` : `Добавить ${product.name} в избранное`"
           :aria-pressed="favorite"
           :data-testid="testIdPrefix ? `${testIdPrefix}-favorite-${product.id}` : undefined"
@@ -86,7 +86,9 @@ const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTi
           <Icon :name="favorite ? 'heroicons:heart-solid' : 'heroicons:heart'" class="size-5" aria-hidden="true" />
         </button>
       </div>
-      <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="mt-1 block line-clamp-2 text-sm font-semibold leading-5 text-ink hover:text-action">{{ product.name }}</NuxtLink>
+      <!-- Растянутая ссылка: вся карточка строки тапабельна (норма 44px),
+           интерактивные элементы подняты z-10. -->
+      <NuxtLink :to="`/catalog/${encodeURIComponent(product.sku)}`" class="mt-1 block line-clamp-2 text-sm font-semibold leading-5 text-ink after:absolute after:inset-0 after:content-[''] hover:text-action">{{ product.name }}</NuxtLink>
       <p class="numeric mt-1 truncate text-xs text-ink-muted">{{ product.sku }}<span v-if="product.series"> · {{ product.series.name }}</span></p>
       <div class="mt-3 flex items-end justify-between gap-3">
         <div class="min-w-0">
@@ -101,7 +103,7 @@ const volumeTierHint = computed(() => firstVolumeTierHint(props.product.volumeTi
             :discount-percent="volumeTierHint.discountPercent"
           />
         </div>
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="relative z-10 flex shrink-0 items-center gap-1">
           <div class="flex h-11 items-center border border-border bg-surface" role="group" :aria-label="`Количество товара «${product.name}»`">
             <button
               type="button"

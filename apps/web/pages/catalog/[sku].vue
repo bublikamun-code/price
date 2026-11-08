@@ -93,6 +93,15 @@ const activeMedia = computed(() => {
   const frames = galleryFrames.value
   return frames.find((frame) => frame.id === selectedMediaId.value) ?? frames[0] ?? null
 })
+// Большое окно галереи рендерит выбранный кадр в ПОЛНОМ размере: у кадра[0]
+// URL миниатюры (?size=thumb — LCP-оптимизация для ленты), в боксе 4:3 на
+// retina она заметно мягче остальных кадров. Ленте остаётся thumb.
+const activeMediaLarge = computed(() => {
+  const m = activeMedia.value
+  if (!m) return null
+  if (!m.url.endsWith('?size=thumb')) return m
+  return { ...m, url: m.url.replace(/\?size=thumb$/, ''), width: 1200, height: 1200 }
+})
 
 const qty = ref(1)
 const qtyHint = ref('')
@@ -267,7 +276,7 @@ onUnmounted(() => {
         </div>
         <div data-testid="catalog-product-media">
           <ProductPhoto
-            :media="activeMedia"
+            :media="activeMediaLarge"
             :alt="product.name"
             fit="contain"
             eager
