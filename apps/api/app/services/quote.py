@@ -314,6 +314,14 @@ class QuoteService:
         # после коммита — publish_quote_notifications().
         self.quote_notifications: list[Notification] = []
 
+    def publish_quote_notifications(self) -> None:
+        """SSE-события NEW_QUOTE (send) — fail-open, после коммита роутера.
+
+        Пустой список (send не звали / replay-путь) — no-op.
+        """
+        for notif in self.quote_notifications:
+            publish_notification(notification_payload(notif), user_id=notif.user_id)
+
     # --------------------------------------------------------- idempotency
     # Отдельной таблицы для accept не заводим: OrderIdempotency привязана к
     # заказу (order_id CASCADE), accept создаёт ровно один заказ на КП —
