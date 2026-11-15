@@ -333,7 +333,13 @@ async def test_access_token_sid_matches_created_session(api_client, session_fact
     grant = (await _login(api_client)).json()["data"]
 
     payload = jwt.decode(
-        grant["accessToken"], settings.jwt_verify_key, algorithms=[settings.jwt_algorithm]
+        grant["accessToken"],
+        settings.jwt_verify_key,
+        algorithms=[settings.jwt_algorithm],
+        # aud/iss обязательны (аудит M8) — иначе PyJWT бросает
+        # MissingRequiredClaimError.
+        audience=settings.jwt_audience,
+        issuer=settings.jwt_issuer,
     )
     assert payload["sid"] == grant["session"]["id"]
     # refresh не должен попадать в access-токен (§6.3)

@@ -10,7 +10,17 @@
 export default defineNuxtRouteMiddleware((to) => {
   // Публичная главная / всегда остаётся публичной (SITEMAP §5): клиент без
   // принятого согласия должен видеть лендинг, а не редирект на /consent.
-  const SKIP_PATHS = ['/', '/consent', '/login', '/privacy']
+  // Сюда же — смена пароля и сброс: без согласия клиент обязан их пройти,
+  // иначе он застрянет на /consent, не имея возможности войти (вход ведёт
+  // на forced-change-password, а consent-gate стоит раньше).
+  const SKIP_PATHS = [
+    '/',
+    '/consent',
+    '/login',
+    '/privacy',
+    '/force-change-password',
+    '/reset-password',
+  ]
   if (SKIP_PATHS.includes(to.path)) return
   // Mini App /m/** (§16 п.27): consent принимается в веб-кабинете,
   // повторно в Telegram webview не запрашивается.
@@ -21,6 +31,8 @@ export default defineNuxtRouteMiddleware((to) => {
   const auth = useAuth()
   if (!auth.user) return
   if (auth.isAuthenticated && auth.isClient && auth.user.consent_accepted === false) {
-    return navigateTo('/consent')
+    // Сохраняем, куда клиент шёл: после согласия он возвращается туда, а не
+    // на дашборд по умолчанию.
+    return navigateTo({ path: '/consent', query: { redirect: to.fullPath } })
   }
 })

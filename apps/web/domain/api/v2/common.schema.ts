@@ -21,7 +21,10 @@ export const moneySchema = z
 export const rateSchema = z
   .object({
     value: z.string().regex(/^-?\d+\.\d{4}$/),
-    scale: z.number().int().min(0).max(8),
+    // scale — делитель валюты (§17.4): BYN за `scale` единиц валюты, у RUB
+    // scale=100. Верхняя граница — 1000, а не 8: реальный масштаб рубля
+    // не влезал в прежний предел, и ответ API не проходил валидацию.
+    scale: z.number().int().min(0).max(1000),
     source: z.string().min(1).max(64),
   })
   .strict()

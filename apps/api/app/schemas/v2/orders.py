@@ -15,6 +15,7 @@ from app.models.order import Order, OrderItem
 from app.models.organization import Organization
 from app.schemas.v2.cart import CartLine, CartSummary
 from app.schemas.v2.common import (
+    RATE_SCALE,
     Money,
     Quantity,
     Rate,
@@ -180,6 +181,10 @@ def order_summary(order: Order, invoice: Invoice | None = None) -> OrderSummary:
         total=_money(order.total_amount, order.currency_code),
         exchange_rate=Rate(
             value=rate_value(order.exchange_rate),
+            # scale — делитель валюты (§17.4): заявка хранит курс, но не его
+            # масштаб. Заявки клиентов всегда в BYN (rate=1, scale=1); для
+            # прочих валют масштаб придётся хранить в самой заявке.
+            scale=1 if (order.currency_code or "BYN").upper() == "BYN" else RATE_SCALE,
             source=order.rate_source or "LEGACY",
         ),
         invoice=invoice_summary(invoice) if invoice is not None else None,
@@ -211,6 +216,10 @@ def order_detail(
         total=_money(order.total_amount, order.currency_code),
         exchange_rate=Rate(
             value=rate_value(order.exchange_rate),
+            # scale — делитель валюты (§17.4): заявка хранит курс, но не его
+            # масштаб. Заявки клиентов всегда в BYN (rate=1, scale=1); для
+            # прочих валют масштаб придётся хранить в самой заявке.
+            scale=1 if (order.currency_code or "BYN").upper() == "BYN" else RATE_SCALE,
             source=order.rate_source or "LEGACY",
         ),
         lines=[_project_line(item) for item in items],

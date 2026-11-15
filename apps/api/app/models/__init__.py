@@ -37,6 +37,7 @@ from app.models.user import (
     PasswordResetToken,
     Session,
     TotpRecoveryCode,
+    TwoFactorChallenge,
     User,
 )
 
@@ -45,6 +46,7 @@ __all__ = [
     "User",
     "Session",
     "TotpRecoveryCode",
+    "TwoFactorChallenge",
     "ConsentLog",
     "PasswordResetToken",
     "Favorite",

@@ -109,7 +109,7 @@ async def test_empty_user_cart_is_versioned_and_authenticated(api_client, sessio
     assert body["data"]["total"] == {"amount": "0.00", "currency": "BYN"}
     assert body["data"]["exchangeRate"] == {
         "value": "1.0000",
-        "scale": 4,
+        "scale": 1,
         "source": "BYN",
     }
     assert "photoKey" not in response.text

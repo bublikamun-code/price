@@ -110,7 +110,9 @@ async def get_brand(
 
 
 @router.get("/series/{slug}/products", response_model=PublicSeriesProductsEnvelope)
+@limiter.limit(PUBLIC_RATE_LIMIT)
 async def list_series_products(
+    request: Request,
     slug: str,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
@@ -130,13 +132,17 @@ async def list_series_products(
 
 
 @router.get("/photo")
+@limiter.limit(PUBLIC_RATE_LIMIT)
 async def get_photo(
+    request: Request,
     key: str = Query(description="S3-ключ фото серии (photos-series/…)"),
 ) -> Response:
     """Фото серии из бакета ``photos-series`` — без аутентификации (витрина).
 
     Ключ только из whitelist (см. docstring модуля). Объект не найден /
-    хранилище недоступно → 404/502 как в files.py.
+    хранилище недоступно → 404/502 как в files.py. Лимит — как у остальной
+    витрины: эндпоинт неаутентифицированный и тянет байты из S3 на каждый
+    запрос, без лимита его можно было бы использовать как источник egress.
     """
     valid_key = _validate_public_photo_key(key)
     try:

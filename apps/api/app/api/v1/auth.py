@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.deps import get_current_user, require_role, validate_csrf
 from app.core.limiter import limiter
-from app.core.security import create_2fa_ticket
 from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.user import User
@@ -37,28 +36,69 @@ from app.services.telegram_auth import generate_link_code
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _set_auth_cookies(response: Response, tokens: TokenPair) -> None:
-    secure = settings.cookie_secure  # prod: только HTTPS-куки (COOKIE_SECURE, §16 п.30)
+def _secure_cookie(request: Request | None) -> bool:
+    """Secure-флаг кук с учётом фактической схемы запроса.
+
+    ``COOKIE_SECURE=true`` — политика «куки только по HTTPS». Браузер, получив
+    Secure-куку по http, её просто не отправляет — то есть по http вход не
+    работает вовсе. Поэтому, если клиент пришёл по http (внутренний стенд по
+    LAN), флаг снимается: по незащищённому каналу Secure-кука всё равно не
+    даёт никакой защиты, а мешает авторизации.
+
+    На боевом проде это не ослабляет защиту: nginx отправляет http → https
+    (TLS, §19), поэтому до API запросы по http не доходят и флаг остаётся
+    строгим. Публичная точка (Tailscale Funnel) — https → Secure-куки.
+
+    Схему берём из ``X-Forwarded-Proto``: uvicorn 0.30 (``--proxy-headers``)
+    переписывает только ``X-Forwarded-For`` (IP клиента), а ``scope['scheme']``
+    остаётся http — соединение nginx→api внутри docker-сети всегда http.
+    Заголовок ставит nginx, а тот берёт значение от внешнего прокси (Funnel).
+    """
+    if not settings.cookie_secure:
+        return False
+    if request is None:
+        return True
+    forwarded = request.headers.get("x-forwarded-proto")
+    scheme = (forwarded or request.url.scheme).split(",")[0].strip().lower()
+    return scheme == "https"
+
+
+def _set_auth_cookies(
+    response: Response,
+    tokens: TokenPair,
+    *,
+    remember: bool = True,
+    request: Request | None = None,
+) -> None:
+    """Ставит auth-cookie.
+
+    ``remember=True`` → постоянные cookie (Max-Age = TTL токена) — режим
+    «Запомнить меня» (аудит L9). ``remember=False`` → сессионные cookie: без
+    Max-Age/Expires браузер удаляет их при закрытии сессии.
+    """
+    secure = _secure_cookie(request)  # prod: только HTTPS-куки (COOKIE_SECURE, §16 п.30)
+    access_max_age = settings.access_token_ttl_min * 60 if remember else None
+    refresh_max_age = settings.refresh_token_ttl_days * 86400 if remember else None
     response.set_cookie(
         "access_token", tokens.access_token,
-        max_age=settings.access_token_ttl_min * 60,
+        max_age=access_max_age,
         httponly=True, secure=secure, samesite="lax", path="/",
     )
     response.set_cookie(
         "refresh_token", tokens.refresh_token,
-        max_age=settings.refresh_token_ttl_days * 86400,
+        max_age=refresh_max_age,
         httponly=True, secure=secure, samesite="lax", path="/",
     )
     response.set_cookie(
         settings.csrf_cookie_name, secrets.token_urlsafe(32),
-        max_age=settings.refresh_token_ttl_days * 86400,
+        max_age=refresh_max_age,
         httponly=False, secure=secure, samesite="lax", path="/",
     )
 
 
-def _clear_auth_cookies(response: Response) -> None:
+def _clear_auth_cookies(response: Response, request: Request | None = None) -> None:
     # Тот же флаг, что при установке: иначе браузер не удалит Secure-куку (§16 п.30)
-    secure = settings.cookie_secure
+    secure = _secure_cookie(request)
     response.delete_cookie("access_token", path="/", secure=secure, httponly=True, samesite="lax")
     response.delete_cookie("refresh_token", path="/", secure=secure, httponly=True, samesite="lax")
     response.delete_cookie(
@@ -90,6 +130,7 @@ async def login(
             password=body.password,
             user_agent=request.headers.get("user-agent"),
             ip=_client_ip(request),
+            remember=body.remember,
         )
     except AuthError as exc:
         # Неуспешный логин чистит остаточные стейл-куки (§16 п.21). Возвращаем
@@ -97,23 +138,25 @@ async def login(
         error_response = JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": str(exc)}
         )
-        _clear_auth_cookies(error_response)
+        _clear_auth_cookies(error_response, request)
         return error_response
     if tokens is None:
         # 2FA: без кук и без сессии — только короткоживущий ticket (§16 п.22).
         # JSONResponse минует response_model=TokenPair — формат ответа другой.
+        # Ticket одноразовый (аудит M9) и несёт claim `remember` (аудит L9).
+        ticket = await svc.issue_2fa_ticket(user, remember=body.remember)
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "data": {
                     "two_fa_required": True,
-                    "ticket": create_2fa_ticket(str(user.id)),
+                    "ticket": ticket,
                     # Фронт ведёт на /force-change-password после verify2fa (§16 п.19)
                     "force_password_change": bool(user.must_change_password),
                 }
             },
         )
-    _set_auth_cookies(response, tokens)
+    _set_auth_cookies(response, tokens, remember=body.remember, request=request)
     return tokens
 
 
@@ -130,14 +173,15 @@ async def refresh(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Нет refresh-токена")
     svc = AuthService(db)
     try:
-        tokens = await svc.refresh(
+        tokens, session = await svc.refresh_session(
             refresh_token_plain=refresh_plain,
             user_agent=request.headers.get("user-agent"),
             ip=_client_ip(request),
         )
     except AuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    _set_auth_cookies(response, tokens)
+    # Режим cookie не меняется при ротации: он хранится в сессии (аудит L9).
+    _set_auth_cookies(response, tokens, remember=session.remember, request=request)
     return tokens
 
 
@@ -155,7 +199,7 @@ async def logout(
     refresh_plain = request.cookies.get("refresh_token")
     svc = AuthService(db)
     await svc.logout(refresh_plain)
-    _clear_auth_cookies(response)
+    _clear_auth_cookies(response, request)
 
 
 @router.get("/me", response_model=UserPublic)
@@ -274,19 +318,21 @@ async def verify_2fa(
     """
     svc = AuthService(db)
     try:
-        tokens = await svc.verify_2fa(
+        tokens, session = await svc.verify_2fa_session(
             ticket=body.ticket,
             code=body.code,
             user_agent=request.headers.get("user-agent"),
             ip=_client_ip(request),
+            remember=body.remember,
         )
     except AuthError as exc:
         error_response = JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": str(exc)}
         )
-        _clear_auth_cookies(error_response)
+        _clear_auth_cookies(error_response, request)
         return error_response
-    _set_auth_cookies(response, tokens)
+    # Режим cookie — из claim'а ticket'а (приоритет) или из тела запроса.
+    _set_auth_cookies(response, tokens, remember=session.remember, request=request)
     return tokens
 
 
@@ -341,7 +387,7 @@ async def revoke_session(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сессия не найдена")
     if result:
-        _clear_auth_cookies(response)
+        _clear_auth_cookies(response, request)
 
 
 @router.delete("/sessions", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(validate_csrf)])

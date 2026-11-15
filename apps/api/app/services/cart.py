@@ -23,6 +23,7 @@ from app.schemas.cart import (
     CartItemRead,
     CartRead,
 )
+from app.services.organizations import OrganizationContextService
 from app.services.pricing import PricingService, quantize_money
 
 
@@ -34,6 +35,14 @@ class CartService:
         self.pricing = PricingService(db)
 
     async def view(self, user, *, organization_id=None) -> CartRead:
+        if organization_id is None:
+            # Орг-скоуп: сумма корзины обязана совпадать с суммой заявки,
+            # созданной из этой корзины, а заявка считается в контексте
+            # активной организации (§16 п.41). Без этого клиент видел одну
+            # сумму в корзине и другую — в заявке.
+            organization_id = (
+                await OrganizationContextService(self.db).resolve(user)
+            ).organization_id
         cart = await cart_repo.get_or_create_cart(
             self.db, user_id=user.id, organization_id=None
         )
@@ -41,12 +50,18 @@ class CartService:
 
         # Батч-цены на все товары корзины (аудит 2026-09-06, N+1): курс и
         # скидки — один запрос на корзину, а не на каждую позицию.
+        #
+        # Количества позиций обязательны: без них объёмная ступень не
+        # применяется, и сумма корзины расходилась с суммой заявки, созданной
+        # из этой же корзины (заявка считает уже с объёмной скидкой, §16 п.41).
         products = [row[1] for row in rows if row[1] is not None]
+        quantities = {row[0].product_id: row[0].quantity for row in rows}
         prices = await self.pricing.price_products(
             products,
             user,
             "fixed",
             organization_id=organization_id,
+            quantities=quantities,
         )
 
         items: list[CartItemRead] = []

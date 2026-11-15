@@ -7,7 +7,9 @@
 import { defineStore } from 'pinia'
 import { useCartStore } from '~/stores/cart'
 import { useOrdersStore } from '~/stores/orders'
-import type { TokenPair, TwoFALoginEnvelope, UserPublic, UserRole } from '~/types/api'
+import { csrfToken } from '~/utils/csrf'
+import { cookiePayloadOf, loginRequestBody, twoFAVerifyRequestBody } from '~/utils/auth-cookie'
+import type { AuthCookiePayload, TokenPair, TwoFALoginEnvelope, UserPublic, UserRole } from '~/types/api'
 
 /** Результат login(): обычный вход ИЛИ требование второго шага 2FA (§16 п.22). */
 export interface LoginResult {
@@ -50,7 +52,8 @@ export interface UserMePatch {
 
 /** Cookie-refs, регистрируемые плагином auth.session.ts. */
 export interface CookieStore {
-  userC: { value: AuthUser | null }
+  /** Минимальный payload user-cookie: только id и role (без ПДн, аудит L10). */
+  userC: { value: AuthCookiePayload | null }
 }
 
 /** baseURL API: на сервере — внутренний, на клиенте — публичный. */
@@ -60,8 +63,8 @@ function apiBaseURL(): string {
 }
 
 function csrfHeaders(): Record<string, string> {
-  const csrfToken = useCookie<string | null>('csrf_token').value
-  return csrfToken ? { 'X-CSRF-Token': csrfToken } : {}
+  const token = csrfToken()
+  return token ? { 'X-CSRF-Token': token } : {}
 }
 
 /** На SSR внутренний $fetch не пробрасывает входящие cookie автоматически. */
@@ -112,6 +115,18 @@ export const useAuthStore = defineStore('auth', () => {
     cookies = c
   }
 
+  /**
+   * Перезаписать user-cookie минимальной формой {id, role}.
+   *
+   * Нужна для миграции со старого формата, где в cookie лежал полный профиль
+   * (email, ФИО, компания — ПДн в JS-доступном хранилище, аудит L10).
+   * Профиль в сторе не трогаем: он приходит из /me.
+   */
+  function persistCookieIdentity(payload: AuthCookiePayload) {
+    if (cookies) cookies.userC.value = payload
+    persistCookie('auth_user', JSON.stringify(payload), COOKIE_MAX_AGE.user)
+  }
+
   function applyUser(u: UserPublic | null) {
     if (!u) {
       user.value = null
@@ -137,8 +152,12 @@ export const useAuthStore = defineStore('auth', () => {
         forcePasswordChange: u.force_password_change ?? false,
       }
     }
-    if (cookies) cookies.userC.value = user.value
-    persistCookie('auth_user', user.value ? JSON.stringify(user.value) : null, COOKIE_MAX_AGE.user)
+    // В JS-куку кладём МИНИМУМ — только id и роль (аудит L10): cookie читается
+    // любым скриптом страницы, email/ФИО/компания там не должны лежать.
+    // Полный профиль живёт в сторе и приходит из /me.
+    const cookiePayload = user.value ? cookiePayloadOf(user.value) : null
+    if (cookies) cookies.userC.value = cookiePayload
+    persistCookie('auth_user', cookiePayload ? JSON.stringify(cookiePayload) : null, COOKIE_MAX_AGE.user)
     // Сессия подтверждена — запускаем доставку уведомлений (SSE-стрим бейджа +
     // poll-fallback, §16 п.26). Без этого старта события не доходили ни до
     // браузера, ни до Mini App. Idempotent: живой стрим не пересоздаём, упавший
@@ -230,7 +249,12 @@ export const useAuthStore = defineStore('auth', () => {
     return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   }
 
-  async function login(email: string, password: string): Promise<LoginResult> {
+  /**
+   * Вход. remember — чекбокс «Запомнить меня»: постоянная сессия или сессия
+   * до закрытия браузера. Значение едет в теле запроса (аудит L9); бэкенд
+   * кладёт его в claim 2FA-ticket, если включена двухфакторная аутентификация.
+   */
+  async function login(email: string, password: string, remember = true): Promise<LoginResult> {
     const baseURL = apiBaseURL()
     // При включённой 2FA (§16 п.22) login отвечает 200 {"data": {two_fa_required, ticket}}
     // без токенов и кук — это НЕ ошибка: пользователь идёт на второй шаг (verify2fa).
@@ -238,7 +262,7 @@ export const useAuthStore = defineStore('auth', () => {
     const res = await $fetch<TokenPair | TwoFALoginEnvelope>('/api/v1/auth/login', {
       baseURL,
       method: 'POST',
-      body: { email, password },
+      body: loginRequestBody(email, password, remember),
       headers: csrfHeaders(),
       credentials: 'include',
     })
@@ -261,13 +285,19 @@ export const useAuthStore = defineStore('auth', () => {
     return { twoFARequired: false }
   }
 
-  /** Второй шаг логина при 2FA: ticket + код приложения/recovery → токены+куки+сессия. */
-  async function verify2fa(ticket: string, code: string) {
+  /**
+   * Второй шаг логина при 2FA: ticket + код приложения/recovery → токены+куки+сессия.
+   *
+   * remember едет в теле как fallback: основной источник — claim `remember`
+   * внутри 2FA-ticket (его положил backend на шаге login). Если бэкенд claim
+   * не положил (старая версия API), fallback даёт тот же эффект.
+   */
+  async function verify2fa(ticket: string, code: string, remember = true) {
     const baseURL = apiBaseURL()
     const pair = await $fetch<TokenPair>('/api/v1/auth/2fa/verify', {
       baseURL,
       method: 'POST',
-      body: { ticket, code },
+      body: twoFAVerifyRequestBody(ticket, code, remember),
       headers: csrfHeaders(),
       credentials: 'include',
     })
@@ -354,6 +384,7 @@ export const useAuthStore = defineStore('auth', () => {
     user, token,
     isAuthenticated, isClient, isManager, isAdmin,
     registerCookies,
+    persistCookieIdentity,
     login, verify2fa, fetchMe, updateMe, changePassword, refresh, logout, clear, failClosed,
     applyUser, applyTokens,
   }

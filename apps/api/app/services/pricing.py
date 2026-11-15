@@ -265,12 +265,20 @@ class PricingService:
         return discounts
 
     async def get_latest_rate(self, currency: str) -> ExchangeRate | None:
-        """Последний курс для валюты (по fetched_at)."""
+        """Последний курс НБ РБ для валюты (по fetched_at).
+
+        Источник фильтруется явно: ручной курс (source=MANUAL) — это другой
+        источник, и подставлять его под метку «NBRB» означало бы показывать
+        в заявке/каталоге курс, которым никто не торговал.
+        """
         if currency.upper() == "BYN":
             return None
         stmt = (
             select(ExchangeRate)
-            .where(ExchangeRate.currency_code == currency.upper())
+            .where(
+                ExchangeRate.currency_code == currency.upper(),
+                ExchangeRate.source == "NBRB",
+            )
             .order_by(ExchangeRate.fetched_at.desc())
             .limit(1)
         )
@@ -309,7 +317,11 @@ class PricingService:
         )
         if calc_mode == "fixed" and fixed_rate_id is not None:
             fixed = await self.db.get(ExchangeRate, fixed_rate_id)
-            if fixed is not None:
+            # Курс по договору привязан к своей валюте: EUR-курс, применённый
+            # к цене в USD, дал бы конвертацию по чужой паре (и «курс по
+            # договору» в карточке). Несовпадение валюты — не повод считать
+            # по договору: уходим на курс НБ РБ, он подписан своим источником.
+            if fixed is not None and (fixed.currency_code or "").upper() == currency:
                 return ResolvedRate(
                     currency,
                     _to_decimal(fixed.rate),

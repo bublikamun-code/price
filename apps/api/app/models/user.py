@@ -11,11 +11,13 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     false,
     func,
     text,
+    true,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -54,6 +56,11 @@ class User(Base, UUIDPrimaryKey, TimestampMixin):
 
     # 2FA для менеджера (фича H)
     totp_secret: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Номер шага TOTP (time-step), под который последний раз подошёл код
+    # (аудит M9). Код нельзя использовать повторно: шаг, равный или меньший
+    # уже использованного, отклоняется. NULL — ни один код не принимался.
+    # Счётчик привязан к секрету: при (пере)включении 2FA он обнуляется.
+    totp_last_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Telegram Mini App (§16 п.27): id пользователя TG, связывается одноразовым
     # кодом. chat_id отдельно не хранится (приватный чат: chat_id == user.id);
@@ -124,6 +131,13 @@ class Session(Base, UUIDPrimaryKey):
     device_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     os_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     app_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Режим cookie «Запомнить меня» (аудит L9): true → постоянные cookie
+    # (Max-Age), false → сессионные (исчезают при закрытии браузера).
+    # Значение переносится при ротации refresh-токена, поэтому режим
+    # входа доживает до конца сессии.
+    remember: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
 
     __table_args__ = (
         # Журнал сессий читает активные сессии пользователя: без revoked в
@@ -155,6 +169,34 @@ class TotpRecoveryCode(Base, UUIDPrimaryKey):
     # (services/auth.py). Создан миграцией 0025; объявлен в модели ради
     # alembic check (аудит 2026-09-06 §3).
     __table_args__ = (Index("ix_totp_recovery_codes_user", "user_id"),)
+
+
+class TwoFactorChallenge(Base, UUIDPrimaryKey):
+    """Одноразовый ticket второго шага логина при 2FA (аудит M9).
+
+    Ticket — короткоживущий JWT (type="2fa"), в котором лежит ``jti``.
+    Раньше он жил только в JWT: 5 минут TTL, и по истечении им можно было
+    воспользоваться несколько раз, получив несколько сессий. Теперь каждый
+    ticket регистрируется здесь при выдаче, а при успешном verify помечается
+    ``used_at`` — повторное предъявление даёт 401.
+
+    Гашение атомарно: ``UPDATE ... WHERE used_at IS NULL`` + проверка
+    rowcount, поэтому два параллельных verify не пройдут оба.
+    """
+    __tablename__ = "two_factor_challenges"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Идентификатор вызова (claim "jti" в JWT-ticket) — UNIQUE.
+    jti: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_two_factor_challenges_user_id", "user_id"),)
 
 
 class ConsentLog(Base, UUIDPrimaryKey):

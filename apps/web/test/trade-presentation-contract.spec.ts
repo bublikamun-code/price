@@ -348,7 +348,11 @@ describe('Client cabinet contract', () => {
     expect(row).toContain('<ProductPhoto')
     expect(row).toContain(':media="product.thumbnail"')
     expect(catalog).toContain(':media="product.thumbnail"')
-    expect(detail).toContain(':media="activeMedia"')
+    // Крупный кадр в боксе — activeMediaLarge: у первого кадра URL миниатюры
+    // (?size=thumb), её снимаем, чтобы в боксе 4:3 не было мыла.
+    expect(detail).toContain(':media="activeMediaLarge"')
+    // Превью в ленте под кадром — миниатюры (?size=thumb), а не крупные кадры.
+    expect(detail).toContain('galleryThumbs')
     // Заглушка «фото недоступно» остаётся только когда кадра действительно нет.
     expect(detail).toContain('v-if="!activeMedia"')
   })

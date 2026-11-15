@@ -130,13 +130,28 @@ struct Money: Codable, Hashable {
   "basePrice": { "amount": "1.05", "currency": "BYN" },
   "retailPrice": { "amount": "0.82", "currency": "BYN" },
   "clientPrice": { "amount": "0.70", "currency": "BYN" },
-  "exchangeRate": { "value": "3.0000", "scale": 4, "source": "NBRB" },
+  "exchangeRate": { "value": "1.0000", "scale": 1, "source": "BYN" },
   "hasDiscount": true,
   "volumeTiers": [{ "minQty": 10, "discountPercent": 2.0 }],
   "thumbnail": null,
   "media": []
 }
 ```
+
+Семантика `exchangeRate` (уточнение 2026-11-10 — в примере выше раньше стояло
+`"scale": 4`, что не соответствовало контракту):
+
+- `value` — decimal string ровно с 4 знаками: курс, зафиксированный на момент
+  запроса (или создания заказа — снапшот, §9);
+- `scale` — **делитель валюты**, а не точность курса: сколько единиц
+  display-валюты приходится на один BYN (BYN → 1, RUB → 100). Значение `4`
+  в старом примере означало бы завышение суммы вчетверо;
+- `source` — источник курса: `BYN` (витрина клиента всегда в BYN, §16 п.44),
+  `NBRB` (курс НБ РБ), `FIXED` (зафиксированный курс клиента);
+- обратный пересчёт: `amount_display = amount_byn × scale / value`.
+
+Пример для display-валюты RUB: `{ "value": "3.0000", "scale": 100, "source": "NBRB" }`
+— 1 BYN ≈ 33.33 RUB.
 
 Расхождения с прежней редакцией контракта, снятые 2026-09-27:
 

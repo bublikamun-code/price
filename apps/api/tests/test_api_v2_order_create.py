@@ -160,7 +160,7 @@ async def test_create_order_by_product_id_uses_org_scope_and_delivery_snapshot(
     assert order["total"] == {"amount": "240.00", "currency": "BYN"}
     assert order["exchangeRate"] == {
         "value": "1.0000",
-        "scale": 4,
+        "scale": 1,
         "source": "BYN",
     }
     assert order["lines"] == [

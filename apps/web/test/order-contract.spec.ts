@@ -89,7 +89,7 @@ describe("API v2 order contract", () => {
       id: "88888888-8888-4888-8888-888888888888",
       organizationId: "22222222-2222-4222-8222-222222222222",
       total: { amount: "125.50", currency: "BYN" },
-      exchangeRate: { value: "1.0000", scale: 4, source: "BYN" },
+      exchangeRate: { value: "1.0000", scale: 1, source: "BYN" },
     });
     expect(parsed.data[0]).not.toHaveProperty("lines");
     expect(parsed.meta).toEqual({

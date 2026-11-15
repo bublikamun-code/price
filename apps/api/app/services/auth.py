@@ -19,17 +19,19 @@ import io
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import jwt
 import pyotp
 import qrcode
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
+    create_2fa_ticket,
     create_access_token,
     decode_token,
     hash_password_async,
@@ -41,6 +43,7 @@ from app.models.user import (
     ConsentLog,
     PasswordResetToken,
     TotpRecoveryCode,
+    TwoFactorChallenge,
     User,
 )
 from app.models.user import (
@@ -131,9 +134,74 @@ class AuthService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    # ---------- 2FA-ticket: выдача и гашение (аудит M9) ----------
+    async def issue_2fa_ticket(self, user: User, *, remember: bool = True) -> str:
+        """Выдаёт ticket второго шага 2FA и регистрирует его в БД.
+
+        Ticket — JWT (type="2fa") с claim'ами ``jti`` (идентификатор вызова)
+        и ``remember`` (режим cookie «Запомнить меня» — аудит L9). Запись в
+        ``two_factor_challenges`` делает его одноразовым: повторное
+        предъявление того же ticket после успешного verify → 401.
+        """
+        jti = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(minutes=settings.totp_ticket_ttl_min)
+        ticket = create_2fa_ticket(
+            str(user.id), extra={"jti": jti, "remember": bool(remember)}
+        )
+        # Протухшие вызовы (ticket живёт 5 минут) убираем при выдаче нового —
+        # иначе таблица растёт, а старые строки никто не гасит.
+        await self._purge_expired_2fa_challenges()
+        self.db.add(
+            TwoFactorChallenge(user_id=user.id, jti=jti, expires_at=expires_at)
+        )
+        await self.db.commit()
+        log.info("auth.2fa_ticket_issued", user_id=str(user.id))
+        return ticket
+
+    async def _consume_2fa_ticket(self, jti: str, user: User) -> None:
+        """Атомарно резервирует ticket (аудит M9).
+
+        ``UPDATE ... WHERE used_at IS NULL`` + проверка rowcount: два
+        параллельных verify одного ticket не пройдут оба — второй получит
+        rowcount=0 → 401. Строка не найдена (чужой/подделанный jti) или
+        уже погашена → тоже 401.
+
+        Коммита здесь нет: обновление живёт в транзакции запроса и уходит в БД
+        вместе с успешным verify. Если код неверный, вызывающий откатывает
+        транзакцию — ticket остаётся пригодным (пользователь вводит код заново).
+        """
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            update(TwoFactorChallenge)
+            .where(
+                TwoFactorChallenge.jti == jti,
+                TwoFactorChallenge.user_id == user.id,
+                TwoFactorChallenge.used_at.is_(None),
+                TwoFactorChallenge.expires_at > now,
+            )
+            .values(used_at=now)
+        )
+        if result.rowcount != 1:
+            await self.db.rollback()
+            raise AuthError("Недействительный ticket")
+
+    async def _purge_expired_2fa_challenges(self) -> None:
+        """Удаляет протухшие записи о вызовах 2FA (ticket живёт 5 минут)."""
+        now = datetime.now(timezone.utc)
+        await self.db.execute(
+            delete(TwoFactorChallenge).where(TwoFactorChallenge.expires_at < now)
+        )
+
     # ---------- login ----------
     async def login(
-        self, email: str, password: str, user_agent: str | None, ip: str | None
+        self,
+        email: str,
+        password: str,
+        user_agent: str | None,
+        ip: str | None,
+        *,
+        remember: bool = True,
     ) -> tuple[User, TokenPair | None]:
         """Проверяет креды. Возвращает (user, tokens).
 
@@ -141,7 +209,7 @@ class AuthService:
         выдаёт короткоживущий ticket (§16 п.22).
         """
         user, tokens, _session = await self.login_session(
-            email, password, user_agent, ip
+            email, password, user_agent, ip, remember=remember
         )
         return user, tokens
 
@@ -151,6 +219,8 @@ class AuthService:
         password: str,
         user_agent: str | None,
         ip: str | None,
+        *,
+        remember: bool = True,
         **session_metadata: str | None,
     ) -> tuple[User, TokenPair | None, SessionModel | None]:
         """Как login, но возвращает и созданную сессию — нужно v2-адаптеру
@@ -188,7 +258,7 @@ class AuthService:
             return user, None, None
 
         token_pair, session = await self._issue_session(
-            user, _generate_refresh(), user_agent, ip, **session_metadata
+            user, _generate_refresh(), user_agent, ip, remember=remember, **session_metadata
         )
         log.info("auth.login", user_id=str(user.id), ip=ip)
         return user, token_pair, session
@@ -252,8 +322,10 @@ class AuthService:
         new_refresh_plain = _generate_refresh()
         session.superseded_by_hash = _hash_token(new_refresh_plain)
         await self.db.commit()
+        # Режим cookie «Запомнить меня» (аудит L9) переносится в новую сессию:
+        # ротация refresh-токена не должна менять поведение cookie.
         token_pair, new_session = await self._issue_session(
-            user, new_refresh_plain, user_agent, ip
+            user, new_refresh_plain, user_agent, ip, remember=session.remember
         )
         await invalidate_session(old_sid)
         log.info("auth.refresh", user_id=str(user.id), old_sid=str(old_sid))
@@ -422,6 +494,9 @@ class AuthService:
                 detail="Неверный код подтверждения",
             )
         user.totp_secret = secret
+        # Новый секрет — новые коды: счётчик принятого шага обнуляется,
+        # иначе коды нового секрета могли бы «конфликтовать» со старым шагом.
+        user.totp_last_step = None
         # повторный enable = ротация: старые recovery-коды заменяются новыми
         for old in await self.db.scalars(
             select(TotpRecoveryCode).where(TotpRecoveryCode.user_id == user.id)
@@ -444,11 +519,17 @@ class AuthService:
         return codes
 
     async def verify_2fa(
-        self, ticket: str, code: str, user_agent: str | None, ip: str | None
+        self,
+        ticket: str,
+        code: str,
+        user_agent: str | None,
+        ip: str | None,
+        *,
+        remember: bool = True,
     ) -> TokenPair:
         """Второй шаг логина: ticket + TOTP/recovery → обычные токены+сессия."""
         token_pair, _session = await self.verify_2fa_session(
-            ticket, code, user_agent, ip
+            ticket, code, user_agent, ip, remember=remember
         )
         return token_pair
 
@@ -458,15 +539,49 @@ class AuthService:
         code: str,
         user_agent: str | None,
         ip: str | None,
+        *,
+        remember: bool = True,
         **session_metadata: str | None,
     ) -> tuple[TokenPair, SessionModel]:
         """Как verify_2fa, но возвращает и созданную сессию — нужно v2-адаптеру
-        нативного второго шага (POST /api/v2/auth/2fa/challenges/verify)."""
-        user = await self._decode_2fa_ticket(ticket)
-        if not self._check_totp(user, code) and not await self._try_use_recovery(user, code):
+        нативного второго шага (POST /api/v2/auth/2fa/challenges/verify).
+
+        Ticket одноразовый (аудит M9): он погашается в БД до проверки кода, но
+        коммит происходит только вместе с успешной выдачей сессии. Неверный код
+        откатывает транзакцию — ticket снова доступен, а вот повторное
+        предъявление уже погашенного ticket даёт 401.
+
+        TOTP-код тоже одноразовый: шаг, равный или меньший уже использованного,
+        отклоняется (users.totp_last_step).
+
+        Режим cookie «Запомнить меня» (аудит L9) берётся из claim'а ticket'а
+        (он выдан на login и потому «свежее» тела запроса); ``remember`` из
+        тела — fallback для ticket'ов без claim'а.
+        """
+        user, claims = await self._decode_2fa_ticket(ticket)
+        jti = str(claims.get("jti") or "")
+        if not jti:
+            raise AuthError("Недействительный ticket")
+        # Резервируем ticket: UPDATE ... WHERE used_at IS NULL + rowcount.
+        await self._consume_2fa_ticket(jti, user)
+
+        totp_ok = self._verify_totp_once(user, code)
+        if not totp_ok and not await self._try_use_recovery(user, code, commit=False):
+            # Неверный код: откатываем и резерв тикета, и списание recovery-кода.
+            await self.db.rollback()
             raise AuthError("Неверный код")
+
+        claim_remember = claims.get("remember")
+        effective_remember = (
+            bool(claim_remember) if claim_remember is not None else bool(remember)
+        )
         token_pair, session = await self._issue_session(
-            user, _generate_refresh(), user_agent, ip, **session_metadata
+            user,
+            _generate_refresh(),
+            user_agent,
+            ip,
+            remember=effective_remember,
+            **session_metadata,
         )
         log.info("auth.login_2fa_completed", user_id=str(user.id), ip=ip)
         return token_pair, session
@@ -483,6 +598,7 @@ class AuthService:
                 detail="Неверный код или пароль",
             )
         user.totp_secret = None
+        user.totp_last_step = None
         for rc in await self.db.scalars(
             select(TotpRecoveryCode).where(TotpRecoveryCode.user_id == user.id)
         ):
@@ -497,8 +613,8 @@ class AuthService:
         await self.db.commit()
         log.info("auth.2fa_disabled", user_id=str(user.id))
 
-    async def _decode_2fa_ticket(self, ticket: str) -> User:
-        """Декодирует 2fa-ticket и возвращает активного пользователя.
+    async def _decode_2fa_ticket(self, ticket: str) -> tuple[User, dict[str, Any]]:
+        """Декодирует 2fa-ticket и возвращает активного пользователя и claim'ы.
 
         Просроченный/поддельный ticket, а также access/refresh-токен вместо
         ticket (несовпадение type) → AuthError → 401 в роутере.
@@ -516,12 +632,54 @@ class AuthService:
         user = await self.db.get(User, user_id)
         if user is None or not user.is_active:
             raise AuthError("Недействительный ticket")
-        return user
+        return user, payload
+
+    def _totp_step_for(self, user: User, code: str) -> int | None:
+        """Возвращает time-step TOTP, которому соответствует код, иначе None.
+
+        Окно ±_TOTP_VALID_WINDOW шагов (стандартный TOTP-valid_window). Шаг
+        нужен, чтобы отличать «тот же самый код» от «следующего окна»: код,
+        принятый раньше, повторно нельзя использовать (аудит M9).
+        """
+        if user.totp_secret is None:
+            return None
+        normalized = code.strip()
+        if not normalized:
+            return None
+        totp = pyotp.TOTP(user.totp_secret)
+        base = datetime.now(timezone.utc)
+        for offset in range(-_TOTP_VALID_WINDOW, _TOTP_VALID_WINDOW + 1):
+            candidate = base + timedelta(seconds=offset * totp.interval)
+            if totp.at(candidate) == normalized:
+                return totp.timecode(candidate)
+        return None
 
     def _check_totp(self, user: User, code: str) -> bool:
-        if user.totp_secret is None:
+        """Чистая проверка TOTP без побочных эффектов.
+
+        Шаг не «сжигается» — метод используется для отключения 2FA, где код
+        подтверждения не должен ломать последующий вход.
+        """
+        return self._totp_step_for(user, code) is not None
+
+    def _verify_totp_once(self, user: User, code: str) -> bool:
+        """Проверяет TOTP-код и запрещает его повторное использование (аудит M9).
+
+        Код, чей шаг ≤ уже использованного (users.totp_last_step), отклоняется:
+        иначе один и тот же код в окне ±30 секунд давал бы несколько сессий.
+        """
+        step = self._totp_step_for(user, code)
+        if step is None:
             return False
-        return pyotp.TOTP(user.totp_secret).verify(code.strip(), valid_window=_TOTP_VALID_WINDOW)
+        last_step = user.totp_last_step
+        if last_step is not None and step <= last_step:
+            log.warning(
+                "auth.totp_replay_rejected",
+                user_id=str(user.id), step=step, last_step=last_step,
+            )
+            return False
+        user.totp_last_step = step
+        return True
 
     async def _try_use_recovery(self, user: User, code: str, *, commit: bool = True) -> bool:
         """Пытается списать recovery-код (неиспользованный). Совпадение → used_at.
@@ -661,6 +819,7 @@ class AuthService:
         user_agent: str | None,
         ip: str | None,
         *,
+        remember: bool = True,
         client_type: str | None = None,
         device_name: str | None = None,
         os_name: str | None = None,
@@ -673,6 +832,9 @@ class AuthService:
 
         Native-метаданные (§16 п.36) пишутся только когда они переданы: web-входы
         оставляют их NULL, поэтому в журнале сессий не появляется «пустых» строк.
+
+        ``remember`` — режим cookie «Запомнить меня» (аудит L9): сохраняется
+        в сессии, чтобы ротация refresh-токена не меняла режим.
         """
         session = SessionModel(
             user_id=user.id,
@@ -682,6 +844,7 @@ class AuthService:
             expires_at=datetime.now(timezone.utc)
             + timedelta(days=settings.refresh_token_ttl_days),
             revoked=False,
+            remember=remember,
             client_type=client_type,
             device_name=(device_name or "")[:128] or None,
             os_name=(os_name or "")[:64] or None,

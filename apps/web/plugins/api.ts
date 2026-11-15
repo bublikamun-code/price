@@ -1,6 +1,8 @@
 // Плагин API-клиента: ofetch-инстанс с авторизацией по cookie.
 // baseURL: на сервере — внутренний (api:8000), на клиенте — публичный (localhost:8000).
 // См. ARCHITECTURE_PLAN.md §6, §11.
+import { csrfToken } from '~/utils/csrf'
+
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
   const nuxtApp = useNuxtApp()
@@ -27,8 +29,10 @@ export default defineNuxtPlugin(() => {
 
       const method = String(options.method ?? 'GET').toUpperCase()
       if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        const csrfToken = await nuxtApp.runWithContext(() => useCookie<string | null>('csrf_token').value)
-        if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
+        // CSRF-токен читаем напрямую из cookie: useCookie вне scope компонента
+        // создавал бы BroadcastChannel на каждый запрос (см. utils/csrf.ts).
+        const token = csrfToken()
+        if (token) headers.set('X-CSRF-Token', token)
       }
       options.headers = headers
     },

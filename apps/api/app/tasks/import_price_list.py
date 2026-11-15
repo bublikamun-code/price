@@ -52,6 +52,7 @@ from app.importers.csv_price import (
     detect_separator,
     normalize_row,
     resolve_columns,
+    sku_of_row,
 )
 from app.models.catalog import Brand, PriceListVersion, Series
 from app.models.enums import ImportMode, PriceListVersionStatus
@@ -267,6 +268,13 @@ async def _process(db, version: PriceListVersion) -> tuple[int, int, int]:
             for row_num, raw in enumerate(
                 batch.iter_rows(named=True), start=rows_total + 2
             ):
+                # Артикул учитываем ДО нормализации: строка может упасть
+                # (кривая цена, пустое наименование), но товар в файле есть —
+                # архивировать его (ARCHIVE_MISSING/REPLACE) нельзя, иначе одна
+                # опечатка в цене молча убрала бы товар из каталога и склада.
+                sku_hint = sku_of_row(raw)
+                if sku_hint:
+                    seen_skus.add(sku_hint)
                 res = normalize_row(raw, row_num)
                 if isinstance(res, RowError):
                     errors.append(res)

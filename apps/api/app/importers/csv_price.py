@@ -117,6 +117,16 @@ def resolve_columns(header: list[str]) -> dict[str, str]:
     return resolved
 
 
+def sku_of_row(row: dict[str, Any]) -> str | None:
+    """Артикул строки — даже если строка в остальном некорректна.
+
+    Нужен импорту, чтобы отличить «товар есть в файле, но строка с ошибкой» от
+    «товара в файле нет»: первый не должен попадать под архивацию
+    (ARCHIVE_MISSING/REPLACE), второй — должен.
+    """
+    return _clean(row.get("sku")) or None
+
+
 def normalize_row(row: dict[str, Any], row_num: int) -> NormalizedRow | RowError:
     """Нормализовать одну строку (ключи = канонические поля).
 

@@ -45,8 +45,13 @@ export function useApi() {
       if (getErrorStatus(e) === 401 && !retried) {
         const ok = await refreshOnce()
         if (ok) {
-          ;(opts as FetchRetryOptions)._retried = true
-          return await ($api as unknown as <U>(u: string, o?: FetchOptions) => Promise<U>)(url, opts) as T
+          // Флаг ретрая — в копии опций: мутировать аргумент нельзя, иначе
+          // повторное использование того же объекта опций отключало бы
+          // повтор после 401 (запрос ушёл бы «уже попробованным»).
+          return await ($api as unknown as <U>(u: string, o?: FetchOptions) => Promise<U>)(
+            url,
+            { ...opts, _retried: true } as FetchRetryOptions,
+          ) as T
         }
         // Неудачный refresh → logout. clear() идемпотентен; редирект запускаем
         // ровно один (и только после окончательной неудачи single-flight refresh,

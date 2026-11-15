@@ -937,6 +937,24 @@ class OrderService:
             raise ApprovalTerminalError("Отклонённую заявку нельзя отменить")
         if order.status not in CLIENT_CANCELABLE:
             raise OrderNotCancelableError("Заявку в этом статусе нельзя отменить")
+        # Аудит и версия — как при смене статуса менеджером: отмена клиентом
+        # тоже меняет состояние заявки, и без версии «If-Match» менеджера не
+        # защищал бы от гонки (менеджер перезаписал бы статус уже отменённой
+        # заявки, а в журнале аудита отмены не было бы вовсе).
+        self.db.add(
+            AuditLog(
+                actor_id=user.id,
+                action="order.cancel",
+                target_type="order",
+                target_id=order.id,
+                before={"status": order.status.value, "version": order.version},
+                after={
+                    "status": OrderStatus.CANCELLED.value,
+                    "version": order.version + 1,
+                },
+            )
+        )
+        order.version += 1
         return await orders_repo.update_order_status(
             self.db, order=order, new_status=OrderStatus.CANCELLED
         )

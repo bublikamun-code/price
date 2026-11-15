@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     jwt_public_key_path: str | None = None
     access_token_ttl_min: int = 15
     refresh_token_ttl_days: int = 7
+    # Аудит M8: обязательные aud/iss в JWT. Без них токен, выпущенный одним
+    # окружением (dev/staging/prod с общим SECRET_KEY), принимался другим.
+    # iss — кто выпустил токен, aud — для кого он предназначен. При проверке
+    # несовпадение → 401 (jwt.PyJWTError). Переопределяются переменными
+    # окружения JWT_ISSUER / JWT_AUDIENCE — на разных стендах они должны
+    # различаться, иначе защита не работает.
+    jwt_issuer: str = "price-portal"
+    jwt_audience: str = "price-portal-web"
 
     # Кэш PEM-ключей по пути: файл читается один раз, а не на каждый запрос (§16 п.15)
     _jwt_pem_cache: dict[str, str] = PrivateAttr(default_factory=dict)

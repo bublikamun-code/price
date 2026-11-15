@@ -130,8 +130,11 @@ async def _fallback_alert() -> None:
             channel=["inapp", "telegram"],
         )
         # SSE-событие менеджерам (§16 п.26): broadcast, fail-open.
-        publish_notification(notification_payload(notif), user_id=None)
+        # Порядок важен: публикуем ПОСЛЕ коммита — иначе менеджер получает
+        # push, открывает ленту, а записи там ещё нет (или её уже нет,
+        # если транзакция откатилась).
         await db.commit()
+        publish_notification(notification_payload(notif), user_id=None)
     if settings.telegram_manager_chat_id:
         # lazy-import, чтобы избежать циклического импорта между tasks-модулями.
         from app.tasks.notifications import send_telegram

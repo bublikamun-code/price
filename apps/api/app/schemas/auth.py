@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.models.enums import UserRole
+from app.schemas.v2.common import SUPPORTED_CURRENCIES
 
 # display_currency: ровно 3 латинские заглавные буквы. Та же проверка, что добавлена
 # аудитом безопасности для base_currency в app/api/v1/manager/prices.py ([A-Z]{3}):
@@ -19,6 +20,10 @@ _CURRENCY_RE = re.compile(r"[A-Z]{3}")
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+    # Чекбокс «Запомнить меня» (аудит L9): true → постоянные cookie
+    # (Max-Age), false → сессионные (исчезают при закрытии браузера).
+    # По умолчанию true — прежнее поведение API.
+    remember: bool = True
 
 
 class TokenPair(BaseModel):
@@ -112,12 +117,20 @@ class UserUpdate(BaseModel):
     @field_validator("display_currency")
     @classmethod
     def _validate_currency(cls, value: str | None) -> str | None:
-        # Нормализация + проверка как для base_currency в manager/prices.py
+        # Нормализация + проверка как для base_currency в manager/prices.py.
+        # Whitelist — тот же, что в v2-контракте (schemas/v2/common.py): иначе
+        # в профиле можно было записать «XYZ», а потом v2-эндпоинты падали бы
+        # с 500 (валидация DTO) — менеджер не смог бы войти в v2 вообще.
         if value is None:
             return None
         currency = value.strip().upper()
         if not _CURRENCY_RE.fullmatch(currency):
             raise ValueError("display_currency должна состоять ровно из 3 латинских букв")
+        if currency not in SUPPORTED_CURRENCIES:
+            raise ValueError(
+                "display_currency должна быть одной из: "
+                + ", ".join(sorted(SUPPORTED_CURRENCIES))
+            )
         return currency
 
     @field_validator("price_digest_sources")
@@ -177,10 +190,16 @@ class TwoFAEnableResponse(BaseModel):
 
 
 class TwoFAVerifyRequest(BaseModel):
-    """Второй шаг логина: ticket из login + TOTP-код или recovery-код."""
+    """Второй шаг логина: ticket из login + TOTP-код или recovery-код.
+
+    ``remember`` — fallback для режима cookie «Запомнить меня» (аудит L9):
+    основной источник — claim ``remember`` внутри ticket'а (он выдан на login),
+    поле в теле нужно, если claim'а в ticket нет.
+    """
 
     ticket: str = Field(min_length=1)
     code: str = Field(min_length=6, max_length=10)
+    remember: bool = True
 
 
 class TelegramAuthRequest(BaseModel):

@@ -107,8 +107,10 @@ def test_rs256_pem_cached_by_path(rs256_keys):
 # Валидация конфига
 # =========================================================
 def test_rs256_without_paths_rejected():
+    # Пути задаём явно (None): иначе значения из окружения стенда
+    # (JWT_PRIVATE_KEY_PATH) подставились бы и ошибки не было бы.
     with pytest.raises(ValidationError, match="JWT_PRIVATE_KEY_PATH"):
-        Settings(jwt_algorithm="RS256")
+        Settings(jwt_algorithm="RS256", jwt_private_key_path=None, jwt_public_key_path=None)
 
 
 def test_rs256_missing_files_rejected(tmp_path):
