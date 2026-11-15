@@ -34,6 +34,11 @@ ACTIVITY="$STATE_DIR/last-docker-activity"       # mtime = последняя р
 CANCEL="$STATE_DIR/cancel-until"                 # epoch: до этого момента не выключать
 PENDING="$STATE_DIR/stop-pending"                # pid отложенной проверки
 COMPOSE_PROJECT="price-portal"
+# Прод-стенд: публикация наружу через Tailscale Funnel (§16 п.46).
+# Пока лежит маркер — стек считается боевым: его не гасим, а поднимаем
+# в prod-режиме (docker-compose.prod.yml). Маркер в git не коммитится.
+PROD_MARKER="$PROJECT_DIR/infra/.prod-stand"
+PROD_COMPOSE_FILE="$PROJECT_DIR/infra/docker-compose.prod.yml"
 
 IDLE_WINDOW="${DOCKER_IDLE_WINDOW:-900}"
 GRACE="${DOCKER_IDLE_GRACE:-180}"
@@ -199,16 +204,39 @@ project_containers() {
 }
 # Какие из нужных сервисов не работают: «есть хоть один контейнер» — недостаточно,
 # после частичного подъёма web/nginx молча остались бы лежать.
+#
+# Проверяем и по compose-меткам, и по ИМЕНИ контейнера: db/redis/rustfs на
+# боевом сервере подняты вне compose (пустые docker-labels), и compose считает
+# их «отсутствующими» — попытка поднять их заново падает с «name already in use».
+# Учитываем и завершённые (Exited) контейнеры: s3init — одноразовая задача.
 missing_services() {
-  local svc
+  local svc name
   for svc in $SERVICES; do
+    name=$(container_name_for "$svc")
+    if [ -n "$(docker ps -a --filter "name=^${name}$" -q 2>/dev/null)" ]; then
+      continue
+    fi
     [ -n "$(docker ps --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" \
         --filter "label=com.docker.compose.service=$svc" -q 2>/dev/null)" ] || printf '%s ' "$svc"
   done
 }
 
+container_name_for() {
+  case "$1" in
+    s3init) printf 'pp-s3-init' ;;
+    *)      printf 'pp-%s' "$1" ;;
+  esac
+}
+
+# Боевой стенд? Тогда стек не гасим, а поднимаем через prod-оверлей.
+prod_stand() { [ -f "$PROD_MARKER" ]; }
+
 decide() { # $1 — id своей сессии (чтобы не считать свой след чужим)
   local c
+  # Боевой стенд не гасим: он обслуживает публичный вход (Tailscale Funnel).
+  if prod_stand; then
+    printf 'прод-стенд (infra/.prod-stand): не гасим\n'; return
+  fi
   if [ "${DOCKER_IDLE_FORCE:-0}" != "1" ]; then
     c=$(docker_clients)
     [ -n "$c" ] && { printf 'работает docker CLI:\n%s\n' "$c"; return; }
@@ -249,7 +277,13 @@ stop_stack() {
 # (infra/docker-compose.yml) стек поднимается целиком.
 SERVICES="${DOCKER_IDLE_SERVICES:-db redis rustfs s3init api web nginx}"
 
-compose() { docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" -p "$COMPOSE_PROJECT" "$@"; }
+compose() {
+  if prod_stand && [ -f "$PROD_COMPOSE_FILE" ]; then
+    docker compose -f "$COMPOSE_FILE" -f "$PROD_COMPOSE_FILE" --env-file "$ENV_FILE" -p "$COMPOSE_PROJECT" "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" -p "$COMPOSE_PROJECT" "$@"
+  fi
+}
 
 ensure_stack() {
   daemon_up || {
@@ -259,13 +293,26 @@ ensure_stack() {
     while [ $i -lt 60 ] && ! daemon_up; do sleep 2; i=$((i + 1)); done
     daemon_up || { log "Docker Desktop не поднялся"; return 1; }
   }
-  local missing
+  local missing infra app
   missing=$(missing_services)
   [ -z "$missing" ] && { log "стек уже поднят"; return 0; }
   log "поднимаю: $missing"
-  if ! compose up -d $missing >"$STATE_DIR/up.log" 2>&1; then
-    log "compose up не удался: $(tail -3 "$STATE_DIR/up.log" 2>/dev/null | tr '\n' ' ')"
-    return 1
+  # Инфраструктуру (db/redis/rustfs/s3init) — с зависимостями, приложение —
+  # без: на боевом сервере db/redis/rustfs подняты вне compose, и обычный
+  # compose up пытается создать их заново («name already in use»).
+  infra=$(printf '%s\n' $missing | grep -E '^(db|redis|rustfs|s3init)$' | tr '\n' ' ')
+  app=$(printf '%s\n' $missing | grep -vE '^(db|redis|rustfs|s3init)$' | tr '\n' ' ')
+  if [ -n "$infra" ]; then
+    if ! compose up -d $infra >"$STATE_DIR/up.log" 2>&1; then
+      log "compose up не удался: $(tail -3 "$STATE_DIR/up.log" 2>/dev/null | tr '\n' ' ')"
+      return 1
+    fi
+  fi
+  if [ -n "$app" ]; then
+    if ! compose up -d --no-deps $app >>"$STATE_DIR/up.log" 2>&1; then
+      log "compose up не удался: $(tail -3 "$STATE_DIR/up.log" 2>/dev/null | tr '\n' ' ')"
+      return 1
+    fi
   fi
   # compose иногда возвращает 0, не подняв всё: проверяем фактом.
   sleep 3
