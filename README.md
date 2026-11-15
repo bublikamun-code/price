@@ -104,6 +104,50 @@ make test          # тесты
 
 ---
 
+---
+
+## 🌐 Публичный доступ (стенд)
+
+Публичная точка: **`https://bublik.tail4fd7f3.ts.net/price/`** — Tailscale Funnel
+(path-handler `/price`) → nginx → приложение под базой `/price`.
+
+Как это устроено и что нужно для повторения:
+
+| Слой | Что происходит |
+|---|---|
+| Funnel | Отдаёт HTTPS с валидным сертификатом Tailscale; **срезает** префикс `/price` (`/price/catalog` → nginx получает `GET /catalog`) |
+| nginx | Возвращает базу обратно (`rewrite … /price/$1`) и проксирует: страницы → Nuxt (`app.baseURL=/price`), `/api/…` → FastAPI |
+| Web | `NUXT_APP_BASE_URL=/price` запекается в образ при сборке (`docker build`), `NUXT_PUBLIC_API_BASE=/price` — рантайм |
+| API | Тот же origin → cookie host-only с `Path=/`, CSRF double-submit работают как раньше |
+
+Порядок развёртывания (изменения в `.env` → пересборка → Funnel):
+
+```bash
+# 1) .env: ENV=prod, JWT_ALGORITHM=RS256, JWT_*_KEY_PATH=/jwt-keys/...,
+#    COOKIE_SECURE=true, новый SECRET_KEY, CORS_ORIGINS без localhost,
+#    NUXT_APP_BASE_URL=/price, NUXT_PUBLIC_API_BASE=/price
+# 2) RSA-пара для RS256 (один раз):
+make gen-jwt-keys
+# 3) Пересборка образа веба с новым base path + пересоздание сервисов:
+docker compose -f infra/docker-compose.yml --env-file .env build web
+docker compose -f infra/docker-compose.yml --env-file .env up -d --no-deps web api worker beat
+docker compose -f infra/docker-compose.yml --env-file .env up -d --no-deps --force-recreate nginx
+# 4) Публикация (путь /price → nginx:8140):
+tailscale funnel --bg --yes --set-path /price 8140
+```
+
+Особенности стенда:
+
+- API наружу не публикуется — compose отдаёт его только на loopback
+  (`127.0.0.1:${DEV_API_PORT:-8000}:8000`), внешний вход только через nginx.
+- Контейнеры `pp-db`/`pp-redis` созданы вне compose → `make up`/`make test` на
+  этом сервере требуют `--no-deps` (или ручного `docker compose up db redis`).
+- `ENV=prod` скрывает `/docs` и `/openapi.json` (Swagger доступен только изнутри
+  через `http://127.0.0.1:8010/docs`).
+- Решение зафиксировано в `ARCHITECTURE_PLAN.md` §16 п.46.
+
+---
+
 ## 🛣️ Дорожная карта
 
 Реализация идёт по этапам из [`ARCHITECTURE_PLAN.md` §15/§19](./ARCHITECTURE_PLAN.md).

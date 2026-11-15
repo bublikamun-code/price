@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { COMPANY_NAME } from '~/utils/site'
+import { apiPath } from '~/utils/api-path'
 
 interface ShowcaseBrand {
   name: string
@@ -81,6 +82,8 @@ useSeoMeta({
 const auth = useAuth()
 const { isAuthenticated, isManager } = storeToRefs(auth)
 const { request } = useApi()
+// Базовый префикс публикации (пусто на обычном стенде, '/price' — публично).
+const apiBase = useRuntimeConfig().public.apiBase
 
 const showContactModal = ref(false)
 const showcaseLoading = ref(true)
@@ -117,7 +120,9 @@ function formatCount(value: number): string {
 function showcasePhotoUrl(key?: string): string | undefined {
   if (!key) return undefined
   if (/^https?:\/\//.test(key)) return key
-  return `/api/v1/public/photo?key=${encodeURIComponent(key)}`
+  // apiPath: <img src> собирается строкой мимо ofetch — при публикации под
+  // префиксом (/price) путь должен быть <base>/api/...
+  return apiPath(`/api/v1/public/photo?key=${encodeURIComponent(key)}`, apiBase)
 }
 
 async function loadShowcase() {
