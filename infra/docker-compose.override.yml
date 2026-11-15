@@ -13,7 +13,7 @@ services:
     # chown) перезагружал uvicorn и вешал его на SSE-коннектах («Waiting for
     # connections to close»). Python-правки на стенде всё равно накатываются
     # рестартом контейнера после git pull.
-    command: !override ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.16.0.0/12"]
+    command: !override ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
   nginx:
     ports: !override ["8140:80"]
   web:

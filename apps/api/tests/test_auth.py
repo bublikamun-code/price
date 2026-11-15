@@ -72,7 +72,31 @@ async def test_login_cookies_not_secure_by_default(api_client, session_factory, 
 
 
 async def test_login_cookies_secure_when_configured(api_client, session_factory, monkeypatch):
-    """§16 п.30: при COOKIE_SECURE=true все три куки получают флаг Secure."""
+    """§16 п.30: при COOKIE_SECURE=true и HTTPS-клиенте все три куки Secure.
+
+    Флаг Secure ставится по схеме запроса (X-Forwarded-Proto): по https —
+    Secure, по http — без Secure (иначе браузер такую куку не отправит и
+    вход по http был бы невозможен; в боевом проде nginx перенаправляет
+    http → https, §19).
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "cookie_secure", True)
+    await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD)
+    r = await api_client.post(
+        "/api/v1/auth/login",
+        json={"email": CLIENT_EMAIL, "password": PASSWORD},
+        headers={"X-Forwarded-Proto": "https"},
+    )
+    assert r.status_code == 200, r.text
+    set_cookies = r.headers.get_list("set-cookie")
+    names = {h.split("=", 1)[0] for h in set_cookies}
+    assert {"access_token", "refresh_token", "csrf_token"} <= names
+    assert all("secure" in h.lower() for h in set_cookies)
+
+
+async def test_login_cookies_without_secure_over_plain_http(api_client, session_factory, monkeypatch):
+    """По http Secure-куку не ставим — иначе вход по http невозможен."""
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "cookie_secure", True)
@@ -80,9 +104,7 @@ async def test_login_cookies_secure_when_configured(api_client, session_factory,
     r = await _login(api_client, CLIENT_EMAIL, PASSWORD)
     assert r.status_code == 200, r.text
     set_cookies = r.headers.get_list("set-cookie")
-    names = {h.split("=", 1)[0] for h in set_cookies}
-    assert {"access_token", "refresh_token", "csrf_token"} <= names
-    assert all("secure" in h.lower() for h in set_cookies)
+    assert all("secure" not in h.lower() for h in set_cookies)
 
 
 async def test_login_wrong_password(api_client, session_factory):
