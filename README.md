@@ -144,6 +144,12 @@ tailscale funnel --bg --yes --set-path /price 8140
   этом сервере требуют `--no-deps` (или ручного `docker compose up db redis`).
 - `ENV=prod` скрывает `/docs` и `/openapi.json` (Swagger доступен только изнутри
   через `http://127.0.0.1:8010/docs`).
+- Rate-limit считается по реальному IP клиента: nginx передаёт в API адрес,
+  который сообщил Funnel (клиентские подделки `X-Forwarded-For` Funnel
+  перезаписывает), а для LAN-доступа — IP сокета. Без этого все посетители
+  делили один счётчик логина.
+- Флаг `Secure` у auth-кук следует за схемой: публичная точка (https) — Secure,
+  LAN по http — без Secure (иначе браузер не отправит куку и вход невозможен).
 - Решение зафиксировано в `ARCHITECTURE_PLAN.md` §16 п.46.
 
 ---
