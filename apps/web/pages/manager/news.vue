@@ -105,6 +105,19 @@ const emptyForm = (): NewsForm => ({
 
 const form = ref<NewsForm>(emptyForm())
 
+// Опции селекта типа новости.
+const TYPE_OPTIONS: { value: NewsType; label: string }[] = [
+  { value: 'NEWS', label: 'Новость' },
+  { value: 'NEW_PRODUCT', label: 'Новинка' },
+]
+/** UiSelect отдаёт string | number — значение приводим к типу формы. */
+const typeModel = computed({
+  get: () => form.value.type as string | number,
+  set: (value: string | number) => {
+    form.value.type = value as NewsType
+  },
+})
+
 function openCreate() {
   editingId.value = null
   form.value = emptyForm()
@@ -332,11 +345,9 @@ onMounted(load)
           </div>
 
           <div>
-            <label class="label" for="news-type">Тип</label>
-            <select id="news-type" v-model="form.type" class="input py-2.5">
-              <option value="NEWS">Новость</option>
-              <option value="NEW_PRODUCT">Новинка</option>
-            </select>
+            <UiField for="news-type" label="Тип">
+              <UiSelect v-model="typeModel" :options="TYPE_OPTIONS" />
+            </UiField>
           </div>
 
           <div>

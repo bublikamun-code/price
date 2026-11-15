@@ -45,6 +45,26 @@ const VISIBILITY_META: Record<string, { label: string; cls: string }> = {
   MANAGER_ONLY: { label: 'Только менеджеры', cls: 'badge-warning' },
 }
 
+// Опции селектов (UiSelect): значения и подписи взяты из прежних <option>.
+const VISIBILITY_OPTIONS: { value: FileVisibility; label: string }[] = [
+  { value: 'AUTHED', label: 'Все авторизованные' },
+  { value: 'PUBLIC', label: 'Открытый' },
+  { value: 'MANAGER_ONLY', label: 'Только менеджеры' },
+]
+const VISIBILITY_FILTER_OPTIONS: { value: '' | FileVisibility; label: string }[] = [
+  { value: '', label: 'Любая' },
+  { value: 'PUBLIC', label: 'Открытый' },
+  { value: 'AUTHED', label: 'Авторизованные' },
+  { value: 'MANAGER_ONLY', label: 'Только менеджеры' },
+]
+const TYPE_FILTER_OPTIONS: { value: '' | FileAssetType; label: string }[] = [
+  { value: '', label: 'Все типы' },
+  ...Object.entries(TYPE_META).map(([value, meta]) => ({
+    value: value as FileAssetType,
+    label: meta.label,
+  })),
+]
+
 // --- Форма загрузки ---
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | null>(null)
@@ -55,6 +75,24 @@ const uploadType = ref<FileAssetType>('BRAND_PDF')
 const visibility = ref<FileVisibility>('AUTHED')
 const brandId = ref('')
 const brands = ref<BrandRef[]>([])
+
+/** UiSelect отдаёт string | number — значения приводим к типам полей. */
+const uploadTypeModel = computed({
+  get: () => uploadType.value as string | number,
+  set: (value: string | number) => {
+    uploadType.value = value as FileAssetType
+  },
+})
+const visibilityModel = computed({
+  get: () => visibility.value as string | number,
+  set: (value: string | number) => {
+    visibility.value = value as FileVisibility
+  },
+})
+const brandOptions = computed(() => [
+  { value: '', label: 'Без бренда' },
+  ...brands.value.map((brand) => ({ value: brand.id, label: brand.name })),
+])
 
 const submitting = ref(false)
 const submitError = ref('')
@@ -162,6 +200,19 @@ const error = ref('')
 
 const typeFilter = ref<'' | FileAssetType>('')
 const visibilityFilter = ref<'' | FileVisibility>('')
+
+const typeFilterModel = computed({
+  get: () => typeFilter.value as string | number,
+  set: (value: string | number) => {
+    typeFilter.value = value as '' | FileAssetType
+  },
+})
+const visibilityFilterModel = computed({
+  get: () => visibilityFilter.value as string | number,
+  set: (value: string | number) => {
+    visibilityFilter.value = value as '' | FileVisibility
+  },
+})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PER_PAGE)))
 
@@ -324,25 +375,19 @@ onUnmounted(() => {
       <!-- Параметры файла -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
         <div>
-          <label class="label" for="upload-type">Тип</label>
-          <select id="upload-type" v-model="uploadType" class="input py-2.5">
-            <option v-for="t in UPLOAD_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-          </select>
+          <UiField for="upload-type" label="Тип">
+            <UiSelect v-model="uploadTypeModel" :options="UPLOAD_TYPES" />
+          </UiField>
         </div>
         <div>
-          <label class="label" for="upload-visibility">Видимость</label>
-          <select id="upload-visibility" v-model="visibility" class="input py-2.5">
-            <option value="AUTHED">Все авторизованные</option>
-            <option value="PUBLIC">Открытый</option>
-            <option value="MANAGER_ONLY">Только менеджеры</option>
-          </select>
+          <UiField for="upload-visibility" label="Видимость">
+            <UiSelect v-model="visibilityModel" :options="VISIBILITY_OPTIONS" />
+          </UiField>
         </div>
         <div>
-          <label class="label" for="upload-brand">Бренд</label>
-          <select id="upload-brand" v-model="brandId" class="input py-2.5">
-            <option value="">Без бренда</option>
-            <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
-          </select>
+          <UiField for="upload-brand" label="Бренд">
+            <UiSelect v-model="brandId" :options="brandOptions" />
+          </UiField>
           <p class="text-xs text-ink-faint mt-1.5">Необязательно</p>
         </div>
       </div>
@@ -368,20 +413,14 @@ onUnmounted(() => {
     <!-- Фильтры -->
     <div class="flex flex-col sm:flex-row gap-4 mb-6">
       <div class="sm:w-64">
-        <label class="label" for="type">Тип</label>
-        <select id="type" v-model="typeFilter" class="input py-2.5" @change="applyFilters">
-          <option value="">Все типы</option>
-          <option v-for="(meta, t) in TYPE_META" :key="t" :value="t">{{ meta.label }}</option>
-        </select>
+        <UiField for="type" label="Тип">
+          <UiSelect v-model="typeFilterModel" :options="TYPE_FILTER_OPTIONS" @update:model-value="applyFilters" />
+        </UiField>
       </div>
       <div class="sm:w-64">
-        <label class="label" for="visibility">Видимость</label>
-        <select id="visibility" v-model="visibilityFilter" class="input py-2.5" @change="applyFilters">
-          <option value="">Любая</option>
-          <option value="PUBLIC">Открытый</option>
-          <option value="AUTHED">Авторизованные</option>
-          <option value="MANAGER_ONLY">Только менеджеры</option>
-        </select>
+        <UiField for="visibility" label="Видимость">
+          <UiSelect v-model="visibilityFilterModel" :options="VISIBILITY_FILTER_OPTIONS" @update:model-value="applyFilters" />
+        </UiField>
       </div>
     </div>
 

@@ -26,6 +26,7 @@ const PER_PAGE = 10
 const MAX_SIZE = 100 * 1024 * 1024 // settings.import_max_file_mb = 100
 const ALLOWED_EXT = ['.csv', '.txt']
 const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB']
+const CURRENCY_OPTIONS = CURRENCIES.map((currency) => ({ value: currency, label: currency }))
 
 const MODES: { value: ImportMode; label: string; hint: string }[] = [
   { value: 'UPSERT', label: 'Обновить и добавить', hint: 'Обновить существующие позиции и добавить новые' },
@@ -483,10 +484,9 @@ onUnmounted(() => {
       <!-- Валюта + курс -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
         <div>
-          <label class="label" for="currency">Валюта прайса</label>
-          <select id="currency" v-model="baseCurrency" class="input py-2.5" @change="onCurrencyChange">
-            <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
-          </select>
+          <UiField for="currency" label="Валюта прайса">
+            <UiSelect v-model="baseCurrency" :options="CURRENCY_OPTIONS" @update:model-value="onCurrencyChange" />
+          </UiField>
         </div>
         <div>
           <label class="label" for="rate">Курс к BYN</label>

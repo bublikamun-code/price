@@ -37,6 +37,42 @@ const stock = ref<'' | StockStatus>('')
 
 const brands = ref<ManagerBrand[]>([])
 
+// Опции селектов (UiSelect): значения и подписи взяты из прежних <option>.
+const BRAND_OPTIONS = computed(() => [
+  { value: '', label: 'Все бренды' },
+  ...brands.value.map((brand) => ({ value: brand.id, label: brand.name })),
+])
+const STOCK_OPTIONS: { value: '' | StockStatus; label: string }[] = [
+  { value: '', label: 'Все статусы' },
+  { value: 'IN_STOCK', label: 'В наличии' },
+  { value: 'PREORDER', label: 'Под заказ' },
+  { value: 'ARCHIVED', label: 'Архив' },
+]
+const PER_PAGE_OPTIONS: { value: number; label: string }[] = [
+  { value: 20, label: '20 / стр.' },
+  { value: 50, label: '50 / стр.' },
+  { value: 100, label: '100 / стр.' },
+]
+const EDIT_STOCK_OPTIONS: { value: StockStatus; label: string }[] = [
+  { value: 'IN_STOCK', label: 'В наличии' },
+  { value: 'PREORDER', label: 'Под заказ' },
+  { value: 'ARCHIVED', label: 'Архив' },
+]
+
+/** UiSelect отдаёт string | number — значения приводим к типам фильтров. */
+const stockModel = computed({
+  get: () => stock.value as string | number,
+  set: (value: string | number) => {
+    stock.value = value as '' | StockStatus
+  },
+})
+const perPageModel = computed({
+  get: () => perPage.value as string | number,
+  set: (value: string | number) => {
+    perPage.value = value as number
+  },
+})
+
 // Сортировка (клиентская)
 const sortField = ref<'sku' | 'name' | 'brand' | 'base_price' | 'stock_qty'>('sku')
 const sortDir = ref<'asc' | 'desc'>('asc')
@@ -148,6 +184,12 @@ const editPrice = ref('')
 const editResetPrice = ref(false)
 const editStock = ref<StockStatus>('IN_STOCK')
 const editStockQty = ref('')
+const editStockModel = computed({
+  get: () => editStock.value as string | number,
+  set: (value: string | number) => {
+    editStock.value = value as StockStatus
+  },
+})
 const saving = ref(false)
 const editError = ref('')
 const editSuccess = ref(false)
@@ -332,21 +374,15 @@ onUnmounted(() => {
             class="input pl-10"
           >
         </div>
-        <select v-model="brandId" class="input lg:w-48" @change="applyFilters">
-          <option value="">Все бренды</option>
-          <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
-        </select>
-        <select v-model="stock" class="input lg:w-44" @change="applyFilters">
-          <option value="">Все статусы</option>
-          <option value="IN_STOCK">В наличии</option>
-          <option value="PREORDER">Под заказ</option>
-          <option value="ARCHIVED">Архив</option>
-        </select>
-        <select v-model="perPage" class="input lg:w-28" @change="applyFilters">
-          <option :value="20">20 / стр.</option>
-          <option :value="50">50 / стр.</option>
-          <option :value="100">100 / стр.</option>
-        </select>
+        <div class="lg:w-48">
+          <UiSelect v-model="brandId" :options="BRAND_OPTIONS" @update:model-value="applyFilters" />
+        </div>
+        <div class="lg:w-44">
+          <UiSelect v-model="stockModel" :options="STOCK_OPTIONS" @update:model-value="applyFilters" />
+        </div>
+        <div class="lg:w-28">
+          <UiSelect v-model="perPageModel" :options="PER_PAGE_OPTIONS" @update:model-value="applyFilters" />
+        </div>
         <div class="flex gap-2 shrink-0">
           <button type="submit" class="btn-primary flex-1 lg:flex-none">Найти</button>
           <button type="button" class="btn-ghost" @click="resetFilters">Сбросить</button>
@@ -517,12 +553,9 @@ onUnmounted(() => {
             Сбросить цену менеджера (использовать базовую)
           </label>
           <div>
-            <label class="label" for="pc-stock">Статус остатка</label>
-            <select id="pc-stock" v-model="editStock" class="input min-h-11 lg:min-h-9">
-              <option value="IN_STOCK">В наличии</option>
-              <option value="PREORDER">Под заказ</option>
-              <option value="ARCHIVED">Архив</option>
-            </select>
+            <UiField for="pc-stock" label="Статус остатка">
+              <UiSelect v-model="editStockModel" :options="EDIT_STOCK_OPTIONS" />
+            </UiField>
           </div>
           <div>
             <label class="label" for="pc-stock-qty">Остаток, шт</label>

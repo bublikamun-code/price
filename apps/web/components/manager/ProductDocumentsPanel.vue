@@ -24,6 +24,17 @@ const docs = ref<ProductDocument[]>([])
 
 const pickedFile = ref<File | null>(null)
 const docType = ref<DocumentType>('CERTIFICATE')
+const DOC_TYPE_OPTIONS: { value: DocumentType; label: string }[] = [
+  { value: 'CERTIFICATE', label: 'Сертификат' },
+  { value: 'DATASHEET', label: 'Даташит' },
+]
+/** UiSelect отдаёт string | number — значение приводим к типу документа. */
+const docTypeModel = computed({
+  get: () => docType.value as string | number,
+  set: (value: string | number) => {
+    docType.value = value as DocumentType
+  },
+})
 const validUntil = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
@@ -192,16 +203,13 @@ onMounted(load)
         </div>
         <div class="grid gap-2 sm:grid-cols-2">
           <div>
-            <label class="label" :for="`doc-type-${targetId}`">Тип</label>
-            <select
-              :id="`doc-type-${targetId}`"
-              v-model="docType"
-              class="input min-h-11 lg:min-h-9"
-              :data-testid="`manager-document-type-${scope}`"
-            >
-              <option value="CERTIFICATE">Сертификат</option>
-              <option value="DATASHEET">Даташит</option>
-            </select>
+            <UiField :for="`doc-type-${targetId}`" label="Тип">
+              <UiSelect
+                v-model="docTypeModel"
+                :options="DOC_TYPE_OPTIONS"
+                :data-testid="`manager-document-type-${scope}`"
+              />
+            </UiField>
           </div>
           <div>
             <label class="label" :for="`doc-valid-${targetId}`">Действует до</label>

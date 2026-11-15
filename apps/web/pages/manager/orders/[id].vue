@@ -12,6 +12,10 @@ const { show } = useToast()
 const STATUS_META = ORDER_STATUS_META
 
 const STATUS_OPTIONS: OrderStatus[] = ['NEW', 'IN_PROGRESS', 'SHIPPED', 'COMPLETED', 'CANCELLED']
+const STATUS_SELECT_OPTIONS = STATUS_OPTIONS.map((status) => ({
+  value: status,
+  label: STATUS_META[status].label,
+}))
 
 const loading = ref(true)
 const error = ref('')
@@ -21,6 +25,13 @@ const statusError = ref('')
 const notFound = ref(false)
 const order = ref<OrderRead | null>(null)
 const selectedStatus = ref<OrderStatus>('NEW')
+/** UiSelect отдаёт string | number — значение приводим к типу статуса. */
+const statusModel = computed({
+  get: () => selectedStatus.value as string | number,
+  set: (value: string | number) => {
+    selectedStatus.value = value as OrderStatus
+  },
+})
 const saving = ref(false)
 
 // Согласование владельцем (Э6): заявка на визе заблокирована для обработки статуса.
@@ -192,16 +203,14 @@ onMounted(load)
       <div class="mb-5 border border-border bg-surface p-4">
         <h3 class="font-semibold mb-3">Управление</h3>
         <div class="flex flex-wrap items-center gap-3">
-          <label class="text-sm text-ink-muted" for="status">Статус:</label>
-          <select
-            id="status"
-            v-model="selectedStatus"
-            class="input min-h-11 w-auto"
-            :disabled="approvalPending"
-            :title="approvalPending ? 'Ожидается виза владельца организации' : undefined"
-          >
-            <option v-for="s in STATUS_OPTIONS" :key="s" :value="s">{{ STATUS_META[s].label }}</option>
-          </select>
+          <UiField for="status" label="Статус" class="w-auto">
+            <UiSelect
+              v-model="statusModel"
+              :options="STATUS_SELECT_OPTIONS"
+              :disabled="approvalPending"
+              :title="approvalPending ? 'Ожидается виза владельца организации' : undefined"
+            />
+          </UiField>
           <button
             class="btn-primary min-h-11"
             :disabled="saving || approvalPending || selectedStatus === order.status"

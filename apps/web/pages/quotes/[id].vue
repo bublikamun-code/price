@@ -124,6 +124,13 @@ async function reloadAddresses() {
 
 const needNewAddress = computed(() => deliveryMethod.value === 'DELIVERY' && addressId.value === 'NEW')
 
+/** Опции адресов для UiSelect (единый стиль с остальными полями портала). */
+const addressOptions = computed(() => [
+  { value: '', label: 'Выберите адрес…', disabled: addresses.value.length > 0 },
+  ...addresses.value.map((address) => ({ value: address.id, label: addressLabel(address) })),
+  { value: 'NEW', label: 'Новый адрес…' },
+])
+
 function validateAccept(): string {
   if (deliveryMethod.value === 'DELIVERY') {
     if (!contactName.value.trim()) return 'Укажите контактное лицо'
@@ -449,19 +456,13 @@ onUnmounted(() => {
             >
           </UiField>
           <UiField for="quote-accept-address" label="Адрес доставки">
-            <select
-              id="quote-accept-address"
+            <UiSelect
               v-model="addressId"
-              class="block min-h-11 w-full border border-border-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
+              :options="addressOptions"
+              :placeholder="addressesLoading ? 'Загружаем адресную книгу…' : 'Выберите адрес…'"
+              :disabled="addressesLoading"
               data-testid="quote-accept-address"
-            >
-              <option value="" :disabled="addresses.length > 0">Выберите адрес…</option>
-              <option v-if="addressesLoading" value="" disabled>Загружаем адресную книгу…</option>
-              <option v-for="address in addresses" :key="address.id" :value="address.id">
-                {{ addressLabel(address) }}
-              </option>
-              <option value="NEW">Новый адрес…</option>
-            </select>
+            />
             <button
               type="button"
               class="mt-1 inline-flex min-h-8 items-center gap-1 text-xs font-semibold text-ink-muted hover:text-ink"

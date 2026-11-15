@@ -17,6 +17,11 @@ const brands = ref<FiltersOut['brands']>([])
 const total = ref(0)
 const q = ref('')
 const brandId = ref('')
+/** Опции фильтра по производителю для UiSelect. */
+const brandOptions = computed(() => [
+  { value: '', label: 'Все производители' },
+  ...brands.value.map((brand) => ({ value: brand.id, label: brand.name })),
+])
 const page = ref(1)
 const hasMore = computed(() => products.value.length < total.value)
 // Справочник брендов не зависит от поиска/страницы, поэтому загружаем его
@@ -130,11 +135,14 @@ onUnmounted(() => {
         <Icon name="heroicons:magnifying-glass" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint" aria-hidden="true" />
         <input id="m_catalog_search" v-model="q" class="input min-h-11 pl-9" type="search" placeholder="Артикул или наименование">
       </div>
-      <label class="sr-only" for="m_catalog_brand">Производитель</label>
-      <select id="m_catalog_brand" v-model="brandId" class="input mt-2 min-h-11" @change="search">
-        <option value="">Все производители</option>
-        <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
-      </select>
+      <UiField for="m-catalog-brand" label="Производитель" label-hidden class="mt-2">
+        <UiSelect
+          v-model="brandId"
+          :options="brandOptions"
+          placeholder="Все производители"
+          @update:model-value="search"
+        />
+      </UiField>
       <button type="submit" class="btn-primary mt-2 min-h-11 w-full justify-center" :disabled="loading">Найти</button>
     </form>
 
