@@ -344,11 +344,12 @@ describe('Client cabinet contract', () => {
     // Иконка остаётся только как фолбэк, а не вместо фото.
     expect(photo).toContain('<Icon v-else name="heroicons:photo"')
     expect(photo).not.toMatch(/<Icon name="heroicons:photo"/)
-    // Карточка, таблица каталога и страница товара берут thumbnail товара.
+    // Карточка и таблица каталога берут thumbnail товара; страница товара —
+    // выбранный кадр в полном размере (в ленте остаётся thumb).
     expect(row).toContain('<ProductPhoto')
     expect(row).toContain(':media="product.thumbnail"')
     expect(catalog).toContain(':media="product.thumbnail"')
-    expect(detail).toContain(':media="activeMedia"')
+    expect(detail).toContain(':media="activeMediaLarge"')
     // Заглушка «фото недоступно» остаётся только когда кадра действительно нет.
     expect(detail).toContain('v-if="!activeMedia"')
   })
