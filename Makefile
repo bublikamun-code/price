@@ -209,5 +209,22 @@ restore-test: ## проверить свежий бэкап восстановл
 	infra/scripts/restore_db.sh --test --yes
 
 ratelimit-reset: ## сбросить dev-счётчики rate-limit (login и др.) в Redis
-	@$(DC) exec -T redis sh -c 'redis-cli --scan --pattern "LIMITS:*" | xargs redis-cli DEL' >/dev/null
+	@CONTAINER=$$($(DC) ps -q redis 2>/dev/null | head -1); \
+	if [ -z "$$CONTAINER" ]; then \
+	  REDIS_NAME=$$($(DC) config 2>/dev/null | awk '/^  redis:/{f=1;next} /^  [a-z]/{f=0} f && /container_name:/{print $$2; exit}'); \
+	  if [ -n "$$REDIS_NAME" ]; then \
+	    CONTAINER=$$(docker ps --filter "name=^/$$REDIS_NAME$$" --format "{{.Names}}" | head -1); \
+	  fi; \
+	fi; \
+	if [ -z "$$CONTAINER" ]; then \
+	  for api in $$($(DC) ps -q api 2>/dev/null) $$(docker ps --filter "label=com.docker.compose.service=api" --format "{{.ID}}"); do \
+	    for net in $$(docker inspect -f '{{range $$k,$$v := .NetworkSettings.Networks}}{{$$k}} {{end}}' "$$api" 2>/dev/null); do \
+	      c=$$(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$$net" 2>/dev/null | tr ' ' '\n' | grep -i redis | head -1 | sed 's|^/||'); \
+	      if [ -n "$$c" ]; then CONTAINER="$$c"; break 2; fi; \
+	    done; \
+	  done; \
+	fi; \
+	if [ -z "$$CONTAINER" ]; then echo "Контейнер Redis не найден"; exit 1; fi; \
+	echo "Счётчики сбрасываются в контейнере $$CONTAINER"; \
+	docker exec "$$CONTAINER" sh -c 'redis-cli --scan --pattern "LIMITS:*" | while read -r k; do redis-cli DEL "$$k" >/dev/null; done'
 	@echo "Счётчики rate-limit сброшены (только dev; в prod не применять)"
