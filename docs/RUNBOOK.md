@@ -52,6 +52,68 @@ MinIO: остановить pp-minio, распаковать `minio.tar.gz` в `
 
 Только через `infra/scripts/deploy-prod.sh` из репозитория (см. ниже «Правило деплоя»).
 
+## TLS-сертификат Let's Encrypt (автопродление)
+
+Публичный вход — `https://bublik.tail4fd7f3.ts.net/price/` через Tailscale Funnel;
+TLS терминирует наш nginx (`infra/nginx/nginx.prod.conf`), а не Funnel. Сертификат —
+Let's Encrypt для `bublik.tail4fd7f3.ts.net`, полученный командой `tailscale cert`:
+ACME-челлендж Let's Encrypt к ts.net-домену выдаёт только сам Tailscale, отдельный
+ACME-клиент (certbot) здесь не сработает.
+
+Файлы сертификата лежат в `infra/nginx/certs/` (`fullchain.pem` + `privkey.pem`;
+каталог в `.gitignore`) и смонтированы в nginx read-only.
+
+### Как продлевается
+
+Скрипт `infra/scripts/renew-cert.sh`:
+
+1. просит у `tailscale cert` сертификат с `--min-validity 720h` (30 суток) — если до
+   истечения больше 30 дней, Tailscale вернёт **тот же** сертификат и ничего не изменится;
+   если меньше — выпустит новый;
+2. проверяет, что новый сертификат валиден и покрывает домен (`openssl x509 -checkhost`);
+3. подставляет новые файлы на место старых (`fullchain.pem` 644, `privkey.pem` 600);
+4. перечитывает их в nginx через `nginx -s reload` — **без рестарта контейнера**
+   и без разрыва соединений.
+
+Шаг 1 идемпотентен, поэтому скрипт безопасно запускать хоть каждый час.
+
+### Расписание на хосте (systemd-таймер, вне git)
+
+Файлы юнитов лежат в репозитории (`infra/systemd/`), на хост копируются вручную:
+
+```bash
+sudo cp infra/systemd/price-cert-renew.service infra/systemd/price-cert-renew.timer \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now price-cert-renew.timer
+systemctl list-timers price-cert-renew.timer    # следующий запуск
+journalctl -u price-cert-renew -n 50            # журнал прогонов
+```
+
+Таймер срабатывает раз в сутки около 04:17; продление случается только если до
+истечения сертификата осталось меньше 30 суток. Путь к репозиторию в юнитах —
+`/data/bublik/projects/price`; при переезде хоста поправить `WorkingDirectory`
+и `ExecStart` в `price-cert-renew.service`.
+
+### Ручная проверка и продление
+
+```bash
+sudo infra/scripts/renew-cert.sh        # или: make cert-renew
+openssl x509 -in infra/nginx/certs/fullchain.pem -noout -dates
+```
+
+### Если сертификат всё-таки протух (сайт не открывается)
+
+1. `sudo infra/scripts/renew-cert.sh` — выпустит новый (Tailscale выдаёт до 5 LE-сертификатов
+   на домен в неделю; при исчерпании лимита нужен другой способ).
+2. `docker exec pp-nginx nginx -t && docker exec pp-nginx nginx -s reload`.
+3. Проверка, что сертификат изменился и валиден:
+
+   ```bash
+   openssl s_client -connect 127.0.0.1:443 -servername bublik.tail4fd7f3.ts.net </dev/null 2>/dev/null \
+     | openssl x509 -noout -dates -issuer
+   ```
+
 ## Правило деплоя (защита от отката дизайна)
 
 Причина потери дизайна 02–03.09: `.output` собирался из рабочего дерева Mac и
