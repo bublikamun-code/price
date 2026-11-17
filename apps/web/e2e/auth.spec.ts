@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { goto } from './support/nav'
+import { appPath, goto } from './support/nav'
 import {
   MANAGER_EMAIL,
   MANAGER_STATE,
@@ -42,7 +42,7 @@ test.describe('вход', () => {
     // Ошибка — role="alert", её читает скринридер: проверяем доступное имя.
     const error = page.getByRole('alert').filter({ hasText: 'Неверный email или пароль' })
     await expect(error).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe('/login')
+    expect(new URL(page.url()).pathname).toBe(appPath('/login'))
 
     // Главный регресс-барьер: неудачный вход не должен оставить сессию.
     await goto(page, '/manager')

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { goto } from './support/nav'
+import { appPath, goto } from './support/nav'
 import { MANAGER_STATE, MISSING_CREDENTIALS, hasManagerCredentials } from './support/auth'
 
 // ============================================================
@@ -67,7 +67,23 @@ test.describe('карточка товара', () => {
     await useDesktopViewport(page)
     await goto(page, '/catalog')
 
-    const productLink = page.locator('[data-testid^="catalog-row-"] a[href^="/catalog/"]').first()
+    // Селектор учитывает базовый префикс публикации (`/price`): без этого
+    // ссылка не находилась и сценарий молча пропускался как «каталог пуст».
+    const productLink = page
+      .locator(`[data-testid^="catalog-row-"] a[href^="${appPath('/catalog/')}"]`)
+      .first()
+
+    // Номенклатура приезжает асинхронно: без ожидания счётчик ссылок был
+    // нулевым ещё до загрузки, и сценарий пропускал сам себя как «каталог
+    // пуст». Ждём либо строки таблицы, либо осмысленное пустое состояние.
+    await expect(
+      page
+        .locator('[data-testid^="catalog-row-"]')
+        .first()
+        .or(page.getByText('Ничего не найдено', { exact: true }))
+        .or(page.getByTestId('catalog-error')),
+    ).toBeVisible({ timeout: 30_000 })
+
     // Пустой стенд (без `make seed-catalog`) — это не падение теста, но и
     // не повод молча проходить: явно говорим, что сценарий не проверен.
     await test.skip(

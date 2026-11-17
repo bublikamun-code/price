@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { goto } from './support/nav'
+import { appPath, goto } from './support/nav'
 import { MANAGER_STATE, MISSING_CREDENTIALS, hasManagerCredentials } from './support/auth'
 
 // ============================================================
@@ -82,7 +82,9 @@ test.describe('менеджерский раздел', () => {
   test('менеджер не попадает в клиентские разделы', async ({ page }) => {
     // RBAC через middleware/role: страница помечена roles: ['CLIENT'],
     // поэтому менеджеру отдаётся 403, а не редирект (см. middleware/role.ts).
-    const response = await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+    // appPath — с учётом базового префикса публикации (`/price`): путь,
+    // начинающийся с '/', Playwright иначе резолвит от корня origin.
+    const response = await page.goto(appPath('/dashboard'), { waitUntil: 'domcontentloaded' })
 
     expect(response?.status()).toBe(403)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Недостаточно прав')
