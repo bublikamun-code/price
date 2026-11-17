@@ -16,9 +16,21 @@ describe('client checkout delivery address book', () => {
     expect(checkoutPage).toMatch(
       /watch\(deliveryMethod, \(method\) => \{\s*if \(method === 'DELIVERY'\) void loadAddresses\(\)/,
     )
+    // Внутри onMounted перед загрузкой стоит guard роли: корзина — сущность
+    // клиента (SITEMAP §3), для MANAGER/ADMIN страница показывает заглушку и
+    // запрос /api/v2/cart не уходит. Поэтому регулярка допускает любые
+    // строки-guard перед loadCart(), но требует прежнего порядка:
+    // сначала корзина, затем адреса для метода доставки.
     expect(checkoutPage).toMatch(
-      /onMounted\(\(\) => \{\s*void loadCart\(\)\s*if \(deliveryMethod\.value === 'DELIVERY'\) void loadAddresses\(\)/,
+      /onMounted\(\(\) => \{(?:[^{}]|\{[^{}]*\})*?void loadCart\(\)\s*if \(deliveryMethod\.value === 'DELIVERY'\) void loadAddresses\(\)/,
     )
+  })
+
+  it('does not load the cart for a role that is not the client', () => {
+    // Корзина грузится только для роли CLIENT — иначе менеджер получил бы
+    // 403 PERMISSION_DENIED от GET /api/v2/cart (SITEMAP §3).
+    expect(checkoutPage).toMatch(/onMounted\(\(\) => \{\s*if \(!auth\.isClient\) return/)
+    expect(checkoutPage).toContain('const isForeignRole = computed(() => !!auth.user && !auth.isClient)')
   })
 
   it('preselects the default saved address and marks it with a badge', () => {
