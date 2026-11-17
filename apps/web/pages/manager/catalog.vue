@@ -492,7 +492,7 @@ onUnmounted(() => {
     >
       <p class="text-sm text-ink-muted">Показано {{ shownFrom }}–{{ shownTo }} из {{ total }}</p>
       <nav v-if="totalPages > 1" class="flex items-center gap-1">
-        <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
+        <button class="btn-ghost size-11" :disabled="page <= 1" aria-label="Предыдущая страница" @click="goPage(page - 1)">
           <Icon name="heroicons:chevron-left" class="w-5 h-5" />
         </button>
         <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
@@ -504,7 +504,7 @@ onUnmounted(() => {
             @click="goPage(pgn as number)"
           >{{ pgn }}</button>
         </template>
-        <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
+        <button class="btn-ghost size-11" :disabled="page >= totalPages" aria-label="Следующая страница" @click="goPage(page + 1)">
           <Icon name="heroicons:chevron-right" class="w-5 h-5" />
         </button>
       </nav>
