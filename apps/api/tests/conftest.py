@@ -94,6 +94,12 @@ async def _truncate_tables(engine):
     """Чистим все таблицы перед каждым тестом."""
     async with engine.begin() as conn:
         names = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
+        # Страховка от «вечного» TRUNCATE: если предыдущий тест оставил
+        # незакрытую сессию с открытой транзакцией, TRUNCATE блокируется на
+        # ACCESS EXCLUSIVE-локе и провисает (в CI — до таймаута джобы, 6 ч без
+        # pytest-timeout). lock_timeout превращает ожидание в быструю ошибку
+        # с внятным текстом вместо зависания всего прогона.
+        await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         await conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
 
 

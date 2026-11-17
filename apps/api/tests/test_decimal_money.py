@@ -344,6 +344,12 @@ async def test_invoice_total_copied_as_decimal(api_client, session_factory):
     assert r.status_code == 201, r.text
     order_id = r.json()["id"]
 
-    invoice = await InvoiceService(sf()).issue(manager, order_id)
+    # Сессию обязательно закрываем: InvoiceService.issue() по канону не коммитит
+    # транзакцию (это делает роутер), а незакрытая сессия держит открытую
+    # транзакцию с INSERT в notifications. Такая транзакция блокирует TRUNCATE
+    # следующего теста на ACCESS EXCLUSIVE-локе — прогон виснет до таймаута.
+    async with sf() as s:
+        invoice = await InvoiceService(s).issue(manager, order_id)
+        await s.commit()
     assert isinstance(invoice.total_amount, Decimal)
     assert invoice.total_amount == Decimal("139.93")
