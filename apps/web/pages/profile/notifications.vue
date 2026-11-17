@@ -10,8 +10,21 @@ const SOURCES: { value: string; label: string; description: string }[] = [
   { value: 'orders', label: 'Заказы', description: 'Позиции из оформленных заказов.' },
 ]
 
-const enabled = ref(auth.user?.priceDigestEnabled ?? false)
-const sources = ref<string[]>([...(auth.user?.priceDigestSources ?? [])])
+// Значения полей НЕ читаются из auth.user прямо в setup: на SSR профиль может
+// быть ещё не подтверждён (access-токен истёк, а refresh на сервере запрещён —
+// plugins/auth.session.ts), и сервер отдал бы «пустые» чекбоксы. На клиенте
+// профиль к моменту setup уже есть, и разметка разошлась бы с серверной —
+// Nuxt писал бы «Hydration completed but contains mismatches». Поэтому до
+// монтирования обе версии рендерят одно и то же, а реальные значения
+// подставляются после подтверждения сессии на клиенте.
+const enabled = ref(false)
+const sources = ref<string[]>([])
+// Снимок последнего известного серверного состояния; null — «ещё не
+// подтверждено». По нему считается «изменено», а не по auth.user: до
+// подтверждения сессии auth.user пуст, и сравнение с ним давало бы разные
+// результаты на сервере и на клиенте (например, кнопка «Сохранить» была бы
+// disabled в одном рендере и активна в другом).
+const persisted = ref<{ enabled: boolean; sources: string[] } | null>(null)
 const loading = ref(false)
 const errorMsg = ref('')
 const saved = ref(false)
@@ -20,15 +33,9 @@ function sameSources(first: string[], second: string[]): boolean {
   return first.length === second.length && first.every((value) => second.includes(value))
 }
 
-function savedDigest() {
-  return {
-    enabled: auth.user?.priceDigestEnabled ?? false,
-    sources: auth.user?.priceDigestSources ?? [],
-  }
-}
-
 const dirty = computed(() => {
-  const current = savedDigest()
+  const current = persisted.value
+  if (!current) return false
   return enabled.value !== current.enabled || !sameSources(sources.value, current.sources)
 })
 
@@ -37,11 +44,35 @@ watch([enabled, sources], () => {
   errorMsg.value = ''
 })
 
-watch(() => auth.user, () => {
-  if (!dirty.value) {
-    enabled.value = auth.user?.priceDigestEnabled ?? false
-    sources.value = [...(auth.user?.priceDigestSources ?? [])]
+/**
+ * Переносит профиль в поля формы.
+ *
+ * Помечает состояние «изменено» по ПРЕДЫДУЩЕМУ снимку: после подстановки
+ * нового persisted сравнение шло бы уже с ним и всегда давало бы «изменено».
+ */
+function applyProfile() {
+  const next = {
+    enabled: auth.user?.priceDigestEnabled ?? false,
+    sources: [...(auth.user?.priceDigestSources ?? [])],
   }
+  const current = persisted.value
+  const wasDirty = current
+    ? enabled.value !== current.enabled || !sameSources(sources.value, current.sources)
+    : false
+  persisted.value = next
+  if (!wasDirty) {
+    enabled.value = next.enabled
+    sources.value = [...next.sources]
+  }
+}
+
+// Сессия подтверждается плагином до рендера, но на клиенте профиль приходит
+// уже в setup — значит, синхронизируем поля после монтирования. До этого
+// момента SSR и клиент показывают одно и то же.
+onMounted(applyProfile)
+
+watch(() => auth.user, () => {
+  applyProfile()
 })
 
 async function onSave() {
