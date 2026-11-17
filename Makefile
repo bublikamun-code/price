@@ -20,7 +20,7 @@ docker-stop: ## выключить docker-стек, если нет активн
 docker-ensure: ## поднять docker-стек, если он выключен
 	@bash infra/scripts/docker-idle.sh ensure
 
-.PHONY: help up down build logs ps api-shell web-shell web-dev web-prod alembic-check migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys obs-up obs-down test-e2e test-load test-load-import prod-up prod-down prod-logs prod-migrate gen-self-signed-certs backup backup-list ratelimit-reset docker-check docker-stop docker-ensure
+.PHONY: help up down build logs ps api-shell web-shell web-dev web-prod alembic-check migrate migrate-gen seed seed-catalog seed-all test test-pattern lint fmt db-reset gen-jwt-keys obs-up obs-down test-e2e test-load test-load-import prod-up prod-down prod-logs prod-migrate gen-self-signed-certs cert-renew backup backup-list ratelimit-reset docker-check docker-stop docker-ensure
 
 help: ## показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -194,6 +194,15 @@ gen-self-signed-certs: ## self-signed TLS-серт для localhost (прове�
 	chmod 644 infra/nginx/certs/fullchain.pem
 	@echo "Сертификаты созданы: infra/nginx/certs/fullchain.pem + privkey.pem (CN=localhost, SAN: DNS:localhost,IP:127.0.0.1)"
 	@echo "Это self-signed — только для проверки конфига/локального теста; боевые — Let's Encrypt (docs/RUNBOOK.md). В git не коммитить (.gitignore)"
+
+cert-renew: ## продлить TLS-сертификат Let's Encrypt (tailscale cert) и перечитать его в nginx
+	@echo "Продление сертификата: infra/scripts/renew-cert.sh (нужны права root на запись в infra/nginx/certs/)"
+	@if [ "$$(id -u)" != "0" ]; then \
+		echo "Запускаю через sudo"; \
+		sudo infra/scripts/renew-cert.sh; \
+	else \
+		infra/scripts/renew-cert.sh; \
+	fi
 
 # ============================================================
 #  Бэкапы (Этап 11, §14/§16 п.24): MVP — pg_dump -Fc + retention 30 д.

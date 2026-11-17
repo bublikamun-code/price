@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily check of the TLS certificate renewal for the public price portal
+Documentation=file:///data/bublik/projects/price/docs/RUNBOOK.md
+
+[Timer]
+# Раз в сутки: сама проверка ничего не меняет, пока до истечения
+# сертификата больше 30 суток (--min-validity 720h).
+OnCalendar=*-*-* 04:17:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=price-cert-renew.service
+
+[Install]
+WantedBy=timers.target
