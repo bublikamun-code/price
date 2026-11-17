@@ -859,9 +859,9 @@ async def test_manager_list_filters_by_status_and_paginates(api_client, session_
         api_client, organization, [(product, "1", "5.00", None)]
     )
     await _send_quote(api_client, sent_quote["id"])
-    draft_quote = await _create_quote(
-        api_client, organization, [(product, "2", "6.00", None)]
-    )
+    # Второе КП нужно только чтобы в коллекции было два элемента; его id
+    # в проверках не участвует.
+    await _create_quote(api_client, organization, [(product, "2", "6.00", None)])
 
     listed = await api_client.get("/api/v2/manager/quotes")
     assert listed.status_code == 200, listed.text
