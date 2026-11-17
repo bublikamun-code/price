@@ -107,7 +107,8 @@ async function load() {
 
   await Promise.allSettled([
     sessionContext.ensureLoaded(),
-    cartV2.ensureLoaded(),
+    // Корзина — сущность клиента (§3 SITEMAP): менеджеру она недоступна.
+    auth.isClient ? cartV2.ensureLoaded() : Promise.resolve(),
   ])
   loading.value = false
 }

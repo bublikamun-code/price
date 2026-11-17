@@ -26,7 +26,8 @@ function openGlobalSearch() {
         <span class="truncate">Каталог и заявки</span>
       </button>
       <span class="flex-1" />
-      <NuxtLink to="/cart" class="relative inline-flex min-h-10 items-center gap-2 border border-border px-3 text-sm font-semibold text-ink hover:bg-surface-2" aria-label="Текущая заявка">
+      <!-- Корзина — только для роли CLIENT: у менеджера пункта нет. -->
+      <NuxtLink v-if="auth.isClient" to="/cart" class="relative inline-flex min-h-10 items-center gap-2 border border-border px-3 text-sm font-semibold text-ink hover:bg-surface-2" aria-label="Текущая заявка">
         <Icon name="heroicons:clipboard-document-list" class="size-5" aria-hidden="true" />
         <span>Заявка</span>
         <span v-if="cart.store.cart?.totalItems" class="numeric border border-action bg-action px-1.5 text-xs text-action-on">{{ cart.store.cart.totalItems }}</span>

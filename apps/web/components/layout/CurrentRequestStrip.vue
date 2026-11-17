@@ -1,5 +1,7 @@
 <script setup lang="ts">
 const emit = defineEmits<{ open: [] }>()
+const auth = useAuth()
+// Плашка «Текущая заявка» — только для роли CLIENT (SITEMAP §3).
 const cart = useCartV2()
 const summary = computed(() => cart.store.cart)
 const count = computed(() => summary.value?.totalItems ?? 0)
@@ -12,6 +14,7 @@ function openReview() {
 
 <template>
   <button
+    v-if="auth.isClient"
     type="button"
     class="flex w-full items-center gap-3 border border-service bg-service px-4 py-3 text-left text-ink-on-service transition-colors hover:bg-service/90"
     :aria-label="`Текущая заявка: ${count} позиций. Открыть просмотр`"

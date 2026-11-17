@@ -1,13 +1,18 @@
 <script setup lang="ts">
 const route = useRoute()
+const auth = useAuth()
 const cart = useCartV2()
-const items = computed(() => [
-  { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2' },
-  { to: '/cart', label: 'Заявка', icon: 'heroicons:clipboard-document-list', count: cart.store.cart?.totalItems ?? 0 },
-  { to: '/quotes', label: 'КП', icon: 'heroicons:document-check' },
-  { to: '/dashboard', label: 'Кабинет', icon: 'heroicons:building-office-2' },
-  { to: '/profile', label: 'Профиль', icon: 'heroicons:user-circle' },
-])
+// Корзина — только для роли CLIENT (SITEMAP §3): у менеджера пункта нет.
+const items = computed(() => {
+  const all = [
+    { to: '/catalog', label: 'Каталог', icon: 'heroicons:squares-2x2', count: 0 },
+    { to: '/cart', label: 'Заявка', icon: 'heroicons:clipboard-document-list', count: cart.store.cart?.totalItems ?? 0 },
+    { to: '/quotes', label: 'КП', icon: 'heroicons:document-check', count: 0 },
+    { to: '/dashboard', label: 'Кабинет', icon: 'heroicons:building-office-2', count: 0 },
+    { to: '/profile', label: 'Профиль', icon: 'heroicons:user-circle', count: 0 },
+  ]
+  return auth.isClient ? all : all.filter((item) => item.to !== '/cart')
+})
 
 function isActive(to: string): boolean {
   return route.path === to || route.path.startsWith(`${to}/`)
@@ -24,7 +29,7 @@ useNavLayer(root)
     :style="{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }"
     aria-label="Основная навигация"
   >
-    <div class="mx-auto grid h-[var(--h-mobile-nav)] max-w-lg grid-cols-5">
+    <div class="mx-auto grid h-[var(--h-mobile-nav)] max-w-lg" :class="items.length === 5 ? 'grid-cols-5' : 'grid-cols-4'">
       <NuxtLink
         v-for="item in items"
         :key="item.to"

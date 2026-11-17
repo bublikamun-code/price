@@ -43,6 +43,9 @@ const navSections = [
     ],
   },
 ]
+// «Администрирование» доступно только роли ADMIN: страница /manager/admin требует
+// roles: ['ADMIN'] (pages/manager/admin.vue), иначе менеджер получает 403.
+// Пункт скрыт через v-if (не CSS), поэтому у роли MANAGER его нет в DOM.
 const adminNavItem = { to: '/manager/admin', label: 'Администрирование', icon: 'heroicons:cog-6-tooth' }
 const roleLabel = computed(() => auth.user?.role === 'ADMIN' ? 'Администратор' : 'Менеджер')
 
@@ -90,6 +93,7 @@ watch(() => route.fullPath, () => {
             v-if="auth.user"
             type="button"
             class="inline-flex min-h-11 items-center gap-2 border border-ink-on-service/25 px-3 text-sm font-semibold text-ink-on-service hover:bg-service-2"
+            aria-label="Выйти"
             @click="auth.logout"
           >
             <Icon name="heroicons:arrow-right-start-on-rectangle" class="size-4" aria-hidden="true" />

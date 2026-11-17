@@ -2,12 +2,29 @@
 useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 
 const route = useRoute()
+const auth = useAuth()
 const cart = useCartV2()
 const reviewOpen = ref(false)
-const showRequestEntry = computed(() => !['/cart', '/checkout'].includes(route.path))
+// Корзина и «Текущая заявка» — только для роли CLIENT (SITEMAP §3).
+const isClient = computed(() => auth.isClient)
+const showRequestEntry = computed(() => isClient.value && !['/cart', '/checkout'].includes(route.path))
 
+// Корзину грузим только для клиента: у MANAGER/ADMIN запрос /api/v2/cart
+// не должен уходить (бэк отвечает 403 «Корзина доступна только клиентам»).
+// Создание самого useCartV2() сети не трогает — запрос идёт из ensureLoaded().
+let stopCartWatch: (() => void) | null = null
 onMounted(() => {
-  void cart.ensureLoaded().catch(() => undefined)
+  stopCartWatch = watch(
+    () => auth.isClient,
+    (client) => {
+      if (!client) return
+      void cart.ensureLoaded().catch(() => undefined)
+    },
+    { immediate: true },
+  )
+})
+onBeforeUnmount(() => {
+  stopCartWatch?.()
 })
 </script>
 
@@ -27,7 +44,7 @@ onMounted(() => {
         </main>
       </div>
     </div>
-    <RequestReviewSheet v-model:open="reviewOpen" />
+    <RequestReviewSheet v-if="isClient" v-model:open="reviewOpen" />
     <MobileClientNav />
   </div>
 </template>
