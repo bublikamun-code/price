@@ -11,6 +11,9 @@ jobs:
   api:
     name: API tests + alembic check
     runs-on: ubuntu-latest
+    # Штатный лимит GitHub на джоб — 6 часов; именно столько висел API-джоб
+    # на прогоне 08.11 (отменён вручную). Здесь зависание обрывается за 25 минут.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -77,7 +80,9 @@ jobs:
           alembic check
       - name: Pytest
         working-directory: apps/api
-        run: pytest -q
+        # --timeout: висящий тест падает со стеком вызова через 3 минуты.
+        # Без него зависание съедало шесть часов (прогон 08.11 отменён вручную).
+        run: pytest -q --timeout=180
       - name: API v2 semantic compatibility
         if: github.event_name == 'pull_request'
         working-directory: apps/api
@@ -98,6 +103,7 @@ jobs:
   web:
     name: Web typecheck + lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
