@@ -186,6 +186,35 @@ TAG=v0.3-design-fixed ./infra/scripts/deploy-prod.sh   # любой тег/ко�
 Ротация — `pm2-logrotate` (max 20 МБ, 5 копий, установлен 19.09).
 Старые всплески (OpenBLAS-спам 55 МБ) обрезаны, хвосты в `*.log.keep`.
 
+## Доступы к GitHub: токен `gh` на dev-хосте
+
+`gh` на этом хосте авторизован OAuth-токеном, который лежит **plaintext** в
+`/root/.config/gh/hosts.yml`. Отдельного credential store (keyring/secret-service)
+на headless-хосте нет, поэтому `gh auth login --insecure-storage` — единственный
+вариант: без флага `gh` требует системное хранилище и завершается ошибкой.
+
+Что уже сделано (2026-11-18):
+
+- `/root/.config/gh` — права `700`, `hosts.yml` и `config.yml` — `600`, владелец `root`;
+- токен не попадает в репозиторий и в историю git (проверено `git log --all -S` по префиксу `gho_`);
+- в бэкапы (`infra/scripts/backup_db.sh`) уходит только БД — каталог `~/.config` не копируется;
+- scopes — минимальные, которые `gh` требует сам (`repo`, `read:org`, `gist`); `gist` в
+  `--scopes` убрать нельзя, это требование самого `gh`;
+- git-операции идут **по SSH** (`git@github.com:bublikamun-code/price.git`,
+  `gh auth status` → `Git operations protocol: ssh`), то есть токен нужен только
+  для API `gh` — PR, CI-статусы, комментарии.
+
+Правила: токен не печатать в чат и в логи, не коммитить, не класть в `.env`
+(там он попадёт в `docker inspect` и в бэкапы контейнеров).
+
+Ротация (нужна, если токен мог утечь):
+
+1. GitHub → **Settings → Applications → Installed OAuth Apps → GitHub CLI →
+   Revoke access** — это отзывает грант и все OAuth-токены CLI разом;
+2. `gh auth login --web` — device flow: код подтверждает владелец в браузере;
+3. `gh auth status` — проверить, что токен на месте и scopes те же;
+4. `chmod 600 /root/.config/gh/hosts.yml` (login перезапишет файл).
+
 ## Локальный dev
 
 - `make up` — стек (nginx :8080, web :3000, api :8000).
