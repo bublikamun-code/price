@@ -536,7 +536,108 @@ async def test_download_pdf_not_ready_conflicts(api_client, session_factory):
 
     assert response.status_code == 409
     assert response.headers["content-type"].startswith("application/problem+json")
+    # PENDING — рендер ещё идёт: свой код (§16 п.40, §6 «Счета на оплату»).
+    assert response.json()["code"] == "INVOICE_PDF_IN_PROGRESS"
+
+
+async def test_download_pdf_failed_render_conflicts(api_client, session_factory):
+    """Счёт с неудачным рендером (FAILED) → 409 INVOICE_PDF_NOT_READY."""
+    await create_user(
+        session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD
+    )
+    client = await create_user(
+        session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD
+    )
+    brand = await create_brand(session_factory, name="Failed Brand")
+    product = await create_product(
+        session_factory, sku="V2-INV-FAIL", name="Failed product", brand=brand, base_price=10
+    )
+    order = await _seed_order(session_factory, client=client, product=product)
+    invoice = await _seed_invoice(session_factory, order=order, manager=None, pdf=False)
+
+    async with session_factory() as session:
+        row = await session.get(Invoice, invoice.id)
+        row.pdf_status = InvoicePdfStatus.FAILED
+        await session.commit()
+
+    await _login(api_client, CLIENT_EMAIL)
+    response = await api_client.get(f"/api/v2/orders/invoices/{invoice.id}/download")
+
+    assert response.status_code == 409
     assert response.json()["code"] == "INVOICE_PDF_NOT_READY"
+
+
+async def test_delete_invoice_pdf_file_marks_invoice_failed(
+    api_client, session_factory, monkeypatch
+):
+    """Удаление PDF счёта из архива переводит счёт в FAILED (§16 п.40, (10)).
+
+    FK ``invoices.pdf_file_asset_id`` — ``ON DELETE SET NULL``, поэтому без
+    явного перевода счёт остался бы в состоянии «PDF: Готов» без файла, а
+    скачивание падало бы в 409 без возможности перерендерить.
+    """
+    manager = await create_user(
+        session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD
+    )
+    client = await create_user(
+        session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD
+    )
+    brand = await create_brand(session_factory, name="Delete Pdf Brand")
+    product = await create_product(
+        session_factory, sku="V2-INV-DEL", name="Delete pdf product", brand=brand
+    )
+    order = await _seed_order(session_factory, client=client, product=product)
+    invoice = await _seed_invoice(
+        session_factory, order=order, manager=manager, pdf=True
+    )
+
+    monkeypatch.setattr(
+        "app.services.storage.delete_object", lambda bucket, key: None
+    )
+    await _login(api_client, MANAGER_EMAIL)
+
+    deleted = await api_client.delete(f"/api/v1/manager/files/{invoice.pdf_file_asset_id}")
+    assert deleted.status_code == 204, deleted.text
+
+    # Счёт больше не «готов»: файл удалён, состояние — FAILED (перерендер доступен).
+    async with session_factory() as session:
+        row = await session.get(Invoice, invoice.id)
+        assert row.pdf_status == InvoicePdfStatus.FAILED
+        assert row.pdf_file_asset_id is None
+
+    # Скачивание честно говорит, что PDF не собран (счёт можно перерендерить).
+    download = await api_client.get(f"/api/v2/orders/invoices/{invoice.id}/download")
+    assert download.status_code == 409, download.text
+    assert download.json()["code"] == "INVOICE_PDF_NOT_READY"
+
+
+async def test_download_pdf_missing_when_asset_deleted(
+    api_client, session_factory, monkeypatch
+):
+    """Счёт READY без файла (старые данные) → 409 INVOICE_PDF_MISSING."""
+    manager = await create_user(
+        session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER, password=PASSWORD
+    )
+    client = await create_user(
+        session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT, password=PASSWORD
+    )
+    brand = await create_brand(session_factory, name="Missing Pdf Brand")
+    product = await create_product(
+        session_factory, sku="V2-INV-MISS", name="Missing pdf product", brand=brand
+    )
+    order = await _seed_order(session_factory, client=client, product=product)
+    invoice = await _seed_invoice(session_factory, order=order, manager=manager, pdf=True)
+
+    # Файл исчез из архива, а статус остался READY (историческое состояние).
+    async with session_factory() as session:
+        asset = await session.get(FileAsset, invoice.pdf_file_asset_id)
+        await session.delete(asset)
+        await session.commit()
+
+    await _login(api_client, CLIENT_EMAIL)
+    download = await api_client.get(f"/api/v2/orders/invoices/{invoice.id}/download")
+    assert download.status_code == 409, download.text
+    assert download.json()["code"] == "INVOICE_PDF_MISSING"
 
 
 async def test_download_storage_unavailable_is_502(api_client, session_factory, monkeypatch):

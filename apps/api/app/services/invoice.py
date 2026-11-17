@@ -105,6 +105,19 @@ class InvoicePdfNotReadyError(InvoiceError):
     title = "PDF счёта не готов"
 
 
+class InvoicePdfMissingError(InvoiceError):
+    """Файл PDF счёта удалён из архива (§16 п.40, решение (10)).
+
+    ``pdf_status=READY``, но ``pdf_file_asset_id`` пуст: ссылка обнулилась при
+    удалении ``file_assets`` (FK ``ON DELETE SET NULL``). Документ можно
+    перерендерить — ``POST /api/v2/manager/invoices/{id}/pdf``.
+    """
+
+    code = "INVOICE_PDF_MISSING"
+    status_code = 409
+    title = "Файл счёта удалён из архива"
+
+
 class IdempotencyKeyReusedError(InvoiceError):
     code = "IDEMPOTENCY_KEY_REUSED"
     status_code = 409
@@ -560,6 +573,7 @@ __all__ = [
     "InvoiceError",
     "InvoiceNotFoundError",
     "InvoicePdfInProgressError",
+    "InvoicePdfMissingError",
     "InvoicePdfNotReadyError",
     "InvoiceService",
     "IdempotencyKeyReusedError",

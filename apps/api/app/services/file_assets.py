@@ -29,6 +29,8 @@ from app.core.sanitize import safe_filename
 from app.models.enums import FileAssetType, FileVisibility
 from app.models.file import FileAsset
 from app.repositories import file_assets as file_assets_repo
+from app.repositories import invoices as invoices_repo
+from app.repositories import quotes as quotes_repo
 from app.services import storage
 
 log = get_logger("app.services.file_assets")
@@ -320,8 +322,30 @@ async def delete_asset(db: AsyncSession, asset: FileAsset) -> None:
 
     При ``StorageError`` запись БД не трогается (роутер → 502) —
     не остаётся записи без объекта в хранилище.
+
+    Если удаляется PDF счёта или КП, сам документ переводится в ``FAILED``:
+    FK ``pdf_file_asset_id`` объявлен с ``ON DELETE SET NULL``, и без этого
+    счёт остался бы в состоянии «PDF: Готов» без скачиваемого файла
+    (§16 п.40, решение (10); §16 п.18).
     """
     await run_in_threadpool(
         storage.delete_object, settings.s3_bucket_pdfs, asset.s3_key
     )
+    await _detach_document_status(db, asset)
     await file_assets_repo.delete_file_asset(db, asset)
+
+
+async def _detach_document_status(db: AsyncSession, asset: FileAsset) -> None:
+    """Счёт/КП, чей PDF-файл удаляется, переводится в ``FAILED``."""
+    if asset.type not in (FileAssetType.INVOICE_PDF, FileAssetType.QUOTE_PDF):
+        return
+    invoices = await invoices_repo.mark_pdf_failed_by_asset(db, asset_id=asset.id)
+    quotes = await quotes_repo.mark_pdf_failed_by_asset(db, asset_id=asset.id)
+    if invoices or quotes:
+        log.info(
+            "file_asset.document_pdf_detached",
+            asset=str(asset.id),
+            type=asset.type.value,
+            invoices=invoices,
+            quotes=quotes,
+        )

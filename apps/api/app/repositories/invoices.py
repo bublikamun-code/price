@@ -5,9 +5,10 @@
 коммитит роутер (§4).
 """
 import uuid
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InvoicePdfStatus
 from app.models.invoice import Invoice
 
 # PG-последовательность сквозных номеров счетов (создаётся миграцией 0023;
@@ -33,6 +34,23 @@ async def get_invoice_by_order(
 ) -> Invoice | None:
     """Счёт заказа (их 1:1, поэтому не нужен limit)."""
     return await db.scalar(select(Invoice).where(Invoice.order_id == order_id))
+
+
+async def mark_pdf_failed_by_asset(
+    db: AsyncSession, *, asset_id: uuid.UUID
+) -> int:
+    """Перевести счёт, чей PDF-файл удаляется из архива, в ``FAILED``.
+
+    FK ``invoices.pdf_file_asset_id`` объявлен с ``ON DELETE SET NULL``, поэтому
+    без этого счёт остался бы в состоянии «PDF: Готов» без скачиваемого файла
+    (§16 п.40, решение (10)). Возвращаем число затронутых счетов.
+    """
+    result = await db.execute(
+        update(Invoice)
+        .where(Invoice.pdf_file_asset_id == asset_id)
+        .values(pdf_status=InvoicePdfStatus.FAILED, pdf_file_asset_id=None)
+    )
+    return int(result.rowcount or 0)
 
 
 async def fetch_invoices_by_orders(

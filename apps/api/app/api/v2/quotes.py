@@ -740,7 +740,7 @@ async def download_quote_pdf(
     except QuoteError as exc:
         raise _as_v2_problem(exc) from exc
 
-    if quote.pdf_status != QuotePdfStatus.READY or quote.pdf_file_asset_id is None:
+    if quote.pdf_status != QuotePdfStatus.READY:
         raise V2ProblemError(
             code="QUOTE_PDF_NOT_READY",
             status=status.HTTP_409_CONFLICT,
@@ -748,6 +748,19 @@ async def download_quote_pdf(
             detail=(
                 f"PDF КП {quote.number or quote_id} ещё не отрендерен — "
                 "запросите его у менеджера"
+            ),
+        )
+    if quote.pdf_file_asset_id is None:
+        # Рассинхрон состояния: pdf_status=READY, а файла нет (FK ON DELETE
+        # SET NULL). Штатно удаление файла переводит КП в FAILED (§16 п.40,
+        # решение (10)); код оставлен как защита.
+        raise V2ProblemError(
+            code="QUOTE_PDF_MISSING",
+            status=status.HTTP_409_CONFLICT,
+            title="Файл КП удалён из архива",
+            detail=(
+                f"Файл КП {quote.number or quote_id} удалён из архива — "
+                "запросите новое коммерческое предложение"
             ),
         )
 
