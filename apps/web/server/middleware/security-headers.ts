@@ -24,7 +24,8 @@
 import { randomBytes } from 'node:crypto'
 import type { H3Event } from 'h3'
 
-function csp(scriptSrc: string): string {
+function csp(scriptSrc: string, extraConnect: string[] = []): string {
+  const connect = ["'self'", 'https://mc.yandex.ru', ...extraConnect].join(' ')
   return [
     "default-src 'self'",
     scriptSrc,
@@ -32,7 +33,7 @@ function csp(scriptSrc: string): string {
     "font-src 'self' data: https://fonts.gstatic.com",
     // Фото товаров приходят из внешнего хранилища, отсюда широкий img-src.
     "img-src 'self' data: blob: https:",
-    "connect-src 'self' https://mc.yandex.ru",
+    `connect-src ${connect}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -42,7 +43,30 @@ function csp(scriptSrc: string): string {
 
 // Dev: nonce-политика несовместима с vite-режимом (HMR и клиентские вставки
 // идут без nonce), поэтому здесь остаётся прежний статический CSP.
-const CSP_DEV = csp("script-src 'self' 'unsafe-inline' https://mc.yandex.ru")
+const CSP_DEV_SCRIPT = "script-src 'self' 'unsafe-inline' https://mc.yandex.ru"
+
+/**
+ * Origin API, с которым общается БРАУЗЕР в dev.
+ *
+ * В dev веб ходит в API напрямую (NUXT_PUBLIC_API_BASE → runtimeConfig.public.
+ * apiBase), а не через nginx того же origin. Такой запрос — чужой origin, и
+ * connect-src 'self' его режет: в консоли браузера «blocked by CSP», а в UI
+ * тихий 401. Поэтому в dev- политику добавляется origin API.
+ *
+ * Ключ runtimeConfig — тот же, что отдаёт базовый URL клиенту
+ * (apps/web/nuxt.config.ts, public.apiBase); новых переменных не заводим.
+ * Пустое или относительное значение (NUXT_PUBLIC_API_BASE="") означает
+ * «API на том же origin» — тогда 'self' достаточно и ничего не добавляем.
+ */
+function devApiOrigin(event: H3Event): string | null {
+  try {
+    const base = useRuntimeConfig(event).public?.apiBase
+    if (typeof base !== 'string' || !/^https?:\/\//i.test(base)) return null
+    return new URL(base).origin
+  } catch {
+    return null
+  }
+}
 
 // Ключ в event.context, через который middleware передаёт nonce хуку
 // render:html. Контекст живёт в рамках одного запроса — утечки между
@@ -154,6 +178,15 @@ export default defineEventHandler((event) => {
       csp(`script-src 'self' 'nonce-${nonce}' https://mc.yandex.ru https://telegram.org`),
     )
   } else {
-    setResponseHeader(event, 'Content-Security-Policy', CSP_DEV)
+    // Dev: браузер ходит в API напрямую (другой origin) — connect-src должен
+    // его разрешать, иначе запросы к API режутся CSP (аудит L11). В prod API
+    // отдаётся с того же origin (через nginx), поэтому origin API в прод-политику
+    // не добавляем: лишний origin в connect-src — лишняя поверхность.
+    const apiOrigin = devApiOrigin(event)
+    setResponseHeader(
+      event,
+      'Content-Security-Policy',
+      csp(CSP_DEV_SCRIPT, apiOrigin ? [apiOrigin] : []),
+    )
   }
 })

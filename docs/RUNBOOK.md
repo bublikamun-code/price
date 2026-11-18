@@ -52,6 +52,68 @@ MinIO: остановить pp-minio, распаковать `minio.tar.gz` в `
 
 Только через `infra/scripts/deploy-prod.sh` из репозитория (см. ниже «Правило деплоя»).
 
+## TLS-сертификат Let's Encrypt (автопродление)
+
+Публичный вход — `https://bublik.tail4fd7f3.ts.net/price/` через Tailscale Funnel;
+TLS терминирует наш nginx (`infra/nginx/nginx.prod.conf`), а не Funnel. Сертификат —
+Let's Encrypt для `bublik.tail4fd7f3.ts.net`, полученный командой `tailscale cert`:
+ACME-челлендж Let's Encrypt к ts.net-домену выдаёт только сам Tailscale, отдельный
+ACME-клиент (certbot) здесь не сработает.
+
+Файлы сертификата лежат в `infra/nginx/certs/` (`fullchain.pem` + `privkey.pem`;
+каталог в `.gitignore`) и смонтированы в nginx read-only.
+
+### Как продлевается
+
+Скрипт `infra/scripts/renew-cert.sh`:
+
+1. просит у `tailscale cert` сертификат с `--min-validity 720h` (30 суток) — если до
+   истечения больше 30 дней, Tailscale вернёт **тот же** сертификат и ничего не изменится;
+   если меньше — выпустит новый;
+2. проверяет, что новый сертификат валиден и покрывает домен (`openssl x509 -checkhost`);
+3. подставляет новые файлы на место старых (`fullchain.pem` 644, `privkey.pem` 600);
+4. перечитывает их в nginx через `nginx -s reload` — **без рестарта контейнера**
+   и без разрыва соединений.
+
+Шаг 1 идемпотентен, поэтому скрипт безопасно запускать хоть каждый час.
+
+### Расписание на хосте (systemd-таймер, вне git)
+
+Файлы юнитов лежат в репозитории (`infra/systemd/`), на хост копируются вручную:
+
+```bash
+sudo cp infra/systemd/price-cert-renew.service infra/systemd/price-cert-renew.timer \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now price-cert-renew.timer
+systemctl list-timers price-cert-renew.timer    # следующий запуск
+journalctl -u price-cert-renew -n 50            # журнал прогонов
+```
+
+Таймер срабатывает раз в сутки около 04:17; продление случается только если до
+истечения сертификата осталось меньше 30 суток. Путь к репозиторию в юнитах —
+`/data/bublik/projects/price`; при переезде хоста поправить `WorkingDirectory`
+и `ExecStart` в `price-cert-renew.service`.
+
+### Ручная проверка и продление
+
+```bash
+sudo infra/scripts/renew-cert.sh        # или: make cert-renew
+openssl x509 -in infra/nginx/certs/fullchain.pem -noout -dates
+```
+
+### Если сертификат всё-таки протух (сайт не открывается)
+
+1. `sudo infra/scripts/renew-cert.sh` — выпустит новый (Tailscale выдаёт до 5 LE-сертификатов
+   на домен в неделю; при исчерпании лимита нужен другой способ).
+2. `docker exec pp-nginx nginx -t && docker exec pp-nginx nginx -s reload`.
+3. Проверка, что сертификат изменился и валиден:
+
+   ```bash
+   openssl s_client -connect 127.0.0.1:443 -servername bublik.tail4fd7f3.ts.net </dev/null 2>/dev/null \
+     | openssl x509 -noout -dates -issuer
+   ```
+
 ## Правило деплоя (защита от отката дизайна)
 
 Причина потери дизайна 02–03.09: `.output` собирался из рабочего дерева Mac и
@@ -123,6 +185,35 @@ TAG=v0.3-design-fixed ./infra/scripts/deploy-prod.sh   # любой тег/ко�
 
 Ротация — `pm2-logrotate` (max 20 МБ, 5 копий, установлен 19.09).
 Старые всплески (OpenBLAS-спам 55 МБ) обрезаны, хвосты в `*.log.keep`.
+
+## Доступы к GitHub: токен `gh` на dev-хосте
+
+`gh` на этом хосте авторизован OAuth-токеном, который лежит **plaintext** в
+`/root/.config/gh/hosts.yml`. Отдельного credential store (keyring/secret-service)
+на headless-хосте нет, поэтому `gh auth login --insecure-storage` — единственный
+вариант: без флага `gh` требует системное хранилище и завершается ошибкой.
+
+Что уже сделано (2026-11-18):
+
+- `/root/.config/gh` — права `700`, `hosts.yml` и `config.yml` — `600`, владелец `root`;
+- токен не попадает в репозиторий и в историю git (проверено `git log --all -S` по префиксу `gho_`);
+- в бэкапы (`infra/scripts/backup_db.sh`) уходит только БД — каталог `~/.config` не копируется;
+- scopes — минимальные, которые `gh` требует сам (`repo`, `read:org`, `gist`); `gist` в
+  `--scopes` убрать нельзя, это требование самого `gh`;
+- git-операции идут **по SSH** (`git@github.com:bublikamun-code/price.git`,
+  `gh auth status` → `Git operations protocol: ssh`), то есть токен нужен только
+  для API `gh` — PR, CI-статусы, комментарии.
+
+Правила: токен не печатать в чат и в логи, не коммитить, не класть в `.env`
+(там он попадёт в `docker inspect` и в бэкапы контейнеров).
+
+Ротация (нужна, если токен мог утечь):
+
+1. GitHub → **Settings → Applications → Installed OAuth Apps → GitHub CLI →
+   Revoke access** — это отзывает грант и все OAuth-токены CLI разом;
+2. `gh auth login --web` — device flow: код подтверждает владелец в браузере;
+3. `gh auth status` — проверить, что токен на месте и scopes те же;
+4. `chmod 600 /root/.config/gh/hosts.yml` (login перезапишет файл).
 
 ## Локальный dev
 

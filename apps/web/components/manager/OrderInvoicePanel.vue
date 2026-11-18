@@ -31,6 +31,13 @@ const loading = ref(true)
 const loadError = ref('')
 const actionError = ref('')
 const selectedStatus = ref<InvoiceStatus>('ISSUED')
+/** UiSelect отдаёт string | number — значение приводим к типу статуса счёта. */
+const statusModel = computed({
+  get: () => selectedStatus.value as string | number,
+  set: (value: string | number) => {
+    selectedStatus.value = value as InvoiceStatus
+  },
+})
 
 const issuing = ref(false)
 const savingStatus = ref(false)
@@ -260,12 +267,13 @@ onUnmounted(() => {
       <!-- Статус счёта -->
       <div class="mt-4 border-t border-border pt-3">
         <div class="flex flex-wrap items-center gap-3">
-          <label class="text-sm text-ink-muted" for="invoice-status">Статус счёта:</label>
-          <select id="invoice-status" v-model="selectedStatus" class="input min-h-11 w-auto" data-testid="manager-invoice-status">
-            <option v-for="option in INVOICE_STATUS_OPTIONS" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+          <UiField for="invoice-status" label="Статус счёта" class="w-auto">
+            <UiSelect
+              v-model="statusModel"
+              :options="INVOICE_STATUS_OPTIONS"
+              data-testid="manager-invoice-status"
+            />
+          </UiField>
           <button
             type="button"
             class="btn-primary min-h-11"
@@ -333,7 +341,8 @@ onUnmounted(() => {
           PDF собирается в фоне — скачивание станет доступно через несколько секунд.
         </p>
         <p v-else-if="invoice.pdfStatus === 'FAILED'" class="text-xs text-danger">
-          Рендер счёта не удался. После правки реквизитов нажмите «Перерендерить PDF».
+          Рендер счёта не удался или PDF был удалён из файлового архива — нажмите
+          «Перерендерить PDF», чтобы собрать файл заново.
         </p>
       </div>
     </div>

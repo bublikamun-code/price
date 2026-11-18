@@ -98,7 +98,7 @@
 |---|---|
 | **Гость** | `/`, `/login`, `/privacy`, `/brands`, `/brands/[slug]` |
 | **Клиент** | все публичные + `/dashboard`, `/catalog*`, `/cart`, `/checkout`, `/orders*`, `/favorites`, `/bulk-add`, `/files`, `/profile*`, `/notifications`, `/consent` (1 раз) |
-| **Менеджер** | все клиентские (как суперпользователь каталога) + `/manager/**` |
+| **Менеджер** | клиентские страницы каталога и справочников (как суперпользователь каталога): `/catalog*`, `/favorites`, `/bulk-add`, `/files`, `/orders*`, `/notifications`, `/profile*` — **кроме** `/dashboard` и `/consent` (только роль `CLIENT`, у менеджера свой дашборд `/manager`) и **кроме корзины `/cart`, `/checkout` и блока «Текущая заявка»** (корзина — сущность клиента: `GET /api/v2/cart` → 403 `PERMISSION_DENIED` для ролей `MANAGER`/`ADMIN`; в клиентском layout блок корзины для этих ролей не показывается, `/cart` и `/checkout` показывают заглушку) + `/manager/**` |
 | **Mini App** | подмножество клиентских под layout `miniapp` |
 
 > Менеджер видит каталог в режиме «без скидок» + бейджи «что видит клиент X» (preview).

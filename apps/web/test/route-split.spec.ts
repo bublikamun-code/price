@@ -81,7 +81,13 @@ describe('route split: /analytics keeps the analytics implementation', () => {
 
 describe('route split: consent gate and robots', () => {
   it('skips the consent redirect for the public landing', () => {
-    expect(read('middleware/consent.global.ts')).toMatch(/SKIP_PATHS\s*=\s*\['\/',/)
+    const source = read('middleware/consent.global.ts')
+    expect(source).toMatch(/SKIP_PATHS\s*=\s*\[/)
+    expect(source).toContain("'/'")
+    // Смена пароля и сброс — вне consent-гейта: клиент без согласия обязан
+    // иметь возможность войти и сменить пароль (иначе он застревает).
+    expect(source).toContain("'/force-change-password'")
+    expect(source).toContain("'/reset-password'")
   })
 
   it('disallows the private client routes in robots.txt', () => {

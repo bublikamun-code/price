@@ -1,0 +1,27 @@
+# Порт-оверрайт стенда Bublik. Восстановлен 24.10 из docker inspect работающих
+# контейнеров (оригинал случайно удалён при ff-merge). Базовый compose публикует
+# api на 8000 — конфликтует с twenty на этом хосте, поэтому api только на
+# 127.0.0.1:8010; db/redis наружу не публикуем; вход — nginx :8140.
+services:
+  db:
+    ports: !override []
+  redis:
+    ports: !override []
+  api:
+    ports: !override ["127.0.0.1:8010:8000"]
+    # Dev-стенд: без --reload — watchfiles при каждом изменении файлов (git pull/
+    # chown) перезагружал uvicorn и вешал его на SSE-коннектах («Waiting for
+    # connections to close»). Python-правки на стенде всё равно накатываются
+    # рестартом контейнера после git pull.
+    command: !override ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+  nginx:
+    ports: !override ["8140:80"]
+  web:
+    environment:
+      # Dev-стенд: npm run dev + npm install при старте. С NODE_ENV=production
+      # npm вырезает devDependencies (@nuxt/eslint) — nuxt prepare падает.
+      NODE_ENV: development
+      # Публикация под префиксом /price (Tailscale Funnel, §16 п.46): клиент
+      # ходит в <base>/api/... — тот же origin, поэтому cookie и CSRF работают.
+      # Пустое значение = относительные /api через nginx (обычный стенд).
+      NUXT_PUBLIC_API_BASE: "/price"

@@ -65,6 +65,22 @@ function scriptSrcDirective(csp: string): string {
   return directive!
 }
 
+function connectSrcDirective(csp: string): string {
+  const directive = csp.split('; ').find((d) => d.startsWith('connect-src'))
+  expect(directive, 'connect-src отсутствует в CSP').toBeDefined()
+  return directive!
+}
+
+/**
+ * Загрузка middleware с подменённым runtime-конфигом: dev-CSP берёт origin
+ * API из public.apiBase (аудит L11). Ключ — тот же, что отдаёт базовый URL
+ * клиенту (apps/web/nuxt.config.ts).
+ */
+async function loadMiddlewareWithApiBase(apiBase: string): Promise<Handler> {
+  vi.stubGlobal('useRuntimeConfig', () => ({ public: { apiBase } }))
+  return loadMiddleware()
+}
+
 describe('security-headers middleware', () => {
   beforeEach(() => {
     vi.unstubAllEnvs()
@@ -192,6 +208,61 @@ describe('CSP в dev — прежняя статическая политика'
   })
 })
 
+describe('CSP в dev — connect-src с origin API (аудит L11)', () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('добавляет origin API в connect-src: в dev браузер ходит в API напрямую', async () => {
+    const handler = await loadMiddlewareWithApiBase('http://localhost:8000')
+    const event = makeEvent()
+
+    handler(event)
+
+    const csp = event.headers['Content-Security-Policy'] ?? ''
+    const connect = connectSrcDirective(csp)
+    expect(connect).toContain('http://localhost:8000')
+    expect(connect).toContain("'self'")
+    // Метрика — отдельный origin, он в политике остаётся.
+    expect(connect).toContain('https://mc.yandex.ru')
+  })
+
+  it('берёт только origin, без пути и без query', async () => {
+    const handler = await loadMiddlewareWithApiBase('http://localhost:8000/api/v1?x=1')
+    const event = makeEvent()
+
+    handler(event)
+
+    const connect = connectSrcDirective(event.headers['Content-Security-Policy'] ?? '')
+    expect(connect).toContain('http://localhost:8000')
+    expect(connect).not.toContain('/api/v1')
+    expect(connect).not.toContain('x=1')
+  })
+
+  it('пустое или относительное значение API ничего не добавляет', async () => {
+    for (const apiBase of ['', '/api/v1']) {
+      const handler = await loadMiddlewareWithApiBase(apiBase)
+      const event = makeEvent()
+
+      handler(event)
+
+      const connect = connectSrcDirective(event.headers['Content-Security-Policy'] ?? '')
+      expect(connect).toBe("connect-src 'self' https://mc.yandex.ru")
+    }
+  })
+
+  it('не-URL значение API не ломает политику (fail-safe)', async () => {
+    const handler = await loadMiddlewareWithApiBase('не--url')
+    const event = makeEvent()
+
+    handler(event)
+
+    const connect = connectSrcDirective(event.headers['Content-Security-Policy'] ?? '')
+    expect(connect).toBe("connect-src 'self' https://mc.yandex.ru")
+  })
+})
+
 describe('CSP в prod — nonce без unsafe-inline (DEC-02)', () => {
   beforeEach(() => {
     vi.unstubAllEnvs()
@@ -219,6 +290,21 @@ describe('CSP в prod — nonce без unsafe-inline (DEC-02)', () => {
     // Динамические :style-биндинги компонентов — unsafe-inline в style-src
     // остаётся осознанно (§16 п.30(2)).
     expect(csp.split('; ').find((d) => d.startsWith('style-src'))).toContain("'unsafe-inline'")
+  })
+
+  it('в prod origin API в connect-src не попадает — API отдаётся с того же origin', async () => {
+    // Даже если public.apiBase указывает на другой host, прод-политика его не
+    // добавляет: в проде API за тем же nginx (§14), лишний origin в connect-src
+    // — лишняя поверхность (аудит L11 — только dev).
+    const { handler } = await loadProdMiddleware()
+    vi.stubGlobal('useRuntimeConfig', () => ({ public: { apiBase: 'https://api.example.com' } }))
+    const event = makeEvent()
+
+    handler(event)
+
+    const connect = connectSrcDirective(event.headers['Content-Security-Policy'] ?? '')
+    expect(connect).toBe("connect-src 'self' https://mc.yandex.ru")
+    expect(connect).not.toContain('api.example.com')
   })
 
   it('nonce из context совпадает с заголовком и проставляется хуком в инлайн-скрипты', async () => {

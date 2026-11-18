@@ -10,6 +10,7 @@ const { request } = useApi()
 
 const FIX_CURRENCIES = ['USD', 'EUR', 'RUB'] as const
 type FixCurrency = (typeof FIX_CURRENCIES)[number]
+const FIX_CURRENCY_OPTIONS = FIX_CURRENCIES.map((currency) => ({ value: currency, label: currency }))
 
 const CURRENCY_META: Record<string, { label: string }> = {
   USD: { label: 'USD — Доллар США' },
@@ -84,6 +85,13 @@ const manualForm = reactive({
   currency_code: 'USD' as FixCurrency,
   rate: '',
   fetched_at: todayIso(),
+})
+/** UiSelect отдаёт string | number — значение приводим к типу формы. */
+const manualCurrencyModel = computed({
+  get: () => manualForm.currency_code as string | number,
+  set: (value: string | number) => {
+    manualForm.currency_code = value as FixCurrency
+  },
 })
 const manualSaving = ref(false)
 const manualError = ref('')
@@ -215,10 +223,9 @@ onUnmounted(() => {
 
       <form class="flex flex-col sm:flex-row flex-wrap gap-4 sm:items-end" @submit.prevent="submitManual">
         <div class="sm:w-52">
-          <label class="label" for="mc-currency">Валюта</label>
-          <select id="mc-currency" v-model="manualForm.currency_code" class="input min-h-11 lg:min-h-9">
-            <option v-for="c in FIX_CURRENCIES" :key="c" :value="c">{{ c }}</option>
-          </select>
+          <UiField for="mc-currency" label="Валюта">
+            <UiSelect v-model="manualCurrencyModel" :options="FIX_CURRENCY_OPTIONS" />
+          </UiField>
         </div>
         <div class="sm:w-44">
           <label class="label" for="mc-rate">Курс за 1 ед. (в BYN)</label>

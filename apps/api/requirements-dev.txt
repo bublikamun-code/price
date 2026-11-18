@@ -12,6 +12,7 @@ black==26.5.1                      # >=26.3 — фиксы PYSEC-2026-212x (то
 pytest==9.1.1                      # >=9.0.3 — фикс PYSEC-2026-1845 (только dev-образ)
 pytest-asyncio==1.4.0              # пара к pytest 9
 pytest-cov==7.1.0                  # пара к pytest 9
+pytest-timeout==2.4.0              # таймаут на тест: зависший тест падает со стеком, а не висит часами
 httpx==0.27.2
 testcontainers[postgres,redis,minio]==4.8.1
 factory-boy==3.3.1

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { goto } from './support/nav'
+import { appPath, appPathRegExp, goto } from './support/nav'
 
 // ============================================================
 //  Публичная витрина — то, что видит анонимный посетитель.
@@ -23,14 +23,15 @@ test.describe('главная страница', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru')
 
     // Главная не должна подсовывать гостю редирект на форму входа:
-    // витрина публична, вход — по кнопке.
-    expect(new URL(page.url()).pathname).toBe('/')
+    // витрина публична, вход — по кнопке. Путь сравниваем с учётом
+    // базового префикса публикации (`/price` в штатной сборке).
+    expect(new URL(page.url()).pathname).toBe(appPath('/'))
 
     // CTA отрисован в десктопной и мобильной версии hero — два одинаковых
     // доступных имени. Это норма для адаптива, поэтому берём первую.
     const cta = page.getByRole('link', { name: /Открыть каталог/i }).first()
     await expect(cta).toBeVisible()
-    await expect(cta).toHaveAttribute('href', /^\/(brands|catalog|manager)$/)
+    await expect(cta).toHaveAttribute('href', appPathRegExp('brands', 'catalog', 'manager'))
   })
 
   test('@smoke витрина доходит от загрузки до итогового состояния', async ({ page }) => {
@@ -87,6 +88,6 @@ test.describe('публичные разделы', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'Политика конфиденциальности',
     )
-    expect(new URL(page.url()).pathname).toBe('/privacy')
+    expect(new URL(page.url()).pathname).toBe(appPath('/privacy'))
   })
 })

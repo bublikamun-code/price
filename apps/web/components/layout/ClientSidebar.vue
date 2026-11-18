@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
 const auth = useAuth()
-const navSections = [
+const baseSections = [
   {
     label: 'Работа',
     items: [
@@ -21,6 +21,13 @@ const navSections = [
     ],
   },
 ]
+// Пункт «Текущая заявка» (корзина) — только для роли CLIENT (SITEMAP §3).
+const navSections = computed(() =>
+  baseSections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => item.to !== '/cart' || auth.isClient),
+  })),
+)
 
 function isActive(to: string) {
   return route.path === to || route.path.startsWith(`${to}/`)

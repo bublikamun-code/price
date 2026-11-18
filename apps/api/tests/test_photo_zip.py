@@ -455,6 +455,16 @@ class TestFilesPhotoEndpoint:
         await _login(api_client, CLIENT_EMAIL)
         import app.api.v1.files as files_api
 
+        # Выдача фото — fail-closed (аудит 2026-11-10, H6): ключ должен быть
+        # известен системе. Регистрируем его как фото серии.
+        brand = await create_brand(session_factory, name="KEAZ")
+        await create_series(
+            session_factory,
+            brand=brand,
+            name="Serie X",
+            photo_key="photos-series/serie-x.webp",
+        )
+
         monkeypatch.setattr(
             files_api.storage,
             "get_bytes",
@@ -478,6 +488,16 @@ class TestFilesPhotoEndpoint:
         await _login(api_client, CLIENT_EMAIL)
         import app.api.v1.files as files_api
 
+        # Ключ известен системе — 404 должен прийти ИЗ хранилища (объекта нет),
+        # а не из fail-closed проверки реестра (аудит 2026-11-10, H6).
+        brand = await create_brand(session_factory, name="KEAZ")
+        await create_series(
+            session_factory,
+            brand=brand,
+            name="Serie G",
+            photo_key="photos-series/gone.webp",
+        )
+
         def _missing(bucket, key, **kw):
             raise files_api.storage.ObjectNotFound("нет объекта")
 
@@ -494,6 +514,16 @@ class TestFilesPhotoEndpoint:
         await create_user(session_factory, email=CLIENT_EMAIL, role=UserRole.CLIENT)
         await _login(api_client, CLIENT_EMAIL)
         import app.api.v1.files as files_api
+
+        # Ключ известен системе (фото серии) — иначе fail-closed вернул бы 404
+        # раньше, чем дошло до обращения к хранилищу (аудит 2026-11-10, H6).
+        brand = await create_brand(session_factory, name="KEAZ")
+        await create_series(
+            session_factory,
+            brand=brand,
+            name="Serie X",
+            photo_key="photos-series/serie-x.webp",
+        )
 
         def _boom(bucket, key, **kw):
             raise files_api.storage.StorageError("minio недоступен")

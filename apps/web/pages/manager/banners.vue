@@ -77,6 +77,30 @@ const emptyForm = (): BannerForm => ({
 
 const form = ref<BannerForm>(emptyForm())
 
+// Опции селектов модалки баннера.
+const POSITION_OPTIONS: { value: BannerPosition; label: string }[] = [
+  { value: 'PROMO', label: 'Акции' },
+  { value: 'NEW', label: 'Новинки' },
+]
+const LINK_TYPE_OPTIONS: { value: BannerLinkType; label: string }[] = [
+  { value: 'NONE', label: 'Без ссылки' },
+  { value: 'PRODUCT', label: 'Товар' },
+  { value: 'NEWS', label: 'Новость' },
+]
+/** UiSelect отдаёт string | number — значения приводим к типам формы. */
+const positionModel = computed({
+  get: () => form.value.position as string | number,
+  set: (value: string | number) => {
+    form.value.position = value as BannerPosition
+  },
+})
+const linkTypeModel = computed({
+  get: () => form.value.link_type as string | number,
+  set: (value: string | number) => {
+    form.value.link_type = value as BannerLinkType
+  },
+})
+
 function openCreate() {
   editingId.value = null
   form.value = emptyForm()
@@ -316,11 +340,9 @@ onMounted(load)
           </div>
 
           <div>
-            <label class="label" for="banner-position">Позиция</label>
-            <select id="banner-position" v-model="form.position" class="input py-2.5">
-              <option value="PROMO">Акции</option>
-              <option value="NEW">Новинки</option>
-            </select>
+            <UiField for="banner-position" label="Позиция">
+              <UiSelect v-model="positionModel" :options="POSITION_OPTIONS" />
+            </UiField>
           </div>
 
           <div>
@@ -329,12 +351,9 @@ onMounted(load)
           </div>
 
           <div>
-            <label class="label" for="banner-link-type">Тип ссылки</label>
-            <select id="banner-link-type" v-model="form.link_type" class="input py-2.5">
-              <option value="NONE">Без ссылки</option>
-              <option value="PRODUCT">Товар</option>
-              <option value="NEWS">Новость</option>
-            </select>
+            <UiField for="banner-link-type" label="Тип ссылки">
+              <UiSelect v-model="linkTypeModel" :options="LINK_TYPE_OPTIONS" />
+            </UiField>
           </div>
 
           <div>

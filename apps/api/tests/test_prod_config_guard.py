@@ -106,9 +106,12 @@ def test_плохие_прод_настройки_отвергаются(
 
 def test_rs256_без_файлов_ключей_отвергается() -> None:
     """Ключи обязательны: без них токены нечем подписывать."""
+    # Пути задаём явно (None): иначе значения из окружения стенда
+    # (JWT_PRIVATE_KEY_PATH) подставились бы и ошибки не было бы.
     with pytest.raises(ValidationError):
         Settings(env="prod", secret_key="k" * 40, jwt_algorithm="RS256",
-                 cookie_secure=True, cors_origins="https://portal.example.com")
+                 cookie_secure=True, cors_origins="https://portal.example.com",
+                 jwt_private_key_path=None, jwt_public_key_path=None)
 
 
 def test_в_dev_эти_проверки_не_применяются() -> None:

@@ -16,6 +16,7 @@ useHead({ title: 'Массовое добавление' })
 
 const repository = createCatalogRepository(useApiV2())
 const cartV2 = useCartV2()
+const auth = useAuth()
 
 const MAX_ITEMS = 500
 const RESOLVE_BATCH_SIZE = 8
@@ -469,7 +470,8 @@ async function addSavedRow(row: ClientRow) {
 }
 
 onMounted(() => {
-  void cartV2.ensureLoaded().catch(() => undefined)
+  // Корзина — сущность клиента (§3 SITEMAP): менеджеру она недоступна.
+  if (auth.isClient) void cartV2.ensureLoaded().catch(() => undefined)
   void sessionContext.ensureLoaded().catch(() => undefined)
 })
 </script>

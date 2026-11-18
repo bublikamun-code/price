@@ -30,7 +30,7 @@
     "totalItems": 1,
     "exchangeRate": {
       "value": "1.0000",
-      "scale": 4,
+      "scale": 1,
       "source": "BYN"
     }
   },

@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.enums import QuoteStatus
+from app.models.enums import QuotePdfStatus, QuoteStatus
 from app.models.quote import Quote, QuoteItem
 
 # PG-последовательность сквозных номеров КП (создаётся миграцией 0029;
@@ -27,6 +27,23 @@ async def next_quote_seq(db: AsyncSession) -> int:
     (§16 п.9).
     """
     return int(await db.scalar(text(f"SELECT nextval('{QUOTES_SEQ_NAME}')")))
+
+
+async def mark_pdf_failed_by_asset(
+    db: AsyncSession, *, asset_id: uuid.UUID
+) -> int:
+    """Перевести КП, чей PDF-файл удаляется из архива, в ``FAILED``.
+
+    Тот же механизм, что у счёта (§16 п.40, решение (10)): FK
+    ``quotes.pdf_file_asset_id`` — ``ON DELETE SET NULL``, поэтому без
+    явного перевода КП остался бы «готов» без файла.
+    """
+    result = await db.execute(
+        update(Quote)
+        .where(Quote.pdf_file_asset_id == asset_id)
+        .values(pdf_status=QuotePdfStatus.FAILED, pdf_file_asset_id=None)
+    )
+    return int(result.rowcount or 0)
 
 
 async def get_quote(db: AsyncSession, *, quote_id: uuid.UUID) -> Quote | None:

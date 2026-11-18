@@ -11,6 +11,13 @@ const props = defineProps<{ invoice: Invoice }>()
 const { activeId, error, downloadInvoicePdf } = useInvoiceDownload()
 
 const downloadable = computed(() => props.invoice.pdfStatus === 'READY')
+
+/** Подсказка на заблокированной кнопке: «готовится» и «ошибка рендера» — разное. */
+const downloadTitle = computed(() =>
+  props.invoice.pdfStatus === 'FAILED'
+    ? 'PDF счёта недоступен — нужен перерендер'
+    : 'PDF счёта ещё готовится',
+)
 const busy = computed(() => activeId.value !== null)
 
 function download() {
@@ -65,7 +72,7 @@ function download() {
         size="touch"
         :loading="busy"
         :disabled="!downloadable || busy"
-        :title="downloadable ? '' : 'PDF счёта ещё готовится'"
+        :title="downloadable ? '' : downloadTitle"
         data-testid="order-invoice-download"
         @click="download"
       >
@@ -79,8 +86,11 @@ function download() {
         :label="`PDF: ${INVOICE_PDF_STATUS_META[invoice.pdfStatus].label}`"
         data-testid="order-invoice-pdf-status"
       />
-      <p v-if="!downloadable" class="text-xs leading-5 text-ink-muted">
+      <p v-if="invoice.pdfStatus === 'PENDING'" class="text-xs leading-5 text-ink-muted">
         PDF счёта ещё готовится. Кнопка станет активной, как только файл будет сформирован.
+      </p>
+      <p v-else-if="invoice.pdfStatus === 'FAILED'" class="text-xs leading-5 text-danger">
+        PDF счёта не удалось собрать — сообщите менеджеру, он перерендерит файл заново.
       </p>
     </div>
 

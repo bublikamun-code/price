@@ -35,7 +35,6 @@ from app.schemas.v2.catalog import (
     VolumeTierHint,
 )
 from app.schemas.v2.common import (
-    RATE_SCALE,
     CursorMeta,
     CursorResponse,
     Money,
@@ -163,9 +162,13 @@ def _filters(
 
 
 def _rate(resolved: ResolvedRate) -> Rate:
+    # scale — делитель валюты (§17.4): BYN за `scale` единиц валюты, у RUB
+    # scale=100. Формула обратного пересчёта: amount = amount_byn × scale / rate.
+    # Для BYN это 1 (rate=1, scale=1 → сумма без изменения), а не 4 —
+    # «4» здесь означало бы завышение суммы вчетверо.
     return Rate(
         value=rate_value(resolved.rate if resolved.rate is not None else Decimal("1")),
-        scale=resolved.scale if resolved.rate is not None else RATE_SCALE,
+        scale=resolved.scale,
         source=resolved.source,
     )
 
@@ -177,7 +180,15 @@ def _product(row, prices: dict, resolved: ResolvedRate) -> CatalogProduct:
     # В БД лежит large-ключ, поэтому ссылка миниатюры несёт ``?size=thumb``:
     # эндпоинт отдаёт лежащий рядом кадр 400×400 ({stem}_thumb.webp, §16 п.17),
     # у старых загрузок без thumb — фолбэк на large (api/v2/media.py).
-    thumbnail = media_service.media_ref_for_key(row.photo_key, thumb=True)
+    #
+    # «Сырое» имя файла из CSV (series_photo) — не S3-ключ: объекта с таким
+    # именем в бакете нет, и media-ссылка была бы вечной 404. Такие значения
+    # отдаём как «фото нет» (thumbnail=None) — клиент покажет заглушку.
+    thumbnail = (
+        media_service.media_ref_for_key(row.photo_key, thumb=True)
+        if media_service.is_photo_key(row.photo_key)
+        else None
+    )
     return CatalogProduct(
         id=product.id,
         sku=product.sku,
@@ -220,6 +231,9 @@ async def _gallery_media(db: AsyncSession, product_id: uuid.UUID) -> list[MediaR
     фото, хотя by-productId показывал полную галерею.
     """
     gallery = await repo.list_product_photos(db, product_id)
+    # Реестр медиа: без строки реестра ключ не резолвится в /api/v2/media/{id}
+    # и карточка показала бы заглушку вместо фото.
+    await media_service.ensure_registered(db, gallery)
     return [
         MediaResource.model_validate(ref)
         for ref in (media_service.media_ref_for_key(key) for key in gallery)
@@ -287,6 +301,11 @@ async def list_products(
     )
     has_more = len(rows) > limit
     rows = rows[:limit]
+    # Реестр медиа: id фото — это uuid5 от S3-ключа, и «развернуть» его обратно
+    # в ключ нельзя. Ключ, попавший в каталог не через реестр (фото загрузили
+    # скриптом, а не через менеджера), дал бы 404 на /api/v2/media/{id} — и
+    # карточка показала бы заглушку вместо фото. Регистрируем недостающие ключи.
+    await media_service.ensure_registered(db, [row.photo_key for row in rows])
     pricing = PricingService(db)
     resolved = await pricing.resolve_rate(
         user, price_calc_mode, organization_id=context.organization_id
@@ -346,6 +365,7 @@ async def get_product_by_sku(
     row = await repo.get_catalog_row(db, user_id=user.id, product_id=product.id)
     if row is None:
         raise _problem(404, code="RESOURCE_NOT_FOUND", title="Товар не найден", detail="Товар не найден")
+    await media_service.ensure_registered(db, [row.photo_key])
     context = await OrganizationContextService(db).resolve(user)
     pricing = PricingService(db)
     resolved = await pricing.resolve_rate(
@@ -396,6 +416,7 @@ async def get_product(
     row = await repo.get_catalog_row(db, user_id=user.id, product_id=product_id)
     if row is None:
         raise _problem(404, code="RESOURCE_NOT_FOUND", title="Товар не найден", detail="Товар не найден")
+    await media_service.ensure_registered(db, [row.photo_key])
     pricing = PricingService(db)
     context = await OrganizationContextService(db).resolve(user)
     resolved = await pricing.resolve_rate(

@@ -17,11 +17,31 @@ const brands = ref<FiltersOut['brands']>([])
 const total = ref(0)
 const q = ref('')
 const brandId = ref('')
+/** Опции фильтра по производителю для UiSelect. */
+const brandOptions = computed(() => [
+  { value: '', label: 'Все производители' },
+  ...brands.value.map((brand) => ({ value: brand.id, label: brand.name })),
+])
 const page = ref(1)
 const hasMore = computed(() => products.value.length < total.value)
 // Справочник брендов не зависит от поиска/страницы, поэтому загружаем его
 // только при первом открытии мобильного каталога.
 let brandsLoaded = false
+// Гонка «поиск + догрузка»: ответы приходят не по порядку, и без номера запроса
+// старый ответ перетирал бы новый — в списке появлялись бы чужие товары, а
+// страница счётчика уезжала. Тот же приём, что в десктопном каталоге.
+let loadSeq = 0
+let isUnmounted = false
+// Битая миниатюра (удалённый ключ, недоступный бакет) → заглушка, а не «дыра».
+const failedThumbs = reactive(new Set<string>())
+function markThumbFailed(url: string) {
+  failedThumbs.add(url)
+}
+const thumbUrls = computed(() => {
+  const map = new Map<string, string | null>()
+  for (const p of products.value) map.set(p.id, thumbOf(p.photo_key))
+  return map
+})
 const stockLabel: Record<string, string> = { IN_STOCK: 'В наличии', PREORDER: 'Под заказ' }
 function priceOf(p: ProductCard) {
   return p.has_discount ? p.client_price : p.retail_price
@@ -37,6 +57,7 @@ function queryParams(pageNo: number) {
 }
 
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   error.value = ''
   try {
@@ -45,6 +66,7 @@ async function load() {
       ? Promise.resolve(null)
       : request<FiltersOut>('/api/v1/catalog/filters')
     const [catalog, f] = await Promise.all([catalogPromise, filtersPromise])
+    if (seq !== loadSeq || isUnmounted) return
     products.value = catalog.data
     total.value = catalog.meta.total
     if (f) {
@@ -52,15 +74,15 @@ async function load() {
       brandsLoaded = true
     }
   } catch (e) {
+    if (seq !== loadSeq || isUnmounted) return
     error.value = getErrorMessage(e, 'Не удалось загрузить каталог')
   } finally {
-    loading.value = false
+    if (seq === loadSeq && !isUnmounted) loading.value = false
   }
 }
 
 // Поиск/смена бренда: всегда с первой страницы.
 function search() {
-  if (loading.value) return
   page.value = 1
   load()
 }
@@ -73,24 +95,30 @@ function resetFilters() {
 }
 
 async function loadMore() {
-  if (loadingMore.value || !hasMore.value) return
+  if (loadingMore.value || loading.value || !hasMore.value) return
+  const seq = ++loadSeq
   loadingMore.value = true
   error.value = ''
   try {
     const catalog = await request<CatalogPage>('/api/v1/catalog/products', {
       query: queryParams(page.value + 1),
     })
+    if (seq !== loadSeq || isUnmounted) return
     products.value = [...products.value, ...catalog.data]
     total.value = catalog.meta.total
     page.value = catalog.meta.page
   } catch (e) {
+    if (seq !== loadSeq || isUnmounted) return
     error.value = getErrorMessage(e, 'Не удалось загрузить товары')
   } finally {
-    loadingMore.value = false
+    if (seq === loadSeq && !isUnmounted) loadingMore.value = false
   }
 }
 
 onMounted(load)
+onUnmounted(() => {
+  isUnmounted = true
+})
 </script>
 
 <template>
@@ -107,11 +135,14 @@ onMounted(load)
         <Icon name="heroicons:magnifying-glass" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint" aria-hidden="true" />
         <input id="m_catalog_search" v-model="q" class="input min-h-11 pl-9" type="search" placeholder="Артикул или наименование">
       </div>
-      <label class="sr-only" for="m_catalog_brand">Производитель</label>
-      <select id="m_catalog_brand" v-model="brandId" class="input mt-2 min-h-11" @change="search">
-        <option value="">Все производители</option>
-        <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
-      </select>
+      <UiField for="m-catalog-brand" label="Производитель" label-hidden class="mt-2">
+        <UiSelect
+          v-model="brandId"
+          :options="brandOptions"
+          placeholder="Все производители"
+          @update:model-value="search"
+        />
+      </UiField>
       <button type="submit" class="btn-primary mt-2 min-h-11 w-full justify-center" :disabled="loading">Найти</button>
     </form>
 
@@ -145,7 +176,14 @@ onMounted(load)
           class="grid min-h-24 grid-cols-[56px_minmax(0,1fr)] gap-3 p-3 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-action sm:grid-cols-[64px_minmax(0,1fr)_auto]"
         >
           <div class="flex size-14 items-center justify-center overflow-hidden border border-border bg-background sm:size-16">
-            <img v-if="thumbOf(p.photo_key)" :src="thumbOf(p.photo_key)!" :alt="p.name" loading="lazy" class="size-full object-contain">
+            <img
+              v-if="thumbUrls.get(p.id) && !failedThumbs.has(thumbUrls.get(p.id)!)"
+              :src="thumbUrls.get(p.id)!"
+              :alt="p.name"
+              loading="lazy"
+              class="size-full object-contain"
+              @error="markThumbFailed(thumbUrls.get(p.id)!)"
+            >
             <Icon v-else name="heroicons:photo" class="size-6 text-ink-faint" aria-hidden="true" />
           </div>
           <div class="min-w-0">

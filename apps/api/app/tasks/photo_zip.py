@@ -121,7 +121,9 @@ async def _run_photo_zip(job_id: uuid.UUID, user_id: str, s3_key: str) -> dict:
                 name = PurePosixPath(info.filename).name
                 stem = _norm_stem(PurePosixPath(name).stem)
                 try:
-                    large, thumb = _process_image(_read_capped(zf, info, name))
+                    large, thumb, large_size, _thumb_size = _process_image(
+                        _read_capped(zf, info, name)
+                    )
                 except PhotoZipError:
                     raise  # лимит нарушен фактически — весь job FAILED
                 except Exception as exc:
@@ -140,8 +142,9 @@ async def _run_photo_zip(job_id: uuid.UUID, user_id: str, s3_key: str) -> dict:
                     content_type="image/webp",
                 )
                 # Реестр v2-медиа: без записи ключ не резолвится в
-                # /api/v2/media/{id} (аудит 08.11.2026).
-                await media.register_key(db, key_large)
+                # /api/v2/media/{id} (аудит 08.11.2026). Размеры — фактические
+                # (известны после ресайза), а не бокс конвенции 1200×1200.
+                await media.register_key(db, key_large, dimensions=large_size)
                 files += 1
 
                 # Приоритет (§16 п.17): slug по имени серии, затем «сырое»
@@ -216,18 +219,28 @@ def _norm_stem(stem: str) -> str:
     return stem.lower().strip().replace("_", "-").replace(" ", "-")
 
 
-def _process_image(raw: bytes) -> tuple[bytes, bytes]:
+def _process_image(raw: bytes) -> tuple[bytes, bytes, tuple[int, int], tuple[int, int]]:
     """Pillow: large (fit 1200×1200) и thumb (fit 400×400), webp quality 82.
 
     ``thumbnail`` только уменьшает (без кропа и без увеличения). Обе
     производные строятся из исходника: ``convert("RGB")`` возвращает копию.
+
+    Возвращает также реальные размеры кадров: ``thumbnail`` вписывает фото в
+    бокс без кропа, поэтому large не обязан быть 1200×1200 (например
+    800×600). Эти размеры идут в реестр медиа — конвенция описывает бокс,
+    а не кадр (зеркалит services/manager_catalog._process_image).
     """
     with Image.open(io.BytesIO(raw)) as img:
         large_img = img.convert("RGB")
         large_img.thumbnail(LARGE_SIZE)
         thumb_img = img.convert("RGB")
         thumb_img.thumbnail(THUMB_SIZE)
-        return _to_webp(large_img), _to_webp(thumb_img)
+        return (
+            _to_webp(large_img),
+            _to_webp(thumb_img),
+            large_img.size,
+            thumb_img.size,
+        )
 
 
 def _to_webp(img: Image.Image) -> bytes:

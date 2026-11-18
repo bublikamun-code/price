@@ -77,10 +77,14 @@ class CartV2Service:
 
     @staticmethod
     def _public_rate(resolved: ResolvedRate) -> Rate:
+        # scale обязателен: по нему клиент пересчитывает сумму
+        # (BYN = amount × scale / rate). Без него в DTO стоял дефолт 4, а у
+        # RUB реальный масштаб 100 — ошибка пересчёта в 25 раз.
         return Rate(
             value=rate_value(
                 resolved.rate if resolved.rate is not None else Decimal(1)
             ),
+            scale=resolved.scale,
             source=resolved.source,
         )
 

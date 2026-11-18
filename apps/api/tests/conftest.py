@@ -11,6 +11,15 @@ import os
 from datetime import date
 from decimal import Decimal
 
+# Тестовое окружение фиксируется ДО импорта app.*: настройки читаются при
+# импорте (lru_cache), и в контейнере они берутся из .env. Без этого прогон
+# зависит от конфигурации стенда:
+#   * ENV=prod включает prod-guard и скрывает /docs;
+#   * COOKIE_SECURE=true ставит Secure-куки, а httpx не отправляет их по
+#     http://TestClient → авторизованные запросы получают 401.
+os.environ["ENV"] = "dev"
+os.environ["COOKIE_SECURE"] = "false"
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -90,11 +99,53 @@ async def engine(db_url):
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def _truncate_tables(engine):
-    """Чистим все таблицы перед каждым тестом."""
+async def _truncate_tables(engine, request):
+    """Чистим все таблицы перед каждым тестом.
+
+    Перед TRUNCATE снимаем «зависшие» транзакции прошлого теста: упавший
+    тест не всегда успевает закрыть свою сессию, и тогда его соединение
+    остаётся в состоянии ``idle in transaction`` — следующий TRUNCATE ждёт
+    блокировку до бесконечности и ВЕСЬ прогон встаёт (аудит 2026-11-10,
+    находка L8). Тесты идут последовательно (xdist не используется), поэтому
+    чужой ``idle in transaction`` — это гарантированно утечка упавшего теста,
+    а не чужой прогон: его можно завершить.
+
+    После теста проверяем, не осталась ли транзакция, и печатаем nodeid
+    виновника — иначе «упавший один тест вешает все 900» диагностируется
+    по косвенным признакам.
+    """
+    async with engine.connect() as conn:
+        await conn.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = current_database() "
+                "AND pid <> pg_backend_pid() "
+                "AND state LIKE 'idle in transaction%'"
+            )
+        )
     async with engine.begin() as conn:
         names = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
+        # Страховка от «вечного» TRUNCATE: если предыдущий тест оставил
+        # незакрытую сессию с открытой транзакцией, TRUNCATE блокируется на
+        # ACCESS EXCLUSIVE-локе и провисает (в CI — до таймаута джобы, 6 ч без
+        # pytest-timeout). lock_timeout превращает ожидание в быструю ошибку
+        # с внятным текстом вместо зависания всего прогона.
+        await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         await conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+    yield
+    async with engine.connect() as conn:
+        leaked = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE datname = current_database() "
+                    "AND pid <> pg_backend_pid() "
+                    "AND state LIKE 'idle in transaction%'"
+                )
+            )
+        ).scalar_one()
+    if leaked:
+        print(f"\n[leak] тест оставил открытую транзакцию: {request.node.nodeid}")
 
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="function")

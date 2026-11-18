@@ -31,6 +31,15 @@ const SORTS = [
 ] as const
 const sort = ref<(typeof SORTS)[number]['value']>('legalName')
 
+const SORT_OPTIONS = SORTS.map((option) => ({ value: option.value, label: option.label }))
+/** UiSelect отдаёт string | number — значение приводим к типу сортировки. */
+const sortModel = computed({
+  get: () => sort.value as string | number,
+  set: (value: string | number) => {
+    sort.value = value as (typeof SORTS)[number]['value']
+  },
+})
+
 const LIMIT = 25
 
 function organizationName(organization: OrganizationSummary): string {
@@ -95,12 +104,9 @@ onMounted(() => {
         >
       </div>
       <div>
-        <label class="label" for="org-sort">Сортировка</label>
-        <select id="org-sort" v-model="sort" class="input" @change="applyFilters">
-          <option v-for="option in SORTS" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
+        <UiField for="org-sort" label="Сортировка">
+          <UiSelect v-model="sortModel" :options="SORT_OPTIONS" @update:model-value="applyFilters" />
+        </UiField>
       </div>
       <button type="button" class="btn-primary" data-testid="manager-organizations-apply" @click="applyFilters">
         Найти

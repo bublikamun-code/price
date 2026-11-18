@@ -28,7 +28,8 @@ function openGlobalSearch() {
         <Icon name="heroicons:bell" class="size-5" aria-hidden="true" />
         <span v-if="notifications.unreadCount.value" class="absolute right-1 top-1 min-w-4 border border-surface bg-danger px-1 text-xs leading-4 text-danger-on">{{ notifications.unreadCount.value > 99 ? '99+' : notifications.unreadCount.value }}</span>
       </NuxtLink>
-      <NuxtLink to="/cart" class="relative inline-flex size-10 items-center justify-center text-ink-muted hover:text-ink" aria-label="Текущая заявка">
+      <!-- Корзина — только для роли CLIENT: у менеджера пункта нет. -->
+      <NuxtLink v-if="auth.isClient" to="/cart" class="relative inline-flex size-10 items-center justify-center text-ink-muted hover:text-ink" aria-label="Текущая заявка">
         <Icon name="heroicons:clipboard-document-list" class="size-5" aria-hidden="true" />
         <span v-if="cart.store.cart?.totalItems" class="absolute right-0 top-0 min-w-4 border border-surface bg-action px-1 text-xs leading-4 text-action-on">{{ cart.store.cart.totalItems > 99 ? '99+' : cart.store.cart.totalItems }}</span>
       </NuxtLink>

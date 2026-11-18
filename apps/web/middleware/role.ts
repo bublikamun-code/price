@@ -3,6 +3,8 @@
 //   definePageMeta({ middleware: ['auth', 'role'], roles: ['MANAGER'] })
 // Fail-closed: пустой/отсутствующий roles НЕ отключает проверку (иначе страница
 // случайно открывается всем), а трактуется как «доступ запрещён».
+import { sessionMayBeRestored } from '~/utils/session'
+
 export default defineNuxtRouteMiddleware((to) => {
   const auth = useAuth()
   const roles = (to.meta.roles as string[] | undefined) ?? []
@@ -10,6 +12,8 @@ export default defineNuxtRouteMiddleware((to) => {
   // Неавторизованный → на /login (та же конвенция, что в middleware/auth.ts;
   // обычно раньше уже отработает 'auth' из пары ['auth', 'role']).
   if (!auth.user) {
+    // Сессия восстанавливается клиентом по refresh-токену — не редиректим.
+    if (sessionMayBeRestored()) return
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
   }
 

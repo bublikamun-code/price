@@ -34,6 +34,7 @@ from app.schemas.catalog import (
     SeriesRef,
 )
 from app.services import export as export_service
+from app.services import media as media_service
 from app.services import storage
 from app.services.cache import (
     CATALOG_TAG,
@@ -47,6 +48,19 @@ from app.services.cache import (
 from app.services.pricing import PricingService
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+def _photo_key_or_none(photo_key: str | None) -> str | None:
+    """S3-ключ фото — либо None, если в бакете такого объекта нет.
+
+    В колонке photo_key может лежать «сырое» имя файла из CSV (колонка
+    series_photo): это не ключ в бакете, объекта с таким именем не существует,
+    и клиент, запросив его, получил бы 404 (битая картинка вместо заглушки).
+    Такие значения наружу не отдаём — клиент покажет заглушку.
+    """
+    if not photo_key:
+        return None
+    return photo_key if media_service.is_photo_key(photo_key) else None
 
 
 @router.get("/products", response_model=CatalogPage)
@@ -91,6 +105,10 @@ async def list_products(
     rows = await repo.fetch_catalog(
         db, user_id=user.id, filters=filters, sort=sort, limit=limit, offset=offset
     )
+    # Реестр медиа: выдача фото по ключу — fail-closed (ключ должен быть
+    # известен системе). Ключ, попавший в каталог не через реестр (фото
+    # загрузили скриптом, а не через менеджера), дал бы 404 на картинке.
+    await media_service.ensure_registered(db, [row.photo_key for row in rows])
     total = await repo.count_catalog(db, filters=filters)
 
     pricing = PricingService(db)
@@ -107,13 +125,17 @@ async def list_products(
                 name=product.name,
                 brand=BrandRef(id=row.brand_id, name=row.brand_name) if row.brand_id else None,
                 series=(
-                    SeriesRef(id=row.series_id, name=row.series_name, photo_key=row.photo_key)
+                    SeriesRef(
+                        id=row.series_id,
+                        name=row.series_name,
+                        photo_key=_photo_key_or_none(row.photo_key),
+                    )
                     if row.series_id
                     else None
                 ),
                 stock_status=product.stock_status,
                 stock_qty=product.stock_qty,
-                photo_key=row.photo_key,
+                photo_key=_photo_key_or_none(row.photo_key),
                 attributes=product.attributes or {},
                 **prices_for_product,
             )
@@ -224,9 +246,20 @@ async def get_product(
     if product.series_id:
         s = await repo.get_series(db, product.series_id)
         if s:
-            series = SeriesRef(id=s.id, name=s.name, brand_id=s.brand_id, photo_key=s.photo_key)
+            series = SeriesRef(
+                id=s.id,
+                name=s.name,
+                brand_id=s.brand_id,
+                photo_key=_photo_key_or_none(s.photo_key),
+            )
+            # Фото серии — тоже ключ реестра (его показывает карточка, когда у
+            # товара нет своей галереи).
+            await media_service.ensure_registered(db, [s.photo_key])
 
     photos = await repo.list_product_photos(db, product.id)
+    # Реестр медиа — см. list_products: без записи ключ не отдаётся по
+    # /files/photo (fail-closed), и галерея карточки осталась бы пустой.
+    await media_service.ensure_registered(db, photos)
 
     result = ProductDetail(
         id=product.id,
@@ -236,8 +269,12 @@ async def get_product(
         series=series,
         stock_status=product.stock_status,
         stock_qty=product.stock_qty,
-        photo_key=photos[0] if photos else (series.photo_key if series else None),
-        photos=photos,
+        photo_key=(
+            _photo_key_or_none(photos[0])
+            if photos
+            else (series.photo_key if series else None)
+        ),
+        photos=[key for key in photos if media_service.is_photo_key(key)],
         attributes=product.attributes or {},
         override_price=product.override_price,
         **prices,

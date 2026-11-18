@@ -20,9 +20,15 @@
 
 import { defineConfig, devices } from '@playwright/test'
 import { chromiumLaunchOptions } from './e2e/support/browser'
+import { resolveBaseURL } from './e2e/support/nav'
 
-/** Адрес стенда. Внутри контейнера web — внутренний IP nginx. */
-const baseURL = process.env.E2E_BASE_URL?.trim() || 'http://localhost:8081'
+/**
+ * Адрес стенда. Внутри контейнера web — внутренний IP nginx.
+ * К адресу добавляется базовый префикс публикации приложения
+ * (`NUXT_APP_BASE_URL`, в стенде — `/price`): без этого навигация уходит
+ * мимо приложения, а проверки абсолютных путей всегда падают.
+ */
+const baseURL = resolveBaseURL(process.env.E2E_BASE_URL)
 
 const isCI = !!process.env.CI
 
@@ -54,6 +60,9 @@ export default defineConfig({
 
   use: {
     baseURL,
+    // Стенд с самоподписанным TLS (nginx локально) — по умолчанию выключено:
+    // включается флагом, чтобы прод-контур не терял проверку сертификата.
+    ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS === '1',
     locale: 'ru-RU',
     timezoneId: 'Europe/Minsk',
     // Каталог и менеджский раздел верстаются под десктоп; дефолтные

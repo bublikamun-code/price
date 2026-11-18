@@ -6,6 +6,14 @@
 const rawMetrikaId = process.env.NUXT_PUBLIC_METRIKA_ID?.trim() ?? ''
 const METRIKA_ID = /^\d{1,12}$/.test(rawMetrikaId) ? rawMetrikaId : ''
 
+// Базовый путь приложения. '/' — обычный стенд (всё на своём origin).
+// '/price' — публикация под префиксом (Tailscale Funnel path /price):
+// роутер, ассеты и ссылки получают префикс, а API живёт на <base>/api/...,
+// то есть тот же origin — cookie и CSRF работают без отдельного домена.
+// Значение запекается на этапе сборки: app.baseURL — не runtimeConfig,
+// поэтому NUXT_APP_BASE_URL должен попадать в docker build (см. Dockerfile).
+const APP_BASE = (process.env.NUXT_APP_BASE_URL || '/').replace(/\/+$/, '') || '/'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
   // Devtools не должны попадать в прод-бандл: значение запекается на этапе
@@ -88,6 +96,9 @@ export default defineNuxtConfig({
   },
 
   app: {
+    // Публикация под префиксом (например /price): роутер, ассеты и ссылки
+    // получают префикс, API — на <base>/api/... (тот же origin).
+    baseURL: APP_BASE,
     head: {
       htmlAttrs: { lang: 'ru' },
       title: 'Клиентский портал',
@@ -98,7 +109,9 @@ export default defineNuxtConfig({
         { name: 'description', content: 'B2B-портал «Свет в доме»: каталог светотехники и электромонтажа, персональные цены по договору, заявки онлайн для юридических лиц и ИП.' },
       ],
       link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        // href абсолютный — Nuxt не префиксует такие строки сам, поэтому
+        // префикс подставляем явно (при APP_BASE='/' остаётся как было).
+        { rel: 'icon', type: 'image/svg+xml', href: `${APP_BASE}/favicon.svg` },
         // Шрифты: preconnect к обоим origin'ам, затем сам CSS. Раньше шрифты
         // приезжали через @import внутри main.css — это добавляло к
         // render-blocking цепочку лишний последовательный round-trip и ~0.3 с

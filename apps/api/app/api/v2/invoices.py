@@ -44,6 +44,8 @@ from app.schemas.v2.invoices import InvoiceOut, InvoiceStatusPatch, invoice_out
 from app.services import storage
 from app.services.invoice import (
     InvoiceError,
+    InvoicePdfInProgressError,
+    InvoicePdfMissingError,
     InvoicePdfNotReadyError,
     InvoiceService,
     enqueue_invoice_pdf,
@@ -336,7 +338,36 @@ async def download_invoice_pdf(
     except InvoiceError as exc:
         raise _as_v2_problem(exc) from exc
 
-    if invoice.pdf_status != InvoicePdfStatus.READY or invoice.pdf_file_asset_id is None:
+    if invoice.pdf_status == InvoicePdfStatus.PENDING:
+        raise V2ProblemError(
+            code=InvoicePdfInProgressError.code,
+            status=InvoicePdfInProgressError.status_code,
+            title=InvoicePdfInProgressError.title,
+            detail=f"PDF счёта {invoice.number} ещё собирается",
+        )
+    if invoice.pdf_status == InvoicePdfStatus.FAILED:
+        # Рендер не удался (или файл счёта удалён из архива — тогда каскад
+        # удаления перевёл счёт сюда же): перерендерить → §16 п.40, (10).
+        raise V2ProblemError(
+            code=InvoicePdfNotReadyError.code,
+            status=InvoicePdfNotReadyError.status_code,
+            title=InvoicePdfNotReadyError.title,
+            detail=f"PDF счёта {invoice.number} не собран — перерендерите его",
+        )
+    if invoice.pdf_file_asset_id is None:
+        # Рассинхрон состояния: pdf_status=READY, а файла нет (FK ON DELETE
+        # SET NULL). Штатно такого быть не должно — удаление файла переводит
+        # счёт в FAILED (§16 п.40, решение (10)); код оставлен как защита.
+        raise V2ProblemError(
+            code=InvoicePdfMissingError.code,
+            status=InvoicePdfMissingError.status_code,
+            title=InvoicePdfMissingError.title,
+            detail=(
+                f"Файл счёта {invoice.number} удалён из архива — "
+                "перерендерите PDF"
+            ),
+        )
+    if invoice.pdf_status != InvoicePdfStatus.READY:
         raise V2ProblemError(
             code=InvoicePdfNotReadyError.code,
             status=InvoicePdfNotReadyError.status_code,

@@ -19,6 +19,7 @@ from app.schemas.public import (
     PublicSeriesOut,
     PublicSeriesProductOut,
 )
+from app.services import media
 
 
 class NotFoundError(ValueError):
@@ -26,12 +27,14 @@ class NotFoundError(ValueError):
 
 
 def _series_out(s: Series) -> PublicSeriesOut:
-    """Миниатюра следует конвенции photo-ZIP/ручной заливки: {stem}_thumb.webp."""
+    """Миниатюра следует конвенции photo-ZIP/ручной заливки: {stem}_thumb.webp.
+
+    Конвенцию выводит единственный помощник ``media.thumb_key_for``: прежняя
+    локальная копия делала ``replace(".webp", "_thumb.webp")``, а та заменяла
+    ВСЕ вхождения ".webp" и для уже-миниатюрного ключа давала "_thumb_thumb.webp".
+    """
     photo_key = s.photo_key
-    if photo_key and photo_key.endswith(".webp"):
-        thumb = photo_key.replace(".webp", "_thumb.webp")
-    else:
-        thumb = photo_key
+    thumb = media.thumb_key_for(photo_key) if photo_key else photo_key
     return PublicSeriesOut(id=s.id, name=s.name, slug=str(s.id), photo_thumb=thumb)
 
 

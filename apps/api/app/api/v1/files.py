@@ -13,7 +13,8 @@
     Публичная витрина (``/public/photo``, api/v1/public.py) решает это так же.
 
 Ключ фото валидируется: обязательный «голый» путь без схемы и без ``..``
-(path traversal), иначе 400.
+(path traversal), иначе 400. Выдача — fail-closed: ключ должен быть известен
+системе (реестр файлов, реестр медиа каталога или таблица баннеров), иначе 404.
 """
 import re
 import uuid
@@ -38,6 +39,7 @@ from app.schemas.file import (
     FileDownloadResponse,
 )
 from app.services import file_assets as file_assets_service
+from app.services import media as media_service
 from app.services import storage
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -66,6 +68,17 @@ def _validate_photo_key(key: str) -> str:
             status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый ключ файла"
         )
     return key
+
+
+async def _known_photo_key(db: AsyncSession, key: str) -> bool:
+    """Известен ли ключ системе (если его нет в file_assets).
+
+    Фото каталога живут в реестре media_assets (§16 п.37) или прямо в
+    таблицах серий/галерей, картинки баннеров — в таблице баннеров. Ключ,
+    которого нет ни в одном реестре, системе не принадлежит: его нельзя
+    отдавать, даже если он физически лежит в бакете.
+    """
+    return await media_service.is_known_photo_key(db, key)
 
 
 @router.get("", response_model=FileAssetPage)
@@ -141,6 +154,14 @@ async def get_photo(
 
     asset = await file_assets_repo.get_by_s3_key(db, valid_key)
     if asset is not None and not _can_see(user, asset):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено"
+        )
+    if asset is None and not await _known_photo_key(db, valid_key):
+        # Fail-closed: объект, которого система не знает, не отдаём. Раньше
+        # проверка visibility выполнялась только для ключей, найденных в
+        # file_assets, а всё остальное из бакета photos отдавалось клиенту
+        # «как есть» — минуя visibility (MANAGER_ONLY).
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено"
         )

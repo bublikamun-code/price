@@ -162,6 +162,27 @@ def get_bytes(bucket: str, key: str) -> bytes:
     return resp["Body"].read()
 
 
+def get_object_bytes(bucket: str, key: str) -> bytes:
+    """Прочитать объект целиком, мимо :func:`get_bytes`.
+
+    Отдельная точка входа нужна зондированию геометрии (services/media.py):
+    объект там может отсутствовать — это штатная ситуация, и предупреждение
+    в логе неактуального ``get_bytes`` только шумит. Ошибки — те же, что у
+    :func:`get_bytes`: нет объекта → :class:`ObjectNotFound`, хранилище
+    недоступно → :class:`StorageError`.
+    """
+    client = get_s3_client()
+    try:
+        resp = client.get_object(Bucket=bucket, Key=key)
+    except (BotoCoreError, ClientError) as exc:
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+        log.debug("s3.get_object_bytes_failed", bucket=bucket, key=key, code=code)
+        if code in _MISSING_CODES:
+            raise ObjectNotFound(f"Объект {bucket}/{key} не найден") from exc
+        raise StorageError(f"Не удалось прочитать объект {bucket}/{key}") from exc
+    return resp["Body"].read()
+
+
 def delete_object(bucket: str, key: str) -> None:
     """Удалить объект из ``bucket``. Перебои сети → :class:`StorageError`.
 

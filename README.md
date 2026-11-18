@@ -104,6 +104,77 @@ make test          # тесты
 
 ---
 
+---
+
+## 🌐 Публичный доступ (боевой стенд)
+
+Публичная точка: **`https://bublik.tail4fd7f3.ts.net/price/`** — Tailscale Funnel
+(path-handler `/price`) → nginx (TLS) → приложение под базой `/price`.
+
+Как это устроено:
+
+| Слой | Что происходит |
+|---|---|
+| Funnel | Публичный HTTPS с валидным сертификатом; **срезает** префикс `/price` (`/price/catalog` → nginx получает `GET /catalog`); бэкенд опрашивает как `https+insecure://127.0.0.1:443` |
+| nginx (prod) | `infra/nginx/nginx.prod.conf`: 80 → 308 на 443; возвращает базу `/price` обратно; страницы → Nuxt (`app.baseURL=/price`), `/api/…` → FastAPI; `/docs` и `/openapi.json` → 404; `/metrics` — только из внутренних сетей |
+| Web | `NUXT_APP_BASE_URL=/price` запекается в образ при сборке (`docker build`), `NUXT_PUBLIC_API_BASE=/price` — рантайм |
+| API | Тот же origin → cookie host-only с `Path=/`, CSRF double-submit работают как раньше |
+
+Порядок развёртывания (prod-стенд на этом же сервере):
+
+```bash
+# 1) .env: ENV=prod, JWT_ALGORITHM=RS256, JWT_*_KEY_PATH=/jwt-keys/...,
+#    COOKIE_SECURE=true, новый SECRET_KEY, CORS_ORIGINS без localhost,
+#    NUXT_APP_BASE_URL=/price, NUXT_PUBLIC_API_BASE=/price
+# 2) RSA-пара для RS256 и TLS-сертификат (по одному разу):
+make gen-jwt-keys
+tailscale cert --cert-file infra/nginx/certs/fullchain.pem \
+               --key-file infra/nginx/certs/privkey.pem bublik.tail4fd7f3.ts.net
+# 3) Сборка prod-образов (код внутри образа, base path веба запекается):
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml \
+  --env-file .env build api web worker beat
+# 4) Миграции:
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml \
+  --env-file .env run --rm --no-deps api alembic upgrade head
+# 5) Подъём стека (db/redis/rustfs подняты вне compose → --no-deps):
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml \
+  --env-file .env up -d --no-deps api worker beat web nginx
+# 6) Публикация (путь /price → nginx:443):
+tailscale funnel --bg --yes --set-path /price https+insecure://127.0.0.1:443
+# 7) Маркер боевого стенда: idle-скрипт не гасит prod-стек:
+touch infra/.prod-stand
+```
+
+Особенности боевого стенда:
+
+- nginx публикуется только на loopback (`127.0.0.1:80`, `127.0.0.1:443`): порт 443
+  на хосте занят самим `tailscaled` (слушает 443 на Tailscale-IP), а LAN-доступ
+  не нужен — вход только через Funnel.
+- api/worker/beat/web — образы `target: runtime` (код внутри образа, без
+  хот-релоада), `restart: always`.
+- api в проде запускается uvicorn-ом (`--workers 4 --proxy-headers
+  --forwarded-allow-ips=*`), а не gunicorn: `UvicornWorker` не переносит
+  proxy-параметры gunicorn, и реальный IP клиента терялся бы — rate-limit логина
+  стал бы общим на весь интернет.
+- `ENV=prod` (prod-guard в `core/config.py`); `/docs`, `/openapi.json`, `/redoc`,
+  `/readyz` → 404; `/metrics` — только из внутренних docker-сетей.
+- Rate-limit считается по реальному IP клиента: nginx передаёт в API ровно один
+  адрес — тот, что сообщил Funnel (клиентские подделки `X-Forwarded-For` Funnel
+  перезаписывает).
+- Флаг `Secure` у auth-кук следует за схемой: публичная точка (https) — Secure.
+- `pp-db`/`pp-redis`/`pp-rustfs` созданы вне compose → compose-команды на этом
+  сервере требуют `--no-deps`.
+- Правка nginx-конфига: это bind-mount **файла**, после правки inode меняется →
+  контейнер видит старый конфиг, нужен `--force-recreate` (`nginx -s reload`
+  недостаточно).
+- Откат на dev-стенд: `docker compose -f infra/docker-compose.yml
+  -f infra/docker-compose.override.yml --env-file .env up -d --no-deps api web
+  nginx` + `tailscale funnel --bg --yes --set-path /price 8140` (и убрать
+  `infra/.prod-stand`).
+- Решение зафиксировано в `ARCHITECTURE_PLAN.md` §16 п.46.
+
+---
+
 ## 🛣️ Дорожная карта
 
 Реализация идёт по этапам из [`ARCHITECTURE_PLAN.md` §15/§19](./ARCHITECTURE_PLAN.md).

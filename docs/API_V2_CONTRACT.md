@@ -19,7 +19,7 @@
 - timestamps — RFC 3339 UTC;
 - date — ISO `YYYY-MM-DD`;
 - money — decimal string + ISO 4217 currency;
-- rate — decimal string with scale and source;
+- rate — decimal string (ровно 4 знака) + `scale` + `source`; `scale` — **делитель валюты**, а не точность курса (BYN → 1, RUB → 100), пересчёт `amount_display = amount_byn × scale / value` (уточнение 2026-11-10, §16 п.45);
 - lists — opaque cursor pagination по умолчанию;
 - filters/sort/search выполняются сервером;
 - client `meta` не содержит presentation-ready labels или formatted business data.

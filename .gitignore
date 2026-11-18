@@ -71,6 +71,9 @@ infra/nginx/certs/
 # --- Бэкапы БД (make backup; §16 п.24) ---
 infra/backups/
 
+# --- Маркер боевого стенда (docker-idle.sh не гасит prod-стек; §16 п.46) ---
+infra/.prod-stand
+
 # --- Alembic local ---
 apps/api/alembic/versions/__pycache__/
 

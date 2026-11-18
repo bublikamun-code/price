@@ -3,6 +3,7 @@
 // Полный список/чтение — на самой странице; здесь бейдж + SSE-стрим с poll-fallback.
 // См. ARCHITECTURE_PLAN §16 п.26, SITEMAP §6.
 import type { NotificationItem, NotificationsPage } from '~/types/api'
+import { apiPath } from '../utils/api-path'
 
 const unreadCount = ref(0)
 const POLL_INTERVAL_MS = 60_000
@@ -13,6 +14,8 @@ let streamHadDrop = false // был разрыв: после reconnect синх�
 
 export function useNotifications() {
   const { request } = useApi()
+  // Базовый префикс публикации (пусто на обычном стенде, '/price' — публично).
+  const apiBase = useRuntimeConfig().public.apiBase
 
   /** Обновить бейдж: meta.unread_count (свои непрочитанные). Ошибки — тихо. */
   async function refresh(): Promise<void> {
@@ -47,7 +50,10 @@ export function useNotifications() {
    */
   function startStream() {
     if (!import.meta.client || stream) return
-    stream = new EventSource('/api/v1/notifications/stream')
+    // apiPath: EventSource не знает про baseURL ofetch — при публикации под
+    // префиксом (/price) стрим должен идти на <base>/api/..., иначе он уйдёт
+    // в корень домена, где живёт другое приложение.
+    stream = new EventSource(apiPath('/api/v1/notifications/stream', apiBase))
 
     stream.addEventListener('notification', (ev) => {
       try {

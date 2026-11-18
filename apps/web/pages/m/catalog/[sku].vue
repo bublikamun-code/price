@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Мобильная карточка товара (Mini App): фото, цена, количество, «В корзину».
 import type { ProductDetail } from '~/types/api'
+import { mainPhotoSrc } from '~/utils/product-media'
 
 definePageMeta({ layout: 'miniapp', middleware: 'm-auth' })
 const route = useRoute()
 const router = useRouter()
 const { request } = useApi()
-const { photoOf, urlOf } = useProductPhoto()
+const { photoOf, urlOf, thumbOf } = useProductPhoto()
 const cart = useCart()
 
 const sku = computed(() => String(route.params.sku))
@@ -31,23 +32,53 @@ useHead({ title: computed(() => product.value?.name || 'Товар') })
 // Галерея v1: photo_key — основной кадр (первое фото товара либо фото серии),
 // photos — полный список фото товара, где первое совпадает с photo_key; дубль
 // убираем, чтобы кадр не показывался в ленте дважды.
+//
+// thumbUrl — миниатюра 400×400 по конвенции §16 п.17. Раньше превью в ленте
+// показывало крупный кадр (1200×1200, 25–60 КБ): в боксе 56px он не виден,
+// но грузился целиком — по 6–10 мегабайт лишнего трафика на товар с галереей.
+// Теперь миниатюра используется и в превью, и в главном кадре карточки.
 const selectedPhotoIndex = ref(0)
 const galleryPhotos = computed(() => {
   const p = product.value
   if (!p) return []
-  const frames: { id: string; url: string }[] = []
+  const frames: { id: string; url: string; thumbUrl: string }[] = []
   const main = photoOf(p)
-  if (main) frames.push({ id: p.photo_key || 'main', url: main })
+  if (main) {
+    frames.push({
+      id: p.photo_key || 'main',
+      url: main,
+      thumbUrl: thumbOf(p.photo_key) ?? main,
+    })
+  }
   for (const key of p.photos ?? []) {
     if (key === p.photo_key) continue
     const url = urlOf(key)
-    if (url) frames.push({ id: key, url })
+    if (url) frames.push({ id: key, url, thumbUrl: thumbOf(key) ?? url })
   }
   return frames
 })
+// Битая картинка (удалённый ключ, недоступный бакет) не должна оставлять дыру:
+// показываем заглушку, как ProductPhoto на десктопе.
+// failedThumbs — превью в галерее (миниатюры), failedMain — главный кадр.
+// Наборы разные: падение главного кадра не должно стирать превью.
+const failedThumbs = reactive(new Set<string>())
+const failedMain = reactive(new Set<string>())
+function markPhotoFailed(url: string) {
+  failedThumbs.add(url)
+}
 const activePhoto = computed(
   () => galleryPhotos.value[selectedPhotoIndex.value] ?? galleryPhotos.value[0] ?? null,
 )
+// Главный кадр мобильной карточки — миниатюра 400×400 (аудит L13).
+// Полный кадр 1200×1200 в мобильном боксе всё равно не виден, но грузится
+// целиком: на товаре с галереей это десятки мегабайт лишнего трафика.
+// Если миниатюра не загрузилась — откатываемся на полный кадр; если и он
+// недоступен — показываем заглушку.
+const activePhotoSrc = computed(() => mainPhotoSrc(activePhoto.value, failedMain))
+function markActivePhotoFailed() {
+  const src = activePhotoSrc.value
+  if (src) failedMain.add(src)
+}
 
 async function load() {
   loading.value = true
@@ -139,24 +170,38 @@ const STOCK_META: Record<string, { label: string; tone: 'success' | 'warning' | 
       </header>
 
       <div data-testid="m-product-media" class="border-b border-border p-4">
-        <template v-if="activePhoto">
-          <img :src="activePhoto.url" :alt="product.name" class="aspect-[4/3] w-full border border-border bg-background object-contain">
-          <div v-if="galleryPhotos.length > 1" class="mt-2 flex gap-2 overflow-x-auto scrollbar-none" role="group" aria-label="Фотографии товара">
-            <button
-              v-for="(frame, index) in galleryPhotos"
-              :key="frame.id"
-              type="button"
-              class="min-h-11 shrink-0 border bg-background p-0.5"
-              :class="frame.id === activePhoto.id ? 'border-action' : 'border-border'"
-              :aria-label="`Показать фото ${index + 1} из ${galleryPhotos.length}`"
-              :aria-pressed="frame.id === activePhoto.id"
-              @click="selectedPhotoIndex = index"
-            >
-              <img :src="frame.url" :alt="`${product.name} — фото ${index + 1}`" class="size-14 object-contain">
-            </button>
-          </div>
-        </template>
+        <img
+          v-if="activePhotoSrc"
+          :src="activePhotoSrc"
+          :alt="product.name"
+          class="aspect-[4/3] w-full border border-border bg-background object-contain"
+          @error="markActivePhotoFailed"
+        >
         <p v-else class="text-xs leading-5 text-ink-muted">Фото товара пока недоступно</p>
+        <div v-if="galleryPhotos.length > 1" class="mt-2 flex gap-2 overflow-x-auto scrollbar-none" role="group" aria-label="Фотографии товара">
+          <button
+            v-for="(frame, index) in galleryPhotos"
+            :key="frame.id"
+            type="button"
+            class="min-h-11 shrink-0 border bg-background p-0.5"
+            :class="frame.id === activePhoto?.id ? 'border-action' : 'border-border'"
+            :aria-label="`Показать фото ${index + 1} из ${galleryPhotos.length}`"
+            :aria-pressed="frame.id === activePhoto?.id"
+            @click="selectedPhotoIndex = index"
+          >
+            <img
+              v-if="!failedThumbs.has(frame.thumbUrl)"
+              :src="frame.thumbUrl"
+              :alt="`${product.name} — фото ${index + 1}`"
+              class="size-14 object-contain"
+              loading="lazy"
+              @error="markPhotoFailed(frame.thumbUrl)"
+            >
+            <span v-else class="flex size-14 items-center justify-center">
+              <Icon name="heroicons:photo" class="size-5 text-ink-faint" aria-hidden="true" />
+            </span>
+          </button>
+        </div>
       </div>
 
       <div class="grid sm:grid-cols-[minmax(0,1fr)_18rem]">

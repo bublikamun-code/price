@@ -1,0 +1,16 @@
+[Unit]
+Description=Renew the Let's Encrypt certificate of the public price portal
+Documentation=file:///data/bublik/projects/price/docs/RUNBOOK.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/data/bublik/projects/price
+ExecStart=/data/bublik/projects/price/infra/scripts/renew-cert.sh
+# Скрипт идемпотентен: если до истечения сертификата больше 30 суток,
+# `tailscale cert` вернёт тот же сертификат и ничего не изменится.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

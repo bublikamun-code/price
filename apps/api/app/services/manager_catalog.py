@@ -63,19 +63,29 @@ def _json_price(value) -> str | None:
     return str(value) if value is not None else None
 
 
-def _process_image(raw: bytes) -> tuple[bytes, bytes]:
+def _process_image(raw: bytes) -> tuple[bytes, bytes, tuple[int, int], tuple[int, int]]:
     """Pillow: large (fit 1200×1200) и thumb (fit 400×400), webp quality 82.
 
     Зеркалит tasks/photo_zip._process_image: обе производные строятся из
     исходника (``convert("RGB")`` возвращает копию и заодно приводит RGBA/P).
     ``thumbnail`` только уменьшает (без кропа и без увеличения).
+
+    Возвращает также реальные размеры кадров: ``thumbnail`` вписывает фото в
+    бокс без кропа, поэтому large не обязан быть 1200×1200 (например
+    800×600). Эти размеры идут в реестр медиа — конвенция описывает бокс,
+    а не кадр.
     """
     with Image.open(io.BytesIO(raw)) as img:
         large_img = img.convert("RGB")
         large_img.thumbnail(LARGE_SIZE)
         thumb_img = img.convert("RGB")
         thumb_img.thumbnail(THUMB_SIZE)
-        return _to_webp(large_img), _to_webp(thumb_img)
+        return (
+            _to_webp(large_img),
+            _to_webp(thumb_img),
+            large_img.size,
+            thumb_img.size,
+        )
 
 
 def _to_webp(img: Image.Image) -> bytes:
@@ -286,7 +296,9 @@ class ManagerCatalogService:
             raise NotFoundError("Серия не найдена")
 
         try:
-            large, thumb = await run_in_threadpool(_process_image, raw)
+            large, thumb, large_size, _thumb_size = await run_in_threadpool(
+                _process_image, raw
+            )
         except Exception as exc:
             raise InvalidImageError("Файл не является корректным изображением") from exc
 
@@ -311,8 +323,9 @@ class ManagerCatalogService:
             )
 
             # Реестр v2-медиа: без записи ключ не будет резолвиться
-            # в /api/v2/media/{id} (аудит 08.11.2026).
-            await media.register_key(self.db, key_large)
+            # в /api/v2/media/{id} (аудит 08.11.2026). Размеры — фактические
+            # (известны после ресайза), а не бокс конвенции 1200×1200.
+            await media.register_key(self.db, key_large, dimensions=large_size)
 
             series.photo_key = key_large
             await audit_repo.create_audit(
@@ -368,7 +381,9 @@ class ManagerCatalogService:
             raise NotFoundError("Товар не найден")
 
         try:
-            large, thumb = await run_in_threadpool(_process_image, raw)
+            large, thumb, large_size, _thumb_size = await run_in_threadpool(
+                _process_image, raw
+            )
         except Exception as exc:
             raise InvalidImageError("Файл не является корректным изображением") from exc
 
@@ -392,8 +407,9 @@ class ManagerCatalogService:
             )
 
             # Реестр v2-медиа: без записи ключ не будет резолвиться
-            # в /api/v2/media/{id} (аудит 08.11.2026).
-            await media.register_key(self.db, key_large)
+            # в /api/v2/media/{id} (аудит 08.11.2026). Размеры — фактические
+            # (известны после ресайза), а не бокс конвенции 1200×1200.
+            await media.register_key(self.db, key_large, dimensions=large_size)
 
             await catalog_repo.add_product_photo(
                 self.db, product_id=product.id, photo_key=key_large

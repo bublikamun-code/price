@@ -99,9 +99,20 @@ const activeMedia = computed(() => {
 const activeMediaLarge = computed(() => {
   const m = activeMedia.value
   if (!m) return null
-  if (!m.url.endsWith('?size=thumb')) return m
-  return { ...m, url: m.url.replace(/\?size=thumb$/, ''), width: 1200, height: 1200 }
+  if (!m.url.includes('size=thumb')) return m
+  return { ...m, url: m.url.replace(/([?&])size=thumb\b/, '$1').replace(/[?&]$/, '') }
 })
+// Превью в ленте под кадром — миниатюра 400×400. Раньше там стоял URL крупного
+// кадра (1200×1200, 25–60 КБ): в боксе 56px он не виден, но грузился целиком —
+// по 6–10 мегабайт лишнего трафика на товар с галереей.
+const galleryThumbs = computed(() =>
+  galleryFrames.value.map((frame) => ({
+    ...frame,
+    url: frame.url.includes('size=thumb')
+      ? frame.url
+      : `${frame.url}${frame.url.includes('?') ? '&' : '?'}size=thumb`,
+  })),
+)
 
 const qty = ref(1)
 const qtyHint = ref('')
@@ -287,7 +298,7 @@ onUnmounted(() => {
           </p>
           <div v-if="galleryFrames.length" class="mt-2 flex gap-2 overflow-x-auto scrollbar-none" role="group" aria-label="Фотографии товара">
             <button
-              v-for="(frame, index) in galleryFrames"
+              v-for="(frame, index) in galleryThumbs"
               :key="frame.id"
               type="button"
               class="min-h-11 shrink-0 border p-0.5"

@@ -107,7 +107,7 @@ async def test_list_orders_success_envelope_string_money_and_summary_projection(
     assert order["total"] == {"amount": "125.50", "currency": "BYN"}
     assert order["exchangeRate"] == {
         "value": "1.0000",
-        "scale": 4,
+        "scale": 1,
         "source": "BYN",
     }
     assert set(order) == {

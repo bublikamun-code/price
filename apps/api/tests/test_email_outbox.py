@@ -17,7 +17,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
 import app.tasks.email as email_task
 from app.models.system import EmailOutbox

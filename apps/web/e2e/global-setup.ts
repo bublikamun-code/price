@@ -16,6 +16,7 @@ import { dirname } from 'node:path'
 import { chromium } from '@playwright/test'
 import { MANAGER_STATE, hasManagerCredentials, loginThroughUi } from './support/auth'
 import { chromiumLaunchOptions } from './support/browser'
+import { resolveBaseURL } from './support/nav'
 
 export default async function globalSetup(): Promise<void> {
   mkdirSync(dirname(MANAGER_STATE), { recursive: true })
@@ -29,7 +30,10 @@ export default async function globalSetup(): Promise<void> {
 
   const browser = await chromium.launch(chromiumLaunchOptions())
   try {
-    const context = await browser.newContext({ baseURL: process.env.E2E_BASE_URL })
+    const context = await browser.newContext({
+      baseURL: resolveBaseURL(process.env.E2E_BASE_URL),
+      ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS === '1',
+    })
     const page = await context.newPage()
     await loginThroughUi(page)
     await writeFile(MANAGER_STATE, JSON.stringify(await context.storageState()), 'utf8')

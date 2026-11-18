@@ -20,6 +20,11 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
 
 # ---------- Stage: build (production build) ----------
 FROM base AS build
+# Базовый путь приложения запекается в бандл на этапе сборки (app.baseURL —
+# не runtimeConfig, поэтому через переменные окружения контейнера не меняется).
+# Значение: '/' — обычный стенд, '/price' — публикация под префиксом.
+ARG NUXT_APP_BASE_URL=/
+ENV NUXT_APP_BASE_URL=${NUXT_APP_BASE_URL}
 COPY package*.json ./
 RUN npm ci
 COPY . .

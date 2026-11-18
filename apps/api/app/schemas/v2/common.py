@@ -117,7 +117,10 @@ class Money(V2Model):
 
 class Rate(V2Model):
     value: str = Field(pattern=r"^-?\d+\.\d{4}$", examples=["3.0000"])
-    scale: int = Field(default=RATE_SCALE, ge=0, le=8)
+    # scale — число единиц валюты на один BYN (для RUB это 100, §17.4).
+    # Верхняя граница не 8: реальный масштаб НБ РБ для рубля — 100, и такое
+    # значение раньше не проходило валидацию DTO (500 на ответе).
+    scale: int = Field(default=RATE_SCALE, ge=0, le=1000)
     source: str = Field(min_length=1, max_length=64)
 
 

@@ -42,6 +42,37 @@ export interface TokenPair {
   force_password_change?: boolean
 }
 
+// ---------- Вход и 2FA (аудит L9: «Запомнить меня») ----------
+
+// POST /api/v1/auth/login. remember=true → постоянная сессия (долгоживущие
+// cookie), false → сессия до закрытия браузера. Бэкенд кладёт claim remember
+// в 2FA-ticket и использует его при выдаче токенов.
+export interface LoginRequest {
+  email: string
+  password: string
+  remember?: boolean
+}
+
+// POST /api/v1/auth/2fa/verify. remember — fallback на случай, если бэкенд
+// не положил claim в ticket (например, старая версия API).
+export interface TwoFAVerifyRequest {
+  ticket: string
+  code: string
+  remember?: boolean
+}
+
+/**
+ * Минимальный payload JS-куки `auth_user`: только идентификатор и роль.
+ *
+ * Cookie читается любым скриптом страницы, поэтому профиль (email, ФИО,
+ * компания) в ней не хранится — аудит L10. Полные данные приходят из
+ * /api/v1/auth/me и живут в сторе.
+ */
+export interface AuthCookiePayload {
+  id: string
+  role: UserRole
+}
+
 export interface UserPublic {
   id: string
   email: string

@@ -87,7 +87,12 @@ class Series(Base, TimestampMixin, UUIDPrimaryKey):
     # upsert по имени+бренду (repositories/public.py, catalog.py,
     # manager_catalog.py). FK без индекса — создана миграцией 0025;
     # объявлен в модели ради alembic check (аудит 2026-09-06 §3).
-    __table_args__ = (Index("ix_series_brand", "brand_id"),)
+    # Индекс на photo_key — миграция 0030 (выдача фото идёт по ключу);
+    # объявлен в модели, иначе alembic check видит «лишний» индекс в БД.
+    __table_args__ = (
+        Index("ix_series_brand", "brand_id"),
+        Index("ix_series_photo_key", "photo_key"),
+    )
 
 
 class Product(Base, TimestampMixin, UUIDPrimaryKey):
@@ -227,6 +232,9 @@ class ProductPhoto(Base, TimestampMixin, UUIDPrimaryKey):
             "sort_order",
             "created_at",
         ),
+        # Индекс на photo_key — миграция 0030 (выдача фото идёт по ключу);
+        # объявлен в модели, иначе alembic check видит «лишний» индекс в БД.
+        Index("ix_product_photos_photo_key", "photo_key"),
     )
 
 

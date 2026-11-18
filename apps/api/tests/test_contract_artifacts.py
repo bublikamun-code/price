@@ -216,14 +216,14 @@ def test_shared_v2_json_fixtures_match_pydantic_contract():
     assert not hasattr(order_page.data[0], "lines")
     assert cart.data.version == 2
     assert cart.data.organization_id is None
-    assert cart.data.exchange_rate == Rate(value="1.0000", scale=4, source="BYN")
+    assert cart.data.exchange_rate == Rate(value="1.0000", scale=1, source="BYN")
     assert cart.data.total_items == 1
     assert cart.data.total == Money(amount="40.00", currency="BYN")
     assert not hasattr(cart.data.items[0], "photo_key")
     assert cart_get.data.organization_id == uuid.UUID(
         "77777777-7777-4777-8777-777777777777"
     )
-    assert cart_get.data.exchange_rate == Rate(value="2.0000", scale=4, source="FIXED")
+    assert cart_get.data.exchange_rate == Rate(value="2.0000", scale=1, source="FIXED")
     assert cart_add.quantity == "2"
     assert stale_cart.code == "STALE_RESOURCE_VERSION"
     assert not_found.code == "ORDER_NOT_FOUND"

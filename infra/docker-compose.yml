@@ -113,14 +113,22 @@ services:
         condition: service_healthy
     volumes:
       - ../apps/api:/app            # хот-релоад
+      # RSA-пара для JWT RS256 (§16 п.15). Ключи лежат в git-игнорируемой
+      # infra/jwt-keys/ (make gen-jwt-keys) и монтируются read-only —
+      # без них api с JWT_ALGORITHM=RS256 не стартует (fail fast в config).
+      - ./jwt-keys:/jwt-keys:ro
     ports:
-      - "8000:8000"
+      # API наружу не публикуется: nginx ходит к нему по внутренней сети
+      # compose. Наружу отдаём только на loopback — для локальной отладки
+      # (Swagger). Порт переопределяется через DEV_API_PORT: на стенде 8000
+      # занят соседним проектом, поэтому API живёт на 8010.
+      - "127.0.0.1:${DEV_API_PORT:-8000}:8000"
     # --proxy-headers/--forwarded-allow-ips: реальный IP клиента из X-Forwarded-For
     # (ставит nginx), иначе пер-IP rate-limit'ы (login 5/15min) глобальные → DoS.
     # Вступает в силу при следующем пересоздании api (make up).
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-      --proxy-headers --forwarded-allow-ips=172.16.0.0/12
+      --proxy-headers --forwarded-allow-ips=*
     healthcheck:                # наследуется prod-overlay'ем (gunicorn на том же порту)
       test: ["CMD", "python", "-c", "import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://localhost:8000/healthz', timeout=3).status==200 else 1)"]
       interval: 30s
@@ -145,6 +153,7 @@ services:
         condition: service_healthy
     volumes:
       - ../apps/api:/app
+      - ./jwt-keys:/jwt-keys:ro    # те же PEM-ключи, что у api (§16 п.15)
     command: celery -A app.workers.celery_app worker -l info --concurrency=2
     networks: [pp-net]
 
@@ -162,7 +171,10 @@ services:
         condition: service_healthy
     volumes:
       - ../apps/api:/app
-    command: celery -A app.workers.celery_app beat -l info
+      - ./jwt-keys:/jwt-keys:ro    # PEM-ключи для подписи JWT в фоновых задачах
+    # Файл расписания — в /tmp: рабочая папка /app примонтирована с хоста
+    # и принадлежит root, а процесс идёт от appuser (Permission denied).
+    command: celery -A app.workers.celery_app beat -l info --schedule=/tmp/celerybeat-schedule
     networks: [pp-net]
 
   # ---------- Telegram-бот (уведомления менеджеру) ----------
@@ -198,17 +210,28 @@ services:
       context: ../apps/web
       dockerfile: Dockerfile
       target: runtime
+      args:
+        # Базовый путь приложения запекается в бандл (app.baseURL — не
+        # runtimeConfig). '/' — обычный стенд, '/price' — публикация под
+        # префиксом на том же origin, где живёт API (<base>/api/...).
+        NUXT_APP_BASE_URL: ${NUXT_APP_BASE_URL:-/}
     container_name: pp-web
     restart: unless-stopped
     env_file: ../.env
     environment:
-      NUXT_PUBLIC_API_BASE: ""
+      # Публичный базовый путь API для клиента: пусто = тот же origin
+      # (обычный стенд), '/price' = запросы идут на <base>/api/...
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-}
+      # Тот же базовый путь — нужен healthcheck'у (приложение живёт по <base>/).
+      NUXT_APP_BASE_URL: ${NUXT_APP_BASE_URL:-/}
     depends_on:
       - api
     ports:
       - "3000:3000"
     healthcheck:                # node-fetch есть в runtime-образе (Node >=18)
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # Путь с учётом базового префикса приложения: при NUXT_APP_BASE_URL=/price
+      # корень '/' не обслуживается (приложение живёт по /price/).
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000'+(process.env.NUXT_APP_BASE_URL||'/').replace(/\\/$/,'')+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 60s
       timeout: 10s
       retries: 5
@@ -258,6 +281,10 @@ services:
       target: dev
     volumes:
       - ../apps/web:/app
+      # Фикстуры API-контракта (apps/api/tests/fixtures) читают веб-тесты:
+      # без этого монтирования vitest падает с ENOENT на 56 тестах в 10 файлах
+      # (аудит 2026-11-10, L7). В CI checkout содержит обе папки, там mount не нужен.
+      - ../apps/api/tests/fixtures:/api/tests/fixtures:ro
       - web-tools-node-modules:/app/node_modules
     command: sh -c "npm ci --no-audit --no-fund && npm install --no-save --no-audit --no-fund && echo 'deps ready'"
     networks: [pp-net]

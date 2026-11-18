@@ -27,6 +27,7 @@ from app.importers.csv_price import (
     detect_separator,
     normalize_row,
     resolve_columns,
+    sku_of_row,
 )
 from app.models.catalog import PriceHistory, PriceListVersion, Product, Series
 from app.models.enums import (
@@ -137,6 +138,13 @@ class TestNormalizeRow:
 
     def test_missing_sku(self):
         assert isinstance(normalize_row({"name": "N", "base_price": "1"}, 2), RowError)
+
+    def test_sku_of_row_reads_even_from_invalid_row(self):
+        """Артикул читается даже из строки, которая потом не пройдёт нормализацию."""
+        assert sku_of_row({"sku": " A-1 "}) == "A-1"
+        assert sku_of_row({"sku": ""}) is None
+        assert sku_of_row({"sku": None}) is None
+        assert sku_of_row({}) is None
 
     def test_missing_name(self):
         assert isinstance(normalize_row({"sku": "A", "base_price": "1"}, 2), RowError)
@@ -305,6 +313,39 @@ class TestImportTask:
                 select(Product).where(Product.sku == "NEW-1")
             )).scalar_one()
             assert fresh.deleted_at is None
+
+    async def test_error_row_product_not_archived(self, session_factory, monkeypatch):
+        """Ошибочная строка файла не должна архивировать свой товар (H2).
+
+        Товар BAD-1 есть в файле, но строка с ним невалидна (пустая цена).
+        Раньше он попадал в ``seen_skus`` только после успешной нормализации,
+        поэтому считался «отсутствующим в файле» и архивировался по
+        ARCHIVE_MISSING — одна опечатка в цене молча убирала товар из
+        каталога и склада. Товар OLD-1 в файле отсутствует — архивируется.
+        """
+        mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)
+        await create_product(session_factory, sku="BAD-1", name="Broken", base_price=10)
+        await create_product(session_factory, sku="OLD-1", name="Stale", base_price=10)
+        version = await _make_version(session_factory, manager=mgr,
+                                      mode=ImportMode.ARCHIVE_MISSING)
+        # Строка BAD-1 без цены → RowError; GOOD-1 валидна.
+        csv = b"sku;name;base_price\nBAD-1;Broken;\nGOOD-1;Good;7\n"
+        monkeypatch.setattr(import_task, "_worker_session", session_factory)
+        _patch_storage(monkeypatch, csv)
+
+        await import_task._run_import(version.id)
+
+        async with session_factory() as s:
+            bad = (await s.execute(
+                select(Product).where(Product.sku == "BAD-1")
+            )).scalar_one()
+            assert bad.deleted_at is None, "товар из ошибочной строки нельзя архивировать"
+            assert bad.stock_status != StockStatus.ARCHIVED
+            stale = (await s.execute(
+                select(Product).where(Product.sku == "OLD-1")
+            )).scalar_one()
+            assert stale.deleted_at is not None
+            assert stale.stock_status == StockStatus.ARCHIVED
 
     async def test_idempotent_skip_when_not_queued(self, session_factory, monkeypatch):
         mgr = await create_user(session_factory, email=MANAGER_EMAIL, role=UserRole.MANAGER)

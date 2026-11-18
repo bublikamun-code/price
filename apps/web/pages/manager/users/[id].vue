@@ -216,6 +216,14 @@ async function saveDiscounts() {
 
 // --- Зафиксированный курс ---
 const fixCurrency = ref<FixCurrency>('USD')
+const FIX_CURRENCY_OPTIONS = FIX_CURRENCIES.map((currency) => ({ value: currency, label: currency }))
+/** UiSelect отдаёт string | number — значение приводим к типу курса. */
+const fixCurrencyModel = computed({
+  get: () => fixCurrency.value as string | number,
+  set: (value: string | number) => {
+    fixCurrency.value = value as FixCurrency
+  },
+})
 const fixMode = ref<'manual' | 'nbrb'>('nbrb')
 const fixRate = ref('')
 const fixing = ref(false)
@@ -493,10 +501,9 @@ onMounted(() => {
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="label" for="fx-currency">Валюта</label>
-            <select id="fx-currency" v-model="fixCurrency" class="input py-2.5">
-              <option v-for="c in FIX_CURRENCIES" :key="c" :value="c">{{ c }}</option>
-            </select>
+            <UiField for="fx-currency" label="Валюта">
+              <UiSelect v-model="fixCurrencyModel" :options="FIX_CURRENCY_OPTIONS" />
+            </UiField>
           </div>
           <div>
             <span class="label">Режим</span>

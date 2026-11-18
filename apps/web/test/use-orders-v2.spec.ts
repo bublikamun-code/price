@@ -46,7 +46,7 @@ const summary: OrderSummary = {
   initiatedByUserId: userId,
   status: "NEW",
   total: money,
-  exchangeRate: { value: "1.0000", scale: 4, source: "BYN" },
+  exchangeRate: { value: "1.0000", scale: 1, source: "BYN" },
   createdAt: "2026-08-21T09:00:00Z",
   updatedAt: "2026-08-21T09:00:00Z",
   version: 3,
@@ -59,7 +59,7 @@ const detail: OrderDetail = {
   managerId: null,
   status: "NEW",
   total: money,
-  exchangeRate: { value: "1.0000", scale: 4, source: "BYN" },
+  exchangeRate: { value: "1.0000", scale: 1, source: "BYN" },
   lines: [],
   delivery: {
     method: "PICKUP",

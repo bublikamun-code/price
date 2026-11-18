@@ -281,7 +281,11 @@ async function toggleFavorite(sku: string) {
 
 onMounted(() => {
   void load()
-  void Promise.allSettled([cartV2.ensureLoaded(), sessionContext.ensureLoaded()])
+  // Корзина — сущность клиента (§3 SITEMAP): менеджеру она недоступна.
+  void Promise.allSettled([
+    auth.isClient ? cartV2.ensureLoaded() : Promise.resolve(),
+    sessionContext.ensureLoaded(),
+  ])
 })
 onUnmounted(() => {
   isUnmounted = true

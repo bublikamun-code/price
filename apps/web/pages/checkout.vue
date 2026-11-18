@@ -7,6 +7,10 @@ definePageMeta({ layout: 'client', middleware: 'auth' })
 useHead({ title: 'Оформление заявки' })
 
 const cartV2 = useCartV2()
+const auth = useAuth()
+// Оформление заявки — сущность клиента (§3 SITEMAP): менеджеру корзина
+// недоступна (403), поэтому показываем понятную заглушку, а не ошибку.
+const isForeignRole = computed(() => !!auth.user && !auth.isClient)
 const ordersV2 = useOrdersV2()
 const cart = computed(() => cartV2.store.cart)
 const loading = computed(() => cartV2.store.loading || ordersV2.store.loading)
@@ -205,6 +209,7 @@ async function submit() {
 }
 
 onMounted(() => {
+  if (!auth.isClient) return
   void loadCart()
   if (deliveryMethod.value === 'DELIVERY') void loadAddresses()
 })
@@ -216,6 +221,19 @@ watch(deliveryMethod, (method) => {
 
 <template>
   <div class="min-w-0" data-testid="checkout-page">
+    <UiEmptyState
+      v-if="isForeignRole"
+      title="Оформление доступно только клиентам"
+      description="Корзина и оформление заявки — только для роли клиента. Менеджер работает с заявками клиентов в разделе «Заявки»."
+      icon="heroicons:clipboard-document-list"
+      data-testid="checkout-forbidden"
+    >
+      <template #action>
+        <NuxtLink to="/manager" class="inline-flex min-h-11 items-center justify-center border border-action bg-action px-4 text-sm font-semibold text-action-on hover:bg-action-hover">В кабинет менеджера</NuxtLink>
+      </template>
+    </UiEmptyState>
+
+    <template v-else>
     <nav class="mb-5 flex min-h-11 items-center gap-2 text-sm text-ink-muted" aria-label="Навигация оформления">
       <NuxtLink to="/cart" class="inline-flex min-h-11 items-center hover:text-action">Заявка</NuxtLink>
       <Icon name="heroicons:chevron-right" class="size-3.5 text-ink-faint" aria-hidden="true" />
@@ -398,5 +416,6 @@ watch(deliveryMethod, (method) => {
       :disabled="loading || !cart.items.length"
       data-testid="checkout-submit-mobile"
     />
+    </template>
   </div>
 </template>

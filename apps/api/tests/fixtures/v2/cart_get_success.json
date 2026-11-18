@@ -33,7 +33,7 @@
     "totalItems": 1,
     "exchangeRate": {
       "value": "2.0000",
-      "scale": 4,
+      "scale": 1,
       "source": "FIXED"
     }
   },

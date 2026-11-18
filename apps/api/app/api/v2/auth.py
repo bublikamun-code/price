@@ -17,7 +17,6 @@ from app.api.v2.errors import V2ProblemError, problem_responses, request_id_for
 from app.core.config import settings
 from app.core.deps import get_current_session_id, get_current_user
 from app.core.limiter import limiter
-from app.core.security import create_2fa_ticket
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.v2.auth import (
@@ -123,10 +122,14 @@ async def create_session(
         raise to_problem(exc) from exc
 
     if tokens is None:
+        # Ticket одноразовый (аудит M9): регистрируется в БД при выдаче.
+        # Нативный клиент хранит токены у себя, поэтому режим cookie
+        # «Запомнить меня» (аудит L9) к v2 не относится.
+        ticket = await svc.issue_2fa_ticket(user)
         return SuccessResponse[SessionGrant | TwoFaChallenge](
             data=TwoFaChallenge(
                 two_fa_required=True,
-                ticket=create_2fa_ticket(str(user.id)),
+                ticket=ticket,
                 force_password_change=bool(user.must_change_password),
             ),
             meta=ResponseMeta(request_id=request_id_for(request)),

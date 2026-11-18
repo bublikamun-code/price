@@ -80,7 +80,7 @@ async def test_v2_order_detail_uses_success_envelope_and_string_money(
     assert data["total"] == {"amount": "300.00", "currency": "BYN"}
     assert data["exchangeRate"] == {
         "value": "1.0000",
-        "scale": 4,
+        "scale": 1,
         "source": "BYN",
     }
     assert data["lines"][0]["sku"] == "V2-1"
@@ -218,7 +218,7 @@ async def test_v2_catalog_list_uses_cursor_and_personalized_money(
     }
     assert first_body["data"][0]["exchangeRate"] == {
         "value": "1.0000",
-        "scale": 4,
+        "scale": 1,
         "source": "BYN",
     }
     assert first_body["meta"]["hasMore"] is True

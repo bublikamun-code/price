@@ -8,6 +8,7 @@ useHead({ title: 'Избранное' })
 
 const { request } = useApi()
 const cartV2 = useCartV2()
+const auth = useAuth()
 const favs = useFavorites()
 
 const PER_PAGE = 12
@@ -215,7 +216,9 @@ function recordComparePrice(favorite: FavoriteRead): string {
 
 onMounted(() => {
   void load()
-  void cartV2.ensureLoaded().catch(() => undefined)
+  // Корзина — сущность клиента (§3 SITEMAP): менеджеру она недоступна, и
+  // запрос вернул бы 403 в консоли на каждой загрузке страницы.
+  if (auth.isClient) void cartV2.ensureLoaded().catch(() => undefined)
 })
 </script>
 

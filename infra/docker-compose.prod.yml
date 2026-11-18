@@ -35,14 +35,14 @@ services:
       JWT_PUBLIC_KEY_PATH: /jwt-keys/jwt_rsa.pub
       COOKIE_SECURE: true                         # prod: Secure-куки только по HTTPS (§16 п.30)
     # X-Forwarded-For от nginx обязателен: без него slowapi видит IP самого
-    # nginx, и пер-IP лимиты login (5/15min) становятся глобальными. Доверять
-    # всем адресам безопасно — наружу api не публикуется (ports: !reset ниже).
+    # nginx, и пер-IP лимиты login (5/15min) становятся глобальными.
+    # Именно uvicorn, а не gunicorn: UvicornWorker не переносит proxy-параметры
+    # из конфига gunicorn, и цепочка от nginx доходила бы непроверенной.
+    # Доверять всем адресам безопасно — наружу api не публикуется (ports: !reset).
     command: >
-      gunicorn app.main:app
-      --worker-class uvicorn.workers.UvicornWorker
-      --workers 4 --bind 0.0.0.0:8000
-      --timeout 120 --graceful-timeout 30
-      --proxy-headers --forwarded-allow-ips=172.16.0.0/12
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+      --proxy-headers --forwarded-allow-ips=*
+      --timeout-keep-alive 120
     volumes: !override            # код внутри образа; только JWT-ключи read-only
       - ./jwt-keys:/jwt-keys:ro   # = infra/jwt-keys (make gen-jwt-keys)
     restart: always
@@ -51,14 +51,16 @@ services:
   worker:
     build:
       target: runtime
-    volumes: !override []        # код внутри образа (без !override volume из dev остаётся)
+    volumes: !override            # код внутри образа; PEM-ключи read-only
+      - ./jwt-keys:/jwt-keys:ro   # RS256: worker тоже подписывает токены (§16 п.15)
     restart: always
     command: celery -A app.workers.celery_app worker -l info --concurrency=4
 
   beat:
     build:
       target: runtime
-    volumes: !override []
+    volumes: !override            # код внутри образа; PEM-ключи read-only
+      - ./jwt-keys:/jwt-keys:ro   # RS256 (§16 п.15)
     restart: always
 
   # ---------- Telegram-бот ----------
@@ -75,13 +77,23 @@ services:
       target: runtime
     volumes: !override []
     ports: !reset []            # наружу только через nginx (в dev — 3000)
+    environment:
+      # Публикация под префиксом /price (§16 п.46): клиент ходит в <base>/api/...
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-/price}
+      NUXT_APP_BASE_URL: ${NUXT_APP_BASE_URL:-/price}
     restart: always
     command: ["node", ".output/server/index.mjs"]
 
   nginx:
-    ports: !override            # !override: иначе к 80/443 добавится 8080 из dev-файла
-      - "80:80"
-      - "443:443"
+    # !override: иначе к 80/443 добавится 8080 из dev-файла.
+    # Bind только на loopback: порт 443 на этом хосте уже занят самим
+    # tailscaled (слушает 443 на Tailscale-IP 100.86.52.74), поэтому 0.0.0.0:443
+    # не поднять — docker-proxy получает EADDRINUSE. Публичный вход идёт
+    # через Tailscale Funnel → https+insecure://127.0.0.1:443.
+    # Наружу (LAN) prod-стенд не выставлен: доступ только через Funnel/Tailscale.
+    ports: !override
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro   # self-contained prod-конфиг (§16 п.24)
       - ./nginx/certs:/etc/nginx/certs:ro                  # fullchain.pem + privkey.pem (make gen-self-signed-certs / Let's Encrypt)

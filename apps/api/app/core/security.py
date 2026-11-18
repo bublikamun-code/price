@@ -63,6 +63,10 @@ def _create_token(
         "iat": now,
         "exp": now + expires_delta,
         "type": token_type,
+        # Аудит M8: обязательные aud/iss — токен одного окружения не принимается
+        # другим (при общем ключе подписи). Проверка — в decode_token.
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
     }
     if extra:
         payload.update(extra)
@@ -86,23 +90,40 @@ def create_refresh_token(subject: str) -> str:
     )
 
 
-def create_2fa_ticket(subject: str) -> str:
+def create_2fa_ticket(subject: str, extra: dict[str, Any] | None = None) -> str:
     """Ticket второго шага логина при 2FA (§16 п.22).
 
     Короткоживущий JWT с type="2fa": только sub (без ролей/sid), TTL 5 мин.
     Не принимается get_current_user (ждёт type="access"), а verify-эндпоинт
     2FA не принимает access-токены — типы токенов строго разделены.
+
+    ``extra`` — дополнительные claim'ы: ``jti`` (идентификатор вызова,
+    по нему ticket гасится в БД — аудит M9) и ``remember`` (режим cookie
+    «Запомнить меня», должен дожить до выдачи токенов — аудит L9).
     """
     return _create_token(
         subject,
         "2fa",
         timedelta(minutes=settings.totp_ticket_ttl_min),
+        extra,
     )
 
 
 def decode_token(token: str) -> dict[str, Any]:
-    """Декодирует и проверяет срок. Бросает jwt.PyJWTError при невалидном токене."""
-    return jwt.decode(token, settings.jwt_verify_key, algorithms=[settings.jwt_algorithm])
+    """Декодирует и проверяет срок, aud и iss. Бросает jwt.PyJWTError при невалидном токене.
+
+    Аудит M8: `audience`/`issuer` обязательны. PyJWT сам бросает
+    jwt.PyJWTError (InvalidAudienceError / InvalidIssuerError /
+    MissingRequiredClaimError), если claim отсутствует или не совпадает —
+    все вызывающие стороны уже ловят jwt.PyJWTError и отдают 401.
+    """
+    return jwt.decode(
+        token,
+        settings.jwt_verify_key,
+        algorithms=[settings.jwt_algorithm],
+        audience=settings.jwt_audience,
+        issuer=settings.jwt_issuer,
+    )
 
 
 __all__ = [

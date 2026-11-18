@@ -26,6 +26,7 @@ const PER_PAGE = 10
 const MAX_SIZE = 100 * 1024 * 1024 // settings.import_max_file_mb = 100
 const ALLOWED_EXT = ['.csv', '.txt']
 const CURRENCIES = ['BYN', 'USD', 'EUR', 'RUB']
+const CURRENCY_OPTIONS = CURRENCIES.map((currency) => ({ value: currency, label: currency }))
 
 const MODES: { value: ImportMode; label: string; hint: string }[] = [
   { value: 'UPSERT', label: 'Обновить и добавить', hint: 'Обновить существующие позиции и добавить новые' },
@@ -483,10 +484,9 @@ onUnmounted(() => {
       <!-- Валюта + курс -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
         <div>
-          <label class="label" for="currency">Валюта прайса</label>
-          <select id="currency" v-model="baseCurrency" class="input py-2.5" @change="onCurrencyChange">
-            <option v-for="c in CURRENCIES" :key="c" :value="c">{{ c }}</option>
-          </select>
+          <UiField for="currency" label="Валюта прайса">
+            <UiSelect v-model="baseCurrency" :options="CURRENCY_OPTIONS" @update:model-value="onCurrencyChange" />
+          </UiField>
         </div>
         <div>
           <label class="label" for="rate">Курс к BYN</label>
@@ -678,7 +678,7 @@ onUnmounted(() => {
 
     <!-- Пагинация -->
     <nav v-if="!loading && totalPages > 1" class="flex items-center justify-center gap-1 mt-6">
-      <button class="btn-ghost size-11" :disabled="page <= 1" @click="goPage(page - 1)">
+      <button class="btn-ghost size-11" :disabled="page <= 1" aria-label="Предыдущая страница" @click="goPage(page - 1)">
         <Icon name="heroicons:chevron-left" class="w-5 h-5" />
       </button>
       <template v-for="(pgn, idx) in paginationWindow(totalPages, page)" :key="idx">
@@ -690,7 +690,7 @@ onUnmounted(() => {
           @click="goPage(pgn as number)"
         >{{ pgn }}</button>
       </template>
-      <button class="btn-ghost size-11" :disabled="page >= totalPages" @click="goPage(page + 1)">
+      <button class="btn-ghost size-11" :disabled="page >= totalPages" aria-label="Следующая страница" @click="goPage(page + 1)">
         <Icon name="heroicons:chevron-right" class="w-5 h-5" />
       </button>
     </nav>

@@ -34,6 +34,15 @@ watch(formStep, (step) => {
   if (step === 'two-factor') nextTick(() => document.getElementById(codeInputId)?.focus())
 })
 
+// Уже авторизованного пользователя не держим на форме входа: сюда попадают и
+// те, чья сессия восстановилась по refresh-токену (plugins/auth.session.ts) —
+// им сразу нужен кабинет, а не форма с паролем.
+onMounted(() => {
+  if (auth.isAuthenticated) {
+    void navigateTo(getPostLoginPath(), { replace: true })
+  }
+})
+
 function openForgotPassword() {
   forgotSent.value = false
   forgotEmail.value = ''
@@ -52,7 +61,7 @@ async function onSubmit() {
   errorMsg.value = ''
   loading.value = true
   try {
-    const response = await auth.login(email.value, password.value)
+    const response = await auth.login(email.value, password.value, remember.value)
     if (response.twoFARequired) {
       ticket.value = response.ticket ?? ''
       code.value = ''
@@ -94,7 +103,7 @@ async function onVerify() {
   errorMsg.value = ''
   loading.value = true
   try {
-    await auth.verify2fa(ticket.value, code.value.trim())
+    await auth.verify2fa(ticket.value, code.value.trim(), remember.value)
     if (auth.user?.forcePasswordChange) {
       await navigateTo({ path: '/force-change-password', query: { redirect: getPostLoginPath() } })
       return
